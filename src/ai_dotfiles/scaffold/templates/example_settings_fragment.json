@@ -1,0 +1,13 @@
+{
+  "_domain": "_example",
+  "_description": "Example domain hooks — edit or remove",
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "Edit|Write",
+      "hooks": [{
+        "type": "command",
+        "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/example-lint.sh"
+      }]
+    }]
+  }
+}

@@ -6,6 +6,9 @@ authors = ["Pavel Gorlov"]
 readme = "README.md"
 license = "MIT"
 packages = [{ include = "ai_dotfiles", from = "src" }]
+include = [
+    { path = "src/ai_dotfiles/scaffold/templates/**/*", format = ["sdist", "wheel"] },
+]
 
 [tool.poetry.dependencies]
 python = ">=3.12,<4.0"
