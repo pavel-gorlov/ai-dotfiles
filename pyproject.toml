@@ -19,7 +19,7 @@ mypy = "^1.16"
 pytest = "^8.4"
 pytest-cov = "^4.1"
 black = "^24.4"
-ruff = "^0.5"
+ruff = "^0.12"
 pre-commit = "^3.7"
 commitizen = "^3.23"
 
