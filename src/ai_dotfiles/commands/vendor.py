@@ -285,6 +285,42 @@ def _make_list_source_command(vendor: Vendor) -> click.Command:
     return _list_source
 
 
+def _make_find_command(vendor: Vendor) -> click.Command | None:
+    """Build the ``find`` subcommand for vendors that implement it.
+
+    Returns ``None`` for vendors without a ``find`` method — only
+    ``npx_skills`` exposes one today. Each hit is printed as
+    ``<source>@<name>  [<installs>]`` followed by the marketplace URL
+    indented beneath it.
+    """
+    find_method = getattr(vendor, "find", None)
+    if find_method is None:
+        return None
+
+    @click.command(
+        name="find",
+        help=f"Search for skills via '{vendor.name}' marketplace.",
+    )
+    @click.argument("query")
+    def _find(query: str) -> None:
+        try:
+            deps_mod.ensure(vendor)
+            results = find_method(query)
+        except AiDotfilesError as exc:
+            ui.error(str(exc))
+            sys.exit(exc.exit_code)
+
+        for hit in results:
+            head = f"{hit.source}@{hit.name}"
+            if hit.installs:
+                head = f"{head}  ({hit.installs} installs)"
+            click.echo(head)
+            if hit.url:
+                click.echo(f"  {hit.url}")
+
+    return _find
+
+
 def _make_deps_group(vendor: Vendor) -> click.Group:
     """Build the ``deps`` subgroup (``check``/``install``) for ``vendor``."""
 
@@ -345,6 +381,9 @@ def _register_vendors(parent: click.Group) -> None:
         vendor_group.add_command(_make_install_command(v))
         vendor_group.add_command(_make_list_source_command(v))
         vendor_group.add_command(_make_deps_group(v))
+        find_cmd = _make_find_command(v)
+        if find_cmd is not None:
+            vendor_group.add_command(find_cmd)
         parent.add_command(vendor_group)
 
 

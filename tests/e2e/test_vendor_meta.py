@@ -506,6 +506,50 @@ def test_vendor_npx_skills_install_empty_select_entry_rejected(
     assert "empty entry" in result.output
 
 
+def test_vendor_npx_skills_find_prints_hits(
+    runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`vendor npx_skills find <query>` prints source@name + URL per hit."""
+    _patch_which(monkeypatch, present={"npx"})
+    stdout = (
+        "vercel-labs/agent-skills@vercel-react-best-practices 321.7K installs\n"
+        "\u2514 https://skills.sh/vercel-labs/agent-skills/"
+        "vercel-react-best-practices\n"
+        "\n"
+        "alice/skills@thing\n"
+        "\u2514 https://skills.sh/alice/skills/thing\n"
+    )
+    _patch_npx_subprocess(monkeypatch, stdout=stdout)
+
+    result = runner.invoke(vendor, ["npx_skills", "find", "react"])
+
+    assert result.exit_code == 0, result.output
+    assert "vercel-labs/agent-skills@vercel-react-best-practices" in result.output
+    assert "(321.7K installs)" in result.output
+    assert "https://skills.sh/vercel-labs/agent-skills/" in result.output
+    assert "alice/skills@thing" in result.output
+
+
+def test_vendor_npx_skills_find_no_results(
+    runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No matches → non-zero exit with error message."""
+    _patch_which(monkeypatch, present={"npx"})
+    _patch_npx_subprocess(monkeypatch, stdout="nothing here\n")
+
+    result = runner.invoke(vendor, ["npx_skills", "find", "zzznothing"])
+
+    assert result.exit_code != 0
+    assert "no results" in result.output.lower()
+
+
+def test_vendor_github_has_no_find_subcommand(runner: CliRunner) -> None:
+    """GitHub vendor does not expose a find subcommand."""
+    result = runner.invoke(vendor, ["github", "--help"])
+    assert result.exit_code == 0
+    assert " find " not in result.output
+
+
 def test_vendor_npx_skills_deps_check_missing(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch
 ) -> None:

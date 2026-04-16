@@ -17,7 +17,7 @@ import pytest
 
 from ai_dotfiles.core.errors import ExternalError
 from ai_dotfiles.vendors.base import Vendor
-from ai_dotfiles.vendors.npx_skills import NPX_SKILLS
+from ai_dotfiles.vendors.npx_skills import NPX_SKILLS, FindResult
 
 FakeRun = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -434,6 +434,105 @@ def test_npx_dependency_is_installed_false_when_missing(
     )
     npx_dep = next(d for d in NPX_SKILLS.deps if d.name == "npx")
     assert npx_dep.is_installed() is False
+
+
+# ── find ──
+
+
+# Real fixture captured from ``npx skills find react`` (April 2026). Each
+# result is a name line + an arrow-prefixed marketplace URL line, plus
+# ANSI colour codes.
+_REAL_FIND_OUTPUT = (
+    "\x1b[38;5;250m███╗\x1b[0m\n"
+    "\n"
+    "\x1b[38;5;102mInstall with\x1b[0m npx skills add <owner/repo@skill>\n"
+    "\n"
+    "\x1b[38;5;145mvercel-labs/agent-skills@vercel-react-best-practices\x1b[0m "
+    "\x1b[36m321.7K installs\x1b[0m\n"
+    "\x1b[38;5;102m\u2514 https://skills.sh/vercel-labs/agent-skills/"
+    "vercel-react-best-practices\x1b[0m\n"
+    "\n"
+    "\x1b[38;5;145mvercel-labs/agent-skills@vercel-react-native-skills\x1b[0m "
+    "\x1b[36m92K installs\x1b[0m\n"
+    "\x1b[38;5;102m\u2514 https://skills.sh/vercel-labs/agent-skills/"
+    "vercel-react-native-skills\x1b[0m\n"
+    "\n"
+    "\x1b[38;5;145mgoogle-labs-code/stitch-skills@react:components\x1b[0m "
+    "\x1b[36m36.4K installs\x1b[0m\n"
+    "\x1b[38;5;102m\u2514 https://skills.sh/google-labs-code/"
+    "stitch-skills/react:components\x1b[0m\n"
+)
+
+
+def test_find_parses_real_upstream_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Real `skills find` output parses into FindResult entries."""
+    captured: dict[str, Any] = {}
+    _install_fake_run(monkeypatch, captured=captured, stdout=_REAL_FIND_OUTPUT)
+
+    results = NPX_SKILLS.find("react")
+
+    assert len(results) == 3
+    assert results[0] == FindResult(
+        source="vercel-labs/agent-skills",
+        name="vercel-react-best-practices",
+        installs="321.7K",
+        url="https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices",
+    )
+    assert results[2].source == "google-labs-code/stitch-skills"
+    assert results[2].name == "react:components"
+    # argv includes find + the query
+    assert "find" in captured["argv"]
+    assert "react" in captured["argv"]
+
+
+def test_find_without_installs_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Missing install-count does not break parsing."""
+    captured: dict[str, Any] = {}
+    stdout = "alice/skills@thing\n" "\u2514 https://skills.sh/alice/skills/thing\n"
+    _install_fake_run(monkeypatch, captured=captured, stdout=stdout)
+
+    results = NPX_SKILLS.find("thing")
+    assert len(results) == 1
+    assert results[0].installs == ""
+    assert results[0].url == "https://skills.sh/alice/skills/thing"
+
+
+def test_find_empty_query_raises() -> None:
+    """Blank query is rejected before any subprocess call."""
+    with pytest.raises(ValueError):
+        NPX_SKILLS.find("")
+    with pytest.raises(ValueError):
+        NPX_SKILLS.find("   ")
+
+
+def test_find_nonzero_exit_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    _install_fake_run(
+        monkeypatch,
+        captured=captured,
+        returncode=3,
+        stderr="upstream boom\n",
+    )
+    with pytest.raises(ExternalError) as excinfo:
+        NPX_SKILLS.find("query")
+    assert "upstream boom" in str(excinfo.value)
+
+
+def test_find_empty_result_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    _install_fake_run(
+        monkeypatch,
+        captured=captured,
+        stdout="no matches\n",
+    )
+    with pytest.raises(ExternalError) as excinfo:
+        NPX_SKILLS.find("nothing")
+    assert "no results" in str(excinfo.value).lower()
+
+
+# ── subprocess errors ──
 
 
 def test_fetch_missing_npx_raises_external_error(

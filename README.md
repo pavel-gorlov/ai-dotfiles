@@ -142,6 +142,7 @@ available.
 | `vendor github deps check \| install [--yes]`     | Check for `git`, or install it on demand |
 | `vendor npx_skills install <source> [--force] [--select a,b]` | Install skills via the upstream `skills` npm CLI |
 | `vendor npx_skills list <source>`                 | List skills a source exposes |
+| `vendor npx_skills find <query>`                  | Search the skills.sh marketplace by keyword |
 | `vendor npx_skills deps check \| install [--yes]` | Check for `npx` / Node.js, or install on demand |
 
 After a successful `install`, the item is written to
@@ -168,12 +169,15 @@ fetched content.
 # One-time: install Node.js (npx ships with it)
 ai-dotfiles vendor npx_skills deps install
 
-# Enumerate what the source exposes
-ai-dotfiles vendor npx_skills list vercel-labs/skills
+# Search the skills.sh marketplace
+ai-dotfiles vendor npx_skills find react
+
+# Enumerate what a specific source exposes
+ai-dotfiles vendor npx_skills list vercel-labs/agent-skills
 
 # Install a subset
-ai-dotfiles vendor npx_skills install vercel-labs/skills --select find-skills
-ai-dotfiles add skill:find-skills
+ai-dotfiles vendor npx_skills install vercel-labs/agent-skills --select deploy-to-vercel
+ai-dotfiles add skill:deploy-to-vercel
 ```
 
 ## Storage Structure

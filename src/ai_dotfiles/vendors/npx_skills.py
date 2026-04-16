@@ -92,6 +92,16 @@ def _subprocess_env(home: Path) -> dict[str, str]:
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
+# ``npx skills find <query>`` prints one result per block:
+#   <owner>/<repo>@<skill-name>   <NNK installs>
+#   └ https://skills.sh/<owner>/<repo>/<skill-name>
+# Match the first line: owner, repo, name + optional install count.
+_FIND_RESULT_RE = re.compile(
+    r"^(?P<source>[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*)"
+    r"@(?P<name>[A-Za-z0-9][A-Za-z0-9_:.-]*)"
+    r"(?:\s+(?P<installs>\S+(?:\s+installs?)?))?\s*$"
+)
+
 # Box-drawing frame lines that contain a skill name use exactly 4 spaces
 # of indent after the vertical bar; description lines use 6+. The name
 # itself is a valid package-style identifier (lowercase letter first,
@@ -103,6 +113,61 @@ _LIST_MARKER = "Available Skills"
 def _strip_ansi(text: str) -> str:
     """Remove ANSI escape codes (colour + cursor movement) from text."""
     return _ANSI_ESCAPE_RE.sub("", text)
+
+
+@dataclass(frozen=True)
+class FindResult:
+    """One hit from ``npx skills find <query>``."""
+
+    source: str  # "vercel-labs/agent-skills"
+    name: str  # "vercel-react-best-practices"
+    installs: str  # "321.7K" — human-readable install count, "" if missing
+    url: str  # "https://skills.sh/..."
+
+
+def _parse_find_output(stdout: str) -> list[FindResult]:
+    """Parse ``npx skills find <query>`` stdout into :class:`FindResult` s.
+
+    Blocks look like::
+
+        <owner>/<repo>@<name>   321.7K installs
+        \u2514 https://skills.sh/<owner>/<repo>/<name>
+
+    ANSI colour codes and box-drawing glyphs are stripped before parsing.
+    The ``installs`` field keeps the human-readable count without the
+    trailing word (so ``"321.7K"``) — empty string when upstream omits it.
+    """
+    cleaned = _strip_ansi(stdout)
+    results: list[FindResult] = []
+    lines = cleaned.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip()
+        match = _FIND_RESULT_RE.match(line)
+        if match is None:
+            i += 1
+            continue
+        source = match.group("source")
+        name = match.group("name")
+        installs_raw = match.group("installs") or ""
+        # Keep only the numeric prefix (e.g. "321.7K") — drop the trailing
+        # " installs" / " install".
+        installs = installs_raw.split(maxsplit=1)[0] if installs_raw else ""
+
+        url = ""
+        if i + 1 < len(lines):
+            next_line = lines[i + 1].strip()
+            # Upstream uses U+2514 (``\u2514``) as the arrow; accept a plain
+            # ASCII fallback too.
+            if next_line.startswith(("\u2514 ", "\u2514\u2500", "- ", "-> ")):
+                # Slice off the leading marker + one char (space or dash).
+                url = next_line.split(maxsplit=1)[1] if " " in next_line else ""
+            elif next_line.startswith("http"):
+                url = next_line
+
+        results.append(FindResult(source=source, name=name, installs=installs, url=url))
+        i += 2 if url else 1
+    return results
 
 
 def _parse_list_output(stdout: str) -> list[str]:
@@ -290,8 +355,49 @@ class _NpxSkillsVendor:
             )
         return items
 
+    def find(self, query: str) -> list[FindResult]:
+        """Run ``npx skills find <query>`` and return ranked results.
+
+        Upstream's ``find`` is interactive without a query; we always
+        require one so the subprocess never hangs on a prompt.
+        Uses a disposable tmp dir as both ``cwd`` and ``HOME`` so the
+        search probe never touches the real ``~/``.
+
+        Args:
+            query: Search term forwarded to the upstream CLI.
+
+        Returns:
+            Ordered list of :class:`FindResult`.
+
+        Raises:
+            ExternalError: On non-zero exit or empty result.
+            ValueError: If ``query`` is blank.
+        """
+        if not query.strip():
+            raise ValueError("query must be non-empty")
+
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            home = tmp_path / _NPX_HOME_DIRNAME
+            home.mkdir(parents=True, exist_ok=True)
+
+            argv = ["npx", "-y", "skills", "find", query]
+            result = _run(argv, cwd=tmp_path, env=_subprocess_env(home))
+
+            if result.returncode != 0:
+                raise ExternalError(f"npx skills find failed: {result.stderr.strip()}")
+
+            hits = _parse_find_output(result.stdout)
+            if not hits:
+                raise ExternalError(
+                    f"npx skills find produced no results (query={query!r})."
+                )
+            return hits
+
 
 NPX_SKILLS: _NpxSkillsVendor = _NpxSkillsVendor()
 """Module-level singleton registered as the npx-skills vendor."""
 
-__all__ = ["NPX_SKILLS"]
+__all__ = ["NPX_SKILLS", "FindResult"]
