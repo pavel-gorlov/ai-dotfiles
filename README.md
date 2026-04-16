@@ -261,13 +261,9 @@ are enforced via `commitizen`.
   already symlinked from an active project or global manifest, first run
   `ai-dotfiles remove <kind>:<name>` to detach the symlinks, then
   `vendor remove`.
-- `vendor npx_skills` currently does not parse the upstream `skills` CLI
-  output. Both `list` and `install` against a real registry exit non-zero
-  because (a) the upstream formats skill names as indented bullets rather
-  than `- name` and (b) it writes copies into `./.claude/skills/` (relative
-  to `cwd`) rather than `$HOME/.claude/skills/`, so the vendor finds no
-  results in its staging `HOME`. Until this is fixed, prefer `vendor github`
-  for skill sources that live in a Git repo.
+- `vendor npx_skills` does not propagate the upstream CLI's rich
+  interactive UI to stdout — only the parsed list of skills (for `list`)
+  and final placement path (for `install`) are shown.
 - `init -g` is not safe to run under `poetry run` with a `HOME` override
   (Poetry itself stores its virtualenvs under the real `$HOME`). To isolate
   the command for testing, either invoke the installed entry point directly

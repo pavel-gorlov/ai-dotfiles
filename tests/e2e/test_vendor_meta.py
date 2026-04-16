@@ -480,8 +480,8 @@ def test_vendor_npx_skills_install_select_parsed(
     )
     assert result.exit_code == 0, result.output
     argv: list[str] = captured["argv"]
-    assert "-s" in argv
-    s_idx = argv.index("-s")
+    assert "--skill" in argv
+    s_idx = argv.index("--skill")
     assert argv[s_idx + 1 : s_idx + 3] == ["one", "two"]
 
 

@@ -97,33 +97,85 @@ def _materialize_skills(
 # ── list_source ──
 
 
-def test_list_source_parses_skill_names(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Canonical list-output parses into ordered skill names."""
+# Real-world fixture captured from ``npx skills add vercel-labs/agent-skills --list``
+# (April 2026). Skill name lines use U+2502 ``│`` + 4 spaces + name; description
+# lines use 6+ spaces of indent. ANSI escape sequences are part of the real
+# output and must be stripped by the parser.
+_REAL_LIST_OUTPUT = (
+    "\x1b[38;5;250m███╗\x1b[0m\n"
+    "\n"
+    "┌   skills \n"
+    "│\n"
+    "│  Tip: use --yes (-y) and --global (-g) flags to install without prompts.\n"
+    "│\n"
+    "◇  Source: https://github.com/vercel-labs/agent-skills.git\n"
+    "│\n"
+    "\x1b[?25l◇  Found 7 skills\n"
+    "\n"
+    "│\n"
+    "◇  Available Skills\n"
+    "│\n"
+    "│    vercel-composition-patterns\n"
+    "│\n"
+    "│      React composition patterns that scale. Use when refactoring...\n"
+    "│\n"
+    "│    deploy-to-vercel\n"
+    "│\n"
+    "│      Deploy applications and websites to Vercel.\n"
+    "│\n"
+    "│    vercel-react-best-practices\n"
+    "│\n"
+    "│      React and Next.js performance optimization guidelines.\n"
+    "│\n"
+    "└  Done!\n"
+)
+
+
+def test_list_source_parses_real_upstream_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Real box-drawing output from ``skills add --list`` parses correctly."""
     captured: dict[str, Any] = {}
-    stdout = (
-        "Found skills in vercel-labs/skills:\n"
-        "- skill-one\n"
-        "- skill-two\n"
-        "- skill-three\n"
-    )
-    _install_fake_run(monkeypatch, captured=captured, stdout=stdout)
+    _install_fake_run(monkeypatch, captured=captured, stdout=_REAL_LIST_OUTPUT)
 
-    names = list(NPX_SKILLS.list_source("vercel-labs/skills"))
+    names = list(NPX_SKILLS.list_source("vercel-labs/agent-skills"))
 
-    assert names == ["skill-one", "skill-two", "skill-three"]
-    # --list flag is present and source is passed through.
+    assert names == [
+        "vercel-composition-patterns",
+        "deploy-to-vercel",
+        "vercel-react-best-practices",
+    ]
     assert "--list" in captured["argv"]
-    assert "vercel-labs/skills" in captured["argv"]
+    assert "vercel-labs/agent-skills" in captured["argv"]
     assert captured["argv"][:2] == ["npx", "-y"]
 
 
+def test_list_source_ignores_descriptions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Description lines (6+ space indent) are not mistaken for names."""
+    captured: dict[str, Any] = {}
+    stdout = (
+        "◇  Available Skills\n"
+        "│\n"
+        "│    skill-a\n"
+        "│\n"
+        "│      Description line with spaces that looks vaguely name-ish\n"
+        "│\n"
+        "│    skill-b\n"
+        "│\n"
+        "│      Another description.\n"
+    )
+    _install_fake_run(monkeypatch, captured=captured, stdout=stdout)
+
+    assert list(NPX_SKILLS.list_source("x")) == ["skill-a", "skill-b"]
+
+
 def test_list_source_empty_output_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Zero skills parsed → ExternalError."""
+    """No skills parsed → ExternalError."""
     captured: dict[str, Any] = {}
     _install_fake_run(
         monkeypatch,
         captured=captured,
-        stdout="Found skills in somewhere:\n",
+        stdout="◇  Available Skills\n│\n│  (nothing)\n",
     )
 
     with pytest.raises(ExternalError) as excinfo:
@@ -147,15 +199,19 @@ def test_list_source_nonzero_exit_raises(monkeypatch: pytest.MonkeyPatch) -> Non
     assert "boom: bad source" in str(excinfo.value)
 
 
-def test_list_source_is_permissive_on_whitespace(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Extra leading whitespace / blank lines don't confuse the parser."""
+def test_list_source_strips_ansi_codes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ANSI colour codes around the name are removed."""
     captured: dict[str, Any] = {}
-    stdout = "Found skills in x:\n" "\n" "   - alpha\n" "- beta\n" "\n" "  - gamma\n"
+    stdout = (
+        "◇  Available Skills\n"
+        "│\n"
+        "\x1b[32m│    coloured-name\x1b[0m\n"
+        "│\n"
+        "│      desc\n"
+    )
     _install_fake_run(monkeypatch, captured=captured, stdout=stdout)
 
-    assert list(NPX_SKILLS.list_source("x")) == ["alpha", "beta", "gamma"]
+    assert list(NPX_SKILLS.list_source("x")) == ["coloured-name"]
 
 
 # ── fetch ──
@@ -188,18 +244,22 @@ def test_fetch_happy_path_returns_items(
         assert (item.source_dir / "SKILL.md").is_file()
         assert item.license is None
 
-    # Baseline argv includes --copy and -y and no -s.
+    # Baseline argv includes -g, --agent claude-code, --copy, -y and no --skill.
+    assert "-g" in captured["argv"]
+    assert captured["argv"].count("--agent") == 1
+    agent_idx = captured["argv"].index("--agent")
+    assert captured["argv"][agent_idx + 1] == "claude-code"
     assert "--copy" in captured["argv"]
     assert "-y" in captured["argv"]
-    assert "-s" not in captured["argv"]
+    assert "--skill" not in captured["argv"]
     # HOME is redirected under workdir.
     assert captured["env"]["HOME"].startswith(str(tmp_path))
 
 
-def test_fetch_with_select_passes_dash_s(
+def test_fetch_with_select_passes_dash_skill(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``select=('one','two')`` forwards as ``-s one two``."""
+    """``select=('one','two')`` forwards as ``--skill one two``."""
     captured: dict[str, Any] = {}
 
     def side_effect(argv: list[str], env: dict[str, Any]) -> None:
@@ -214,9 +274,9 @@ def test_fetch_with_select_passes_dash_s(
     )
 
     argv = captured["argv"]
-    assert "-s" in argv
-    s_idx = argv.index("-s")
-    # The two selected names appear right after ``-s``.
+    assert "--skill" in argv
+    s_idx = argv.index("--skill")
+    # The two selected names appear right after ``--skill``.
     assert argv[s_idx + 1 : s_idx + 3] == ["one", "two"]
     assert {i.name for i in items} == {"one", "two"}
 

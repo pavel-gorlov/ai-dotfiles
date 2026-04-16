@@ -5,15 +5,19 @@ wrapping the upstream ``skills`` CLI (vercel-labs/skills), invoked with
 ``npx -y skills add ...``. Exposes a module-level :data:`NPX_SKILLS`
 instance which V4 registers in ``vendors/__init__.py``.
 
-The upstream CLI has no ``--output`` flag and writes into the user's
-``~/.claude/skills/`` unconditionally. We redirect that target by
-setting ``HOME`` to a directory under the caller's ``workdir`` when we
-invoke the subprocess, then enumerate the skills it materialized.
+The upstream CLI has no ``--output`` flag. With ``-g`` (global) it
+writes to ``$HOME/.claude/skills/``; with ``--agent claude-code`` it
+produces only Claude Code output (without, it scatters copies into
+``.crush/skills/``, ``.roo/skills/``, etc. — one per known IDE). We
+set ``HOME`` to a directory under the caller's ``workdir`` to redirect
+the target, and pass both flags so the output lands exactly where we
+expect, then enumerate the skills it materialized.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess  # noqa: S404 — vendor intentionally shells out to npx
 from collections.abc import Iterable
@@ -86,23 +90,53 @@ def _subprocess_env(home: Path) -> dict[str, str]:
     return env
 
 
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+# Box-drawing frame lines that contain a skill name use exactly 4 spaces
+# of indent after the vertical bar; description lines use 6+. The name
+# itself is a valid package-style identifier (lowercase letter first,
+# then alphanumerics / hyphens / underscores).
+_LIST_NAME_RE = re.compile(r"^\u2502 {4}([a-z][A-Za-z0-9_-]*)\s*$")
+_LIST_MARKER = "Available Skills"
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes (colour + cursor movement) from text."""
+    return _ANSI_ESCAPE_RE.sub("", text)
+
+
 def _parse_list_output(stdout: str) -> list[str]:
     """Parse ``npx skills add <source> --list`` stdout into skill names.
 
-    Permissive parser: takes every line that starts (after stripping
-    leading whitespace) with ``- `` and treats the remainder as a skill
-    name. Blank lines and the header are ignored. Returns names in the
-    order they appear.
+    The upstream CLI renders a ``clack``-style frame with box-drawing
+    characters and ANSI colour codes. After the ``Available Skills``
+    marker, each skill name appears on its own line with exactly four
+    spaces after the leading ``\u2502``; the following lines (6+ space
+    indent) hold the description. We strip ANSI, find the marker, and
+    match name lines via a strict regex so descriptions don't leak in.
+
+    Returns names in the order they appear. An empty result is a
+    parsing failure and should be surfaced by the caller.
     """
+    cleaned = _strip_ansi(stdout)
+    lines = cleaned.splitlines()
+
+    start = 0
+    for idx, line in enumerate(lines):
+        if _LIST_MARKER in line:
+            start = idx + 1
+            break
+    else:
+        # No marker found — probably an error path or non-interactive mode.
+        # Fall through to scan the whole output; the regex is strict enough
+        # that false positives are unlikely.
+        start = 0
+
     names: list[str] = []
-    for raw_line in stdout.splitlines():
-        stripped = raw_line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith("- "):
-            name = stripped[2:].strip()
-            if name:
-                names.append(name)
+    for line in lines[start:]:
+        match = _LIST_NAME_RE.match(line.rstrip())
+        if match is not None:
+            names.append(match.group(1))
     return names
 
 
@@ -204,9 +238,25 @@ class _NpxSkillsVendor:
         home = workdir / _NPX_HOME_DIRNAME
         home.mkdir(parents=True, exist_ok=True)
 
-        argv: list[str] = ["npx", "-y", "skills", "add", source, "--copy", "-y"]
+        # -g: install globally (writes to $HOME/.claude/skills/).
+        # --agent claude-code: produce only Claude Code output (without
+        #   this the CLI writes a separate copy for every IDE it knows).
+        # --copy: real files, not symlinks back into npx cache.
+        # -y: skip interactive confirmation.
+        argv: list[str] = [
+            "npx",
+            "-y",
+            "skills",
+            "add",
+            source,
+            "-g",
+            "--agent",
+            "claude-code",
+            "--copy",
+            "-y",
+        ]
         if select:
-            argv.append("-s")
+            argv.append("--skill")
             argv.extend(select)
 
         result = _run(argv, cwd=workdir, env=_subprocess_env(home))
