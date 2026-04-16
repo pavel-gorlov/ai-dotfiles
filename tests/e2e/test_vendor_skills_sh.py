@@ -1,4 +1,4 @@
-"""End-to-end tests for the ``npx_skills`` vendor.
+"""End-to-end tests for the ``skills_sh`` vendor.
 
 All tests exercise the :class:`~ai_dotfiles.vendors.base.Vendor`
 protocol surface directly. ``subprocess.run`` is monkeypatched to
@@ -17,7 +17,7 @@ import pytest
 
 from ai_dotfiles.core.errors import ExternalError
 from ai_dotfiles.vendors.base import Vendor
-from ai_dotfiles.vendors.npx_skills import NPX_SKILLS, FindResult
+from ai_dotfiles.vendors.skills_sh import SKILLS_SH, FindResult
 
 FakeRun = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -71,7 +71,7 @@ def _install_fake_run(
             args=argv, returncode=returncode, stdout=stdout, stderr=stderr
         )
 
-    monkeypatch.setattr("ai_dotfiles.vendors.npx_skills.subprocess.run", fake_run)
+    monkeypatch.setattr("ai_dotfiles.vendors.skills_sh.subprocess.run", fake_run)
 
 
 def _materialize_skills(
@@ -138,7 +138,7 @@ def test_list_source_parses_real_upstream_output(
     captured: dict[str, Any] = {}
     _install_fake_run(monkeypatch, captured=captured, stdout=_REAL_LIST_OUTPUT)
 
-    names = list(NPX_SKILLS.list_source("vercel-labs/agent-skills"))
+    names = list(SKILLS_SH.list_source("vercel-labs/agent-skills"))
 
     assert names == [
         "vercel-composition-patterns",
@@ -166,7 +166,7 @@ def test_list_source_ignores_descriptions(monkeypatch: pytest.MonkeyPatch) -> No
     )
     _install_fake_run(monkeypatch, captured=captured, stdout=stdout)
 
-    assert list(NPX_SKILLS.list_source("x")) == ["skill-a", "skill-b"]
+    assert list(SKILLS_SH.list_source("x")) == ["skill-a", "skill-b"]
 
 
 def test_list_source_empty_output_raises(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -179,7 +179,7 @@ def test_list_source_empty_output_raises(monkeypatch: pytest.MonkeyPatch) -> Non
     )
 
     with pytest.raises(ExternalError) as excinfo:
-        list(NPX_SKILLS.list_source("somewhere"))
+        list(SKILLS_SH.list_source("somewhere"))
     assert "no skills" in str(excinfo.value).lower()
 
 
@@ -195,7 +195,7 @@ def test_list_source_nonzero_exit_raises(monkeypatch: pytest.MonkeyPatch) -> Non
     )
 
     with pytest.raises(ExternalError) as excinfo:
-        list(NPX_SKILLS.list_source("bad/src"))
+        list(SKILLS_SH.list_source("bad/src"))
     assert "boom: bad source" in str(excinfo.value)
 
 
@@ -211,7 +211,7 @@ def test_list_source_strips_ansi_codes(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     _install_fake_run(monkeypatch, captured=captured, stdout=stdout)
 
-    assert list(NPX_SKILLS.list_source("x")) == ["coloured-name"]
+    assert list(SKILLS_SH.list_source("x")) == ["coloured-name"]
 
 
 # ── fetch ──
@@ -234,13 +234,13 @@ def test_fetch_happy_path_returns_items(
 
     _install_fake_run(monkeypatch, captured=captured, side_effect=side_effect)
 
-    items = NPX_SKILLS.fetch("vercel-labs/skills", select=None, workdir=tmp_path)
+    items = SKILLS_SH.fetch("vercel-labs/skills", select=None, workdir=tmp_path)
 
     assert [i.name for i in items] == ["alpha", "beta"]
     for item in items:
         assert item.kind == "skill"
         assert item.source_dir.is_dir()
-        assert item.origin == "npx:skills:vercel-labs/skills"
+        assert item.origin == "skills_sh:vercel-labs/skills"
         assert (item.source_dir / "SKILL.md").is_file()
         assert item.license is None
 
@@ -269,7 +269,7 @@ def test_fetch_with_select_passes_dash_skill(
 
     _install_fake_run(monkeypatch, captured=captured, side_effect=side_effect)
 
-    items = NPX_SKILLS.fetch(
+    items = SKILLS_SH.fetch(
         "vercel-labs/skills", select=("one", "two"), workdir=tmp_path
     )
 
@@ -294,7 +294,7 @@ def test_fetch_nonzero_exit_raises_external_error(
     )
 
     with pytest.raises(ExternalError) as excinfo:
-        NPX_SKILLS.fetch("nope", select=None, workdir=tmp_path)
+        SKILLS_SH.fetch("nope", select=None, workdir=tmp_path)
     assert "E: source not found" in str(excinfo.value)
 
 
@@ -312,7 +312,7 @@ def test_fetch_success_but_empty_raises(
     _install_fake_run(monkeypatch, captured=captured, side_effect=side_effect)
 
     with pytest.raises(ExternalError) as excinfo:
-        NPX_SKILLS.fetch("empty", select=None, workdir=tmp_path)
+        SKILLS_SH.fetch("empty", select=None, workdir=tmp_path)
     assert "no skill" in str(excinfo.value).lower()
 
 
@@ -324,7 +324,7 @@ def test_fetch_missing_skills_dir_raises(
     _install_fake_run(monkeypatch, captured=captured)
 
     with pytest.raises(ExternalError) as excinfo:
-        NPX_SKILLS.fetch("nothing", select=None, workdir=tmp_path)
+        SKILLS_SH.fetch("nothing", select=None, workdir=tmp_path)
     assert "no skills directory" in str(excinfo.value).lower()
 
 
@@ -344,7 +344,7 @@ def test_fetch_skips_non_directory_entries(
 
     _install_fake_run(monkeypatch, captured=captured, side_effect=side_effect)
 
-    items = NPX_SKILLS.fetch("src", select=None, workdir=tmp_path)
+    items = SKILLS_SH.fetch("src", select=None, workdir=tmp_path)
 
     assert [i.name for i in items] == ["real-skill"]
 
@@ -371,7 +371,7 @@ def test_fetch_detects_license_first_line_truncated(
 
     _install_fake_run(monkeypatch, captured=captured, side_effect=side_effect)
 
-    items = NPX_SKILLS.fetch("src", select=None, workdir=tmp_path)
+    items = SKILLS_SH.fetch("src", select=None, workdir=tmp_path)
     assert len(items) == 1
     assert items[0].license == "MIT License"
 
@@ -390,7 +390,7 @@ def test_fetch_license_truncated_to_60_chars(
 
     _install_fake_run(monkeypatch, captured=captured, side_effect=side_effect)
 
-    items = NPX_SKILLS.fetch("src", select=None, workdir=tmp_path)
+    items = SKILLS_SH.fetch("src", select=None, workdir=tmp_path)
     assert items[0].license is not None
     assert len(items[0].license) == 60
     assert items[0].license == "X" * 60
@@ -401,17 +401,17 @@ def test_fetch_license_truncated_to_60_chars(
 
 def test_vendor_metadata() -> None:
     """Module-level constants for the vendor."""
-    assert NPX_SKILLS.name == "npx_skills"
-    assert NPX_SKILLS.display_name == "npx skills"
-    assert NPX_SKILLS.description == (
-        "Install Claude Code skills via the 'skills' npm CLI."
+    assert SKILLS_SH.name == "skills_sh"
+    assert SKILLS_SH.display_name == "skills.sh"
+    assert SKILLS_SH.description == (
+        "Install Claude Code skills from the skills.sh marketplace."
     )
     # Runtime protocol check.
-    assert isinstance(NPX_SKILLS, Vendor)
+    assert isinstance(SKILLS_SH, Vendor)
 
 
 def test_vendor_deps_contains_npx() -> None:
-    dep_names = [d.name for d in NPX_SKILLS.deps]
+    dep_names = [d.name for d in SKILLS_SH.deps]
     assert "npx" in dep_names
 
 
@@ -419,10 +419,10 @@ def test_npx_dependency_is_installed_true_when_on_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "ai_dotfiles.vendors.npx_skills.shutil.which",
+        "ai_dotfiles.vendors.skills_sh.shutil.which",
         lambda _name: "/usr/bin/npx",
     )
-    npx_dep = next(d for d in NPX_SKILLS.deps if d.name == "npx")
+    npx_dep = next(d for d in SKILLS_SH.deps if d.name == "npx")
     assert npx_dep.is_installed() is True
 
 
@@ -430,9 +430,9 @@ def test_npx_dependency_is_installed_false_when_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "ai_dotfiles.vendors.npx_skills.shutil.which", lambda _name: None
+        "ai_dotfiles.vendors.skills_sh.shutil.which", lambda _name: None
     )
-    npx_dep = next(d for d in NPX_SKILLS.deps if d.name == "npx")
+    npx_dep = next(d for d in SKILLS_SH.deps if d.name == "npx")
     assert npx_dep.is_installed() is False
 
 
@@ -471,7 +471,7 @@ def test_find_parses_real_upstream_output(
     captured: dict[str, Any] = {}
     _install_fake_run(monkeypatch, captured=captured, stdout=_REAL_FIND_OUTPUT)
 
-    results = NPX_SKILLS.find("react")
+    results = SKILLS_SH.find("react")
 
     assert len(results) == 3
     assert results[0] == FindResult(
@@ -493,7 +493,7 @@ def test_find_without_installs_count(monkeypatch: pytest.MonkeyPatch) -> None:
     stdout = "alice/skills@thing\n" "\u2514 https://skills.sh/alice/skills/thing\n"
     _install_fake_run(monkeypatch, captured=captured, stdout=stdout)
 
-    results = NPX_SKILLS.find("thing")
+    results = SKILLS_SH.find("thing")
     assert len(results) == 1
     assert results[0].installs == ""
     assert results[0].url == "https://skills.sh/alice/skills/thing"
@@ -502,9 +502,9 @@ def test_find_without_installs_count(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_find_empty_query_raises() -> None:
     """Blank query is rejected before any subprocess call."""
     with pytest.raises(ValueError):
-        NPX_SKILLS.find("")
+        SKILLS_SH.find("")
     with pytest.raises(ValueError):
-        NPX_SKILLS.find("   ")
+        SKILLS_SH.find("   ")
 
 
 def test_find_nonzero_exit_raises(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -516,7 +516,7 @@ def test_find_nonzero_exit_raises(monkeypatch: pytest.MonkeyPatch) -> None:
         stderr="upstream boom\n",
     )
     with pytest.raises(ExternalError) as excinfo:
-        NPX_SKILLS.find("query")
+        SKILLS_SH.find("query")
     assert "upstream boom" in str(excinfo.value)
 
 
@@ -528,7 +528,7 @@ def test_find_empty_result_raises(monkeypatch: pytest.MonkeyPatch) -> None:
         stdout="no matches\n",
     )
     with pytest.raises(ExternalError) as excinfo:
-        NPX_SKILLS.find("nothing")
+        SKILLS_SH.find("nothing")
     assert "no results" in str(excinfo.value).lower()
 
 
@@ -543,8 +543,8 @@ def test_fetch_missing_npx_raises_external_error(
     def fake_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         raise FileNotFoundError(2, "No such file", "npx")
 
-    monkeypatch.setattr("ai_dotfiles.vendors.npx_skills.subprocess.run", fake_run)
+    monkeypatch.setattr("ai_dotfiles.vendors.skills_sh.subprocess.run", fake_run)
 
     with pytest.raises(ExternalError) as excinfo:
-        NPX_SKILLS.fetch("x", select=None, workdir=tmp_path)
+        SKILLS_SH.fetch("x", select=None, workdir=tmp_path)
     assert "npx executable not found" in str(excinfo.value)

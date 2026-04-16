@@ -24,9 +24,9 @@ TOP_LEVEL_COMMANDS = [
 
 DOMAIN_SUBCOMMANDS = ["add", "create", "delete", "list", "remove"]
 STACK_SUBCOMMANDS = ["add", "apply", "create", "delete", "list", "remove"]
-VENDOR_SUBCOMMANDS = ["github", "installed", "list", "npx_skills", "remove"]
+VENDOR_SUBCOMMANDS = ["github", "installed", "list", "skills_sh", "remove"]
 VENDOR_GITHUB_SUBCOMMANDS = ["deps", "install", "list"]
-VENDOR_NPX_SKILLS_SUBCOMMANDS = ["deps", "install", "list"]
+VENDOR_SKILLS_SH_SUBCOMMANDS = ["deps", "install", "list"]
 VENDOR_DEPS_SUBCOMMANDS = ["check", "install"]
 
 
@@ -77,12 +77,12 @@ def test_help_vendor_github() -> None:
         assert name in result.output, f"{name} missing from vendor github --help"
 
 
-def test_help_vendor_npx_skills() -> None:
+def test_help_vendor_skills_sh() -> None:
     runner = CliRunner()
-    result = runner.invoke(cli, ["vendor", "npx_skills", "--help"])
+    result = runner.invoke(cli, ["vendor", "skills_sh", "--help"])
     assert result.exit_code == 0
-    for name in VENDOR_NPX_SKILLS_SUBCOMMANDS:
-        assert name in result.output, f"{name} missing from vendor npx_skills --help"
+    for name in VENDOR_SKILLS_SH_SUBCOMMANDS:
+        assert name in result.output, f"{name} missing from vendor skills_sh --help"
 
 
 def test_help_vendor_github_deps() -> None:
@@ -93,14 +93,14 @@ def test_help_vendor_github_deps() -> None:
         assert name in result.output, f"{name} missing from vendor github deps --help"
 
 
-def test_help_vendor_npx_skills_deps() -> None:
+def test_help_vendor_skills_sh_deps() -> None:
     runner = CliRunner()
-    result = runner.invoke(cli, ["vendor", "npx_skills", "deps", "--help"])
+    result = runner.invoke(cli, ["vendor", "skills_sh", "deps", "--help"])
     assert result.exit_code == 0
     for name in VENDOR_DEPS_SUBCOMMANDS:
         assert (
             name in result.output
-        ), f"{name} missing from vendor npx_skills deps --help"
+        ), f"{name} missing from vendor skills_sh deps --help"
 
 
 @pytest.mark.parametrize("name", TOP_LEVEL_COMMANDS)

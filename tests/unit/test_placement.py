@@ -163,10 +163,8 @@ def test_place_item_vendor_name_recorded(tmp_path: Path) -> None:
     catalog = tmp_path / "catalog"
     item = _make_staged_skill(tmp_path)
 
-    final = place_item(
-        item, catalog_root=catalog, force=False, vendor_name="npx_skills"
-    )
+    final = place_item(item, catalog_root=catalog, force=False, vendor_name="skills_sh")
 
     meta = source_file.read(final)
     assert meta is not None
-    assert meta.vendor == "npx_skills"
+    assert meta.vendor == "skills_sh"

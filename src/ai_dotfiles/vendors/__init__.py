@@ -12,7 +12,7 @@ from typing import cast
 
 from ai_dotfiles.vendors.base import Vendor
 from ai_dotfiles.vendors.github import GITHUB
-from ai_dotfiles.vendors.npx_skills import NPX_SKILLS
+from ai_dotfiles.vendors.skills_sh import SKILLS_SH
 
 # The two singletons satisfy the :class:`Vendor` protocol structurally,
 # but mypy's strict protocol variance check rejects a direct assignment
@@ -22,7 +22,7 @@ from ai_dotfiles.vendors.npx_skills import NPX_SKILLS
 # on) or the vendor implementations.
 REGISTRY: dict[str, Vendor] = {
     "github": cast(Vendor, GITHUB),
-    "npx_skills": cast(Vendor, NPX_SKILLS),
+    "skills_sh": cast(Vendor, SKILLS_SH),
 }
 
-__all__ = ["GITHUB", "NPX_SKILLS", "REGISTRY", "Vendor"]
+__all__ = ["GITHUB", "SKILLS_SH", "REGISTRY", "Vendor"]

@@ -289,7 +289,7 @@ def _make_find_command(vendor: Vendor) -> click.Command | None:
     """Build the ``find`` subcommand for vendors that implement it.
 
     Returns ``None`` for vendors without a ``find`` method — only
-    ``npx_skills`` exposes one today. Each hit is printed as
+    ``skills_sh`` exposes one today. Each hit is printed as
     ``<source>@<name>  [<installs>]`` followed by the marketplace URL
     indented beneath it.
     """

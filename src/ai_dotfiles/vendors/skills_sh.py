@@ -1,9 +1,10 @@
-"""npx_skills vendor: install Claude Code skills via the ``skills`` npm CLI.
+"""skills_sh vendor: install Claude Code skills from the skills.sh marketplace.
 
 Implements the :class:`~ai_dotfiles.vendors.base.Vendor` protocol by
-wrapping the upstream ``skills`` CLI (vercel-labs/skills), invoked with
-``npx -y skills add ...``. Exposes a module-level :data:`NPX_SKILLS`
-instance which V4 registers in ``vendors/__init__.py``.
+wrapping the upstream ``skills`` CLI (``vercel-labs/skills``), invoked
+as ``npx -y skills add ...``. The marketplace backing the CLI is
+``https://skills.sh/`` — hence the vendor name. Exposes a module-level
+:data:`SKILLS_SH` instance which ``vendors/__init__.py`` registers.
 
 The upstream CLI has no ``--output`` flag. With ``-g`` (global) it
 writes to ``$HOME/.claude/skills/``; with ``--agent claude-code`` it
@@ -230,17 +231,17 @@ def _run(
     except FileNotFoundError as exc:
         raise ExternalError(
             "npx executable not found on PATH; install Node.js (see "
-            "'ai-dotfiles vendor npx_skills deps install')."
+            "'ai-dotfiles vendor skills_sh deps install')."
         ) from exc
 
 
 @dataclass(frozen=True)
-class _NpxSkillsVendor:
-    """Concrete npx-skills vendor implementing the :class:`Vendor` protocol."""
+class _SkillsShVendor:
+    """Concrete skills.sh vendor implementing the :class:`Vendor` protocol."""
 
-    name: str = "npx_skills"
-    display_name: str = "npx skills"
-    description: str = "Install Claude Code skills via the 'skills' npm CLI."
+    name: str = "skills_sh"
+    display_name: str = "skills.sh"
+    description: str = "Install Claude Code skills from the skills.sh marketplace."
     deps: tuple[Dependency, ...] = (_NPX_DEPENDENCY,)
 
     def list_source(self, source: str) -> Iterable[str]:
@@ -343,7 +344,7 @@ class _NpxSkillsVendor:
                     kind="skill",
                     name=entry.name,
                     source_dir=entry,
-                    origin=f"npx:skills:{source}",
+                    origin=f"skills_sh:{source}",
                     license=_detect_license(entry),
                 )
             )
@@ -397,7 +398,7 @@ class _NpxSkillsVendor:
             return hits
 
 
-NPX_SKILLS: _NpxSkillsVendor = _NpxSkillsVendor()
-"""Module-level singleton registered as the npx-skills vendor."""
+SKILLS_SH: _SkillsShVendor = _SkillsShVendor()
+"""Module-level singleton registered as the skills.sh vendor."""
 
-__all__ = ["NPX_SKILLS", "FindResult"]
+__all__ = ["SKILLS_SH", "FindResult"]

@@ -140,10 +140,10 @@ available.
 | `vendor github install <url> [--force]`           | Sparse-clone a GitHub subtree into the catalog |
 | `vendor github list <url>`                        | List the top-level entries the URL exposes |
 | `vendor github deps check \| install [--yes]`     | Check for `git`, or install it on demand |
-| `vendor npx_skills install <source> [--force] [--select a,b]` | Install skills via the upstream `skills` npm CLI |
-| `vendor npx_skills list <source>`                 | List skills a source exposes |
-| `vendor npx_skills find <query>`                  | Search the skills.sh marketplace by keyword |
-| `vendor npx_skills deps check \| install [--yes]` | Check for `npx` / Node.js, or install on demand |
+| `vendor skills_sh install <source> [--force] [--select a,b]` | Install skills via the upstream `skills` npm CLI |
+| `vendor skills_sh list <source>`                 | List skills a source exposes |
+| `vendor skills_sh find <query>`                  | Search the skills.sh marketplace by keyword |
+| `vendor skills_sh deps check \| install [--yes]` | Check for `npx` / Node.js, or install on demand |
 
 After a successful `install`, the item is written to
 `catalog/<kind>s/<name>/` alongside a `.source` file recording the
@@ -163,20 +163,20 @@ ai-dotfiles add skill:pdf
 URL; the element kind (skill/agent/rule) is auto-detected from the
 fetched content.
 
-#### Example: npx skills
+#### Example: skills.sh
 
 ```bash
 # One-time: install Node.js (npx ships with it)
-ai-dotfiles vendor npx_skills deps install
+ai-dotfiles vendor skills_sh deps install
 
 # Search the skills.sh marketplace
-ai-dotfiles vendor npx_skills find react
+ai-dotfiles vendor skills_sh find react
 
 # Enumerate what a specific source exposes
-ai-dotfiles vendor npx_skills list vercel-labs/agent-skills
+ai-dotfiles vendor skills_sh list vercel-labs/agent-skills
 
 # Install a subset
-ai-dotfiles vendor npx_skills install vercel-labs/agent-skills --select deploy-to-vercel
+ai-dotfiles vendor skills_sh install vercel-labs/agent-skills --select deploy-to-vercel
 ai-dotfiles add skill:deploy-to-vercel
 ```
 
@@ -256,7 +256,7 @@ are enforced via `commitizen`.
   unrelated repo will be accepted and may produce confusing errors on first
   `install`.
 - Vendor plugins have opt-in runtime dependencies: `vendor github` requires
-  `git` on `PATH`; `vendor npx_skills` requires Node.js / `npx`. Install them
+  `git` on `PATH`; `vendor skills_sh` requires Node.js / `npx`. Install them
   on demand with `ai-dotfiles vendor <vendor> deps install`. The core CLI
   itself has no external runtime dependencies.
 - No auto-update for vendored items yet — re-run `vendor <v> install --force`
@@ -265,7 +265,7 @@ are enforced via `commitizen`.
   already symlinked from an active project or global manifest, first run
   `ai-dotfiles remove <kind>:<name>` to detach the symlinks, then
   `vendor remove`.
-- `vendor npx_skills` does not propagate the upstream CLI's rich
+- `vendor skills_sh` does not propagate the upstream CLI's rich
   interactive UI to stdout — only the parsed list of skills (for `list`)
   and final placement path (for `install`) are shown.
 - `init -g` is not safe to run under `poetry run` with a `HOME` override

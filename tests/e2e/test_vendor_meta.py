@@ -4,7 +4,7 @@ Covers:
 
 * Meta subcommands: ``vendor list``, ``vendor installed``, ``vendor remove``.
 * Per-vendor subgroups for ``github`` (``install`` / ``list`` / ``deps``)
-  and ``npx_skills`` (``install`` / ``deps``).
+  and ``skills_sh`` (``install`` / ``deps``).
 
 The upstream GitHub and npx CLIs are mocked to avoid network + npm access.
 """
@@ -93,7 +93,7 @@ def _patch_which(
         return f"/usr/bin/{name}" if name in present else None
 
     monkeypatch.setattr("ai_dotfiles.vendors.github.shutil.which", fake_which)
-    monkeypatch.setattr("ai_dotfiles.vendors.npx_skills.shutil.which", fake_which)
+    monkeypatch.setattr("ai_dotfiles.vendors.skills_sh.shutil.which", fake_which)
 
 
 def _patch_npx_subprocess(
@@ -105,7 +105,7 @@ def _patch_npx_subprocess(
     materialize: dict[str, dict[str, str]] | None = None,
     captured: dict[str, Any] | None = None,
 ) -> None:
-    """Patch ``subprocess.run`` inside ``vendors.npx_skills``."""
+    """Patch ``subprocess.run`` inside ``vendors.skills_sh``."""
 
     def fake_run(
         argv: list[str],
@@ -134,7 +134,7 @@ def _patch_npx_subprocess(
             args=argv, returncode=returncode, stdout=stdout, stderr=stderr
         )
 
-    monkeypatch.setattr("ai_dotfiles.vendors.npx_skills.subprocess.run", fake_run)
+    monkeypatch.setattr("ai_dotfiles.vendors.skills_sh.subprocess.run", fake_run)
 
 
 # ── vendor list ──────────────────────────────────────────────────────────────
@@ -156,7 +156,7 @@ def test_vendor_list_shows_both_vendors_with_deps(
     assert "DEPS" in result.output
     # Both vendors.
     assert "github" in result.output
-    assert "npx_skills" in result.output
+    assert "skills_sh" in result.output
     # Deps status reflects patched which.
     assert "git: +" in result.output
     assert "npx: x" in result.output
@@ -184,11 +184,11 @@ def test_vendor_installed_lists_catalog_entries(
         origin="github:acme/tools/skills/foo",
         fetched="2026-04-15",
     )
-    # Another vendored skill (via npx_skills).
+    # Another vendored skill (via skills_sh).
     _write_fake_source(
         catalog / "skills" / "bar",
-        vendor_name="npx_skills",
-        origin="npx:skills:vercel-labs/skills",
+        vendor_name="skills_sh",
+        origin="skills_sh:vercel-labs/skills",
         fetched="2026-04-14",
     )
     # Non-vendored: no .source file, should be skipped.
@@ -421,10 +421,10 @@ def test_vendor_github_deps_check_git_absent(
     assert "git: x missing" in result.output
 
 
-# ── vendor npx_skills install / deps ─────────────────────────────────────────
+# ── vendor skills_sh install / deps ─────────────────────────────────────────
 
 
-def test_vendor_npx_skills_install_happy_path(
+def test_vendor_skills_sh_install_happy_path(
     runner: CliRunner,
     tmp_storage: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -439,7 +439,7 @@ def test_vendor_npx_skills_install_happy_path(
         },
     )
 
-    result = runner.invoke(vendor, ["npx_skills", "install", "vercel-labs/skills"])
+    result = runner.invoke(vendor, ["skills_sh", "install", "vercel-labs/skills"])
     assert result.exit_code == 0, result.output
 
     catalog = _catalog(tmp_storage)
@@ -448,13 +448,13 @@ def test_vendor_npx_skills_install_happy_path(
     alpha_source = (catalog / "skills" / "alpha" / ".source").read_text(
         encoding="utf-8"
     )
-    assert "vendor: npx_skills" in alpha_source
-    assert "origin: npx:skills:vercel-labs/skills" in alpha_source
+    assert "vendor: skills_sh" in alpha_source
+    assert "origin: skills_sh:vercel-labs/skills" in alpha_source
     assert "Installed catalog/skills/alpha/" in result.output
     assert "Installed catalog/skills/beta/" in result.output
 
 
-def test_vendor_npx_skills_install_select_parsed(
+def test_vendor_skills_sh_install_select_parsed(
     runner: CliRunner,
     tmp_storage: Path,  # noqa: ARG001
     monkeypatch: pytest.MonkeyPatch,
@@ -471,7 +471,7 @@ def test_vendor_npx_skills_install_select_parsed(
     result = runner.invoke(
         vendor,
         [
-            "npx_skills",
+            "skills_sh",
             "install",
             "vercel-labs/skills",
             "--select",
@@ -485,7 +485,7 @@ def test_vendor_npx_skills_install_select_parsed(
     assert argv[s_idx + 1 : s_idx + 3] == ["one", "two"]
 
 
-def test_vendor_npx_skills_install_empty_select_entry_rejected(
+def test_vendor_skills_sh_install_empty_select_entry_rejected(
     runner: CliRunner,
     tmp_storage: Path,  # noqa: ARG001
     monkeypatch: pytest.MonkeyPatch,
@@ -495,7 +495,7 @@ def test_vendor_npx_skills_install_empty_select_entry_rejected(
     result = runner.invoke(
         vendor,
         [
-            "npx_skills",
+            "skills_sh",
             "install",
             "vercel-labs/skills",
             "--select",
@@ -506,10 +506,10 @@ def test_vendor_npx_skills_install_empty_select_entry_rejected(
     assert "empty entry" in result.output
 
 
-def test_vendor_npx_skills_find_prints_hits(
+def test_vendor_skills_sh_find_prints_hits(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`vendor npx_skills find <query>` prints source@name + URL per hit."""
+    """`vendor skills_sh find <query>` prints source@name + URL per hit."""
     _patch_which(monkeypatch, present={"npx"})
     stdout = (
         "vercel-labs/agent-skills@vercel-react-best-practices 321.7K installs\n"
@@ -521,7 +521,7 @@ def test_vendor_npx_skills_find_prints_hits(
     )
     _patch_npx_subprocess(monkeypatch, stdout=stdout)
 
-    result = runner.invoke(vendor, ["npx_skills", "find", "react"])
+    result = runner.invoke(vendor, ["skills_sh", "find", "react"])
 
     assert result.exit_code == 0, result.output
     assert "vercel-labs/agent-skills@vercel-react-best-practices" in result.output
@@ -530,14 +530,14 @@ def test_vendor_npx_skills_find_prints_hits(
     assert "alice/skills@thing" in result.output
 
 
-def test_vendor_npx_skills_find_no_results(
+def test_vendor_skills_sh_find_no_results(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """No matches → non-zero exit with error message."""
     _patch_which(monkeypatch, present={"npx"})
     _patch_npx_subprocess(monkeypatch, stdout="nothing here\n")
 
-    result = runner.invoke(vendor, ["npx_skills", "find", "zzznothing"])
+    result = runner.invoke(vendor, ["skills_sh", "find", "zzznothing"])
 
     assert result.exit_code != 0
     assert "no results" in result.output.lower()
@@ -550,21 +550,21 @@ def test_vendor_github_has_no_find_subcommand(runner: CliRunner) -> None:
     assert " find " not in result.output
 
 
-def test_vendor_npx_skills_deps_check_missing(
+def test_vendor_skills_sh_deps_check_missing(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Exit 1 when npx is missing."""
     _patch_which(monkeypatch, present=set())
-    result = runner.invoke(vendor, ["npx_skills", "deps", "check"])
+    result = runner.invoke(vendor, ["skills_sh", "deps", "check"])
     assert result.exit_code == 1, result.output
     assert "npx: x missing" in result.output
 
 
-def test_vendor_npx_skills_deps_check_present(
+def test_vendor_skills_sh_deps_check_present(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Exit 0 when npx is installed."""
     _patch_which(monkeypatch, present={"npx"})
-    result = runner.invoke(vendor, ["npx_skills", "deps", "check"])
+    result = runner.invoke(vendor, ["skills_sh", "deps", "check"])
     assert result.exit_code == 0, result.output
     assert "npx: + installed" in result.output

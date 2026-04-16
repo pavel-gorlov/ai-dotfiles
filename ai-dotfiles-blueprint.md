@@ -655,7 +655,7 @@ module-level singleton'ы в `vendors/__init__.py`:
 # src/ai_dotfiles/vendors/__init__.py
 REGISTRY: dict[str, Vendor] = {
     "github": cast(Vendor, GITHUB),
-    "npx_skills": cast(Vendor, NPX_SKILLS),
+    "skills_sh": cast(Vendor, SKILLS_SH),
 }
 ```
 
@@ -719,7 +719,7 @@ class Vendor(Protocol):
    ```python
    REGISTRY: dict[str, Vendor] = {
        "github": cast(Vendor, GITHUB),
-       "npx_skills": cast(Vendor, NPX_SKILLS),
+       "skills_sh": cast(Vendor, SKILLS_SH),
        "<name>": cast(Vendor, MY_VENDOR),
    }
    ```
@@ -733,7 +733,7 @@ class Vendor(Protocol):
 >=3.12). Требования подключают только сами плагины:
 
 - `vendor github` → `git` на `PATH`.
-- `vendor npx_skills` → Node.js / `npx` на `PATH`.
+- `vendor skills_sh` → Node.js / `npx` на `PATH`.
 
 Пользователь ставит зависимость по запросу через
 `ai-dotfiles vendor <name> deps install` (или

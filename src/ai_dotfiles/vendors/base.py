@@ -72,7 +72,7 @@ class SourceMeta:
 
 @runtime_checkable
 class Vendor(Protocol):
-    """Plugin interface implemented by concrete vendors (github, npx_skills, ...)."""
+    """Plugin interface implemented by concrete vendors (github, skills_sh, ...)."""
 
     name: str
     display_name: str
