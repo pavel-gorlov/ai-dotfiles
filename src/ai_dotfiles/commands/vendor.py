@@ -14,7 +14,7 @@ Structure
 * Per-vendor subgroups built dynamically from
   :data:`ai_dotfiles.vendors.REGISTRY`. For each vendor the group
   exposes ``install``, ``list`` (source contents) and a ``deps``
-  subgroup with ``check`` / ``install``.
+  subgroup with ``check``.
 
 All logic is delegated to :mod:`ai_dotfiles.vendors` and
 :mod:`ai_dotfiles.core`; this module is intentionally a thin CLI
@@ -322,7 +322,7 @@ def _make_find_command(vendor: Vendor) -> click.Command | None:
 
 
 def _make_deps_group(vendor: Vendor) -> click.Group:
-    """Build the ``deps`` subgroup (``check``/``install``) for ``vendor``."""
+    """Build the ``deps`` subgroup (``check``) for ``vendor``."""
 
     @click.group(name="deps", help=f"Manage '{vendor.name}' vendor dependencies.")
     def _deps_group() -> None:
@@ -336,28 +336,11 @@ def _make_deps_group(vendor: Vendor) -> click.Group:
             if dep.is_installed():
                 click.echo(f"{dep.name}: + installed")
             else:
-                click.echo(f"{dep.name}: x missing")
+                click.echo(f"{dep.name}: x missing  ->  {dep.install_url}")
                 any_missing = True
         sys.exit(1 if any_missing else 0)
 
-    @click.command(name="install")
-    @click.option(
-        "--yes",
-        "-y",
-        is_flag=True,
-        help="Skip confirmation prompts for each install command.",
-    )
-    def _deps_install(yes: bool) -> None:
-        """Install any missing dependencies for the vendor."""
-        try:
-            deps_mod.install(vendor, yes=yes)
-            ui.success(f"Dependencies for '{vendor.name}' are satisfied.")
-        except AiDotfilesError as exc:
-            ui.error(str(exc))
-            sys.exit(exc.exit_code)
-
     _deps_group.add_command(_deps_check)
-    _deps_group.add_command(_deps_install)
     return _deps_group
 
 

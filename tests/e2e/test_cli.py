@@ -27,7 +27,7 @@ STACK_SUBCOMMANDS = ["add", "apply", "create", "delete", "list", "remove"]
 VENDOR_SUBCOMMANDS = ["github", "installed", "list", "skills_sh", "remove"]
 VENDOR_GITHUB_SUBCOMMANDS = ["deps", "install", "list"]
 VENDOR_SKILLS_SH_SUBCOMMANDS = ["deps", "install", "list"]
-VENDOR_DEPS_SUBCOMMANDS = ["check", "install"]
+VENDOR_DEPS_SUBCOMMANDS = ["check"]
 
 
 def test_version() -> None:

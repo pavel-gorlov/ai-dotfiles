@@ -21,18 +21,14 @@ class Dependency:
         name: Human-readable dependency name (e.g. ``"git"``, ``"npx"``).
         check: Zero-arg callable returning ``True`` if the dependency is
             available on the current host.
-        install_cmd: Installation command keyed by ``sys.platform`` value
-            (``"darwin"``, ``"linux"``, ``"win32"``). Each value is an
-            argv-style list passed to ``subprocess.run``. Platforms
-            without an entry fall back to ``manual_hint``.
-        manual_hint: User-facing text explaining how to install the
-            dependency when we cannot automate it.
+        install_url: Upstream URL the user can follow to install the
+            dependency manually. ai-dotfiles itself never installs
+            system-level dependencies.
     """
 
     name: str
     check: Callable[[], bool]
-    install_cmd: dict[str, list[str]]
-    manual_hint: str
+    install_url: str
 
     def is_installed(self) -> bool:
         return self.check()

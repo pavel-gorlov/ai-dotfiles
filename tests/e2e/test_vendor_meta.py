@@ -414,11 +414,12 @@ def test_vendor_github_deps_check_git_present(
 def test_vendor_github_deps_check_git_absent(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Exit code 1 when git is missing."""
+    """Exit code 1 when git is missing; output includes install URL."""
     _patch_which(monkeypatch, present=set())
     result = runner.invoke(vendor, ["github", "deps", "check"])
     assert result.exit_code == 1, result.output
     assert "git: x missing" in result.output
+    assert "https://git-scm.com/" in result.output
 
 
 # ── vendor skills_sh install / deps ─────────────────────────────────────────
@@ -553,11 +554,12 @@ def test_vendor_github_has_no_find_subcommand(runner: CliRunner) -> None:
 def test_vendor_skills_sh_deps_check_missing(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Exit 1 when npx is missing."""
+    """Exit 1 when npx is missing; output includes install URL."""
     _patch_which(monkeypatch, present=set())
     result = runner.invoke(vendor, ["skills_sh", "deps", "check"])
     assert result.exit_code == 1, result.output
     assert "npx: x missing" in result.output
+    assert "https://nodejs.org/" in result.output
 
 
 def test_vendor_skills_sh_deps_check_present(

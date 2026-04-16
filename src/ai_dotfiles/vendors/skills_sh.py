@@ -42,14 +42,7 @@ def _npx_is_installed() -> bool:
 _NPX_DEPENDENCY = Dependency(
     name="npx",
     check=_npx_is_installed,
-    install_cmd={
-        "darwin": ["brew", "install", "node"],
-        "linux": ["apt-get", "install", "-y", "nodejs", "npm"],
-    },
-    manual_hint=(
-        "Install Node.js (which ships with npx) from https://nodejs.org/ "
-        "or your package manager."
-    ),
+    install_url="https://nodejs.org/",
 )
 
 
@@ -230,8 +223,8 @@ def _run(
         )
     except FileNotFoundError as exc:
         raise ExternalError(
-            "npx executable not found on PATH; install Node.js (see "
-            "'ai-dotfiles vendor skills_sh deps install')."
+            "npx executable not found on PATH; install Node.js from "
+            "https://nodejs.org/."
         ) from exc
 
 

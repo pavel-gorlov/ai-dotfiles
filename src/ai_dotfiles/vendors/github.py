@@ -36,13 +36,7 @@ def _git_is_installed() -> bool:
 _GIT_DEPENDENCY = Dependency(
     name="git",
     check=_git_is_installed,
-    install_cmd={
-        "darwin": ["brew", "install", "git"],
-        "linux": ["apt-get", "install", "-y", "git"],
-    },
-    manual_hint=(
-        "Install git from https://git-scm.com/downloads or your package manager."
-    ),
+    install_url="https://git-scm.com/",
 )
 
 
