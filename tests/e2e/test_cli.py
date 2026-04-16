@@ -24,6 +24,10 @@ TOP_LEVEL_COMMANDS = [
 
 DOMAIN_SUBCOMMANDS = ["add", "create", "delete", "list", "remove"]
 STACK_SUBCOMMANDS = ["add", "apply", "create", "delete", "list", "remove"]
+VENDOR_SUBCOMMANDS = ["github", "installed", "list", "npx_skills", "remove"]
+VENDOR_GITHUB_SUBCOMMANDS = ["deps", "install", "list"]
+VENDOR_NPX_SKILLS_SUBCOMMANDS = ["deps", "install", "list"]
+VENDOR_DEPS_SUBCOMMANDS = ["check", "install"]
 
 
 def test_version() -> None:
@@ -55,6 +59,48 @@ def test_help_stack() -> None:
     assert result.exit_code == 0
     for name in STACK_SUBCOMMANDS:
         assert name in result.output, f"{name} missing from stack --help"
+
+
+def test_help_vendor() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["vendor", "--help"])
+    assert result.exit_code == 0
+    for name in VENDOR_SUBCOMMANDS:
+        assert name in result.output, f"{name} missing from vendor --help"
+
+
+def test_help_vendor_github() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["vendor", "github", "--help"])
+    assert result.exit_code == 0
+    for name in VENDOR_GITHUB_SUBCOMMANDS:
+        assert name in result.output, f"{name} missing from vendor github --help"
+
+
+def test_help_vendor_npx_skills() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["vendor", "npx_skills", "--help"])
+    assert result.exit_code == 0
+    for name in VENDOR_NPX_SKILLS_SUBCOMMANDS:
+        assert name in result.output, f"{name} missing from vendor npx_skills --help"
+
+
+def test_help_vendor_github_deps() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["vendor", "github", "deps", "--help"])
+    assert result.exit_code == 0
+    for name in VENDOR_DEPS_SUBCOMMANDS:
+        assert name in result.output, f"{name} missing from vendor github deps --help"
+
+
+def test_help_vendor_npx_skills_deps() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["vendor", "npx_skills", "deps", "--help"])
+    assert result.exit_code == 0
+    for name in VENDOR_DEPS_SUBCOMMANDS:
+        assert (
+            name in result.output
+        ), f"{name} missing from vendor npx_skills deps --help"
 
 
 @pytest.mark.parametrize("name", TOP_LEVEL_COMMANDS)
