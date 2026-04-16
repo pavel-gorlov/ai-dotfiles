@@ -123,10 +123,58 @@ Run `ai-dotfiles <command> --help` for full options.
 
 ### Vendoring
 
+Third-party skills, agents and rules are fetched through named vendor
+plugins. Each vendor knows how to talk to one source (GitHub, the
+`skills` npm CLI, ...) and drops the result into the shared
+`catalog/`. The command tree is built dynamically from the vendor
+registry, so `vendor --help` always lists every vendor currently
+available.
+
+#### Command tree
+
 | Command | Description |
 |---------|-------------|
-| `vendor URL`       | Download a GitHub subtree into `catalog/` (auto-detects element type) |
-| `vendor -f URL`    | Overwrite the destination if it already exists |
+| `vendor list`                                     | Show registered vendors and whether their host dependencies are installed |
+| `vendor installed`                                | List every item in the catalog that was added by a vendor (reads `.source`) |
+| `vendor remove <name>`                            | Delete a vendored catalog entry by name (no-op for bare `.claude/` symlinks) |
+| `vendor github install <url> [--force]`           | Sparse-clone a GitHub subtree into the catalog |
+| `vendor github list <url>`                        | List the top-level entries the URL exposes |
+| `vendor github deps check \| install [--yes]`     | Check for `git`, or install it on demand |
+| `vendor npx_skills install <source> [--force] [--select a,b]` | Install skills via the upstream `skills` npm CLI |
+| `vendor npx_skills list <source>`                 | List skills a source exposes |
+| `vendor npx_skills deps check \| install [--yes]` | Check for `npx` / Node.js, or install on demand |
+
+After a successful `install`, the item is written to
+`catalog/<kind>s/<name>/` alongside a `.source` file recording the
+vendor, origin, fetch date and detected license. The CLI prints the
+`ai-dotfiles add` command needed to link it into a project or global
+manifest.
+
+#### Example: GitHub
+
+```bash
+ai-dotfiles vendor github install \
+  https://github.com/anthropics/skills/tree/main/skills/pdf
+ai-dotfiles add skill:pdf
+```
+
+`vendor github` accepts either a repo root URL or a `/tree/<branch>/<subpath>`
+URL; the element kind (skill/agent/rule) is auto-detected from the
+fetched content.
+
+#### Example: npx skills
+
+```bash
+# One-time: install Node.js (npx ships with it)
+ai-dotfiles vendor npx_skills deps install
+
+# Enumerate what the source exposes
+ai-dotfiles vendor npx_skills list vercel-labs/skills
+
+# Install a subset
+ai-dotfiles vendor npx_skills install vercel-labs/skills --select find-skills
+ai-dotfiles add skill:find-skills
+```
 
 ## Storage Structure
 
@@ -203,7 +251,28 @@ are enforced via `commitizen`.
 - `init -g --from` clones the storage repo but does not verify its layout; an
   unrelated repo will be accepted and may produce confusing errors on first
   `install`.
-- `vendor` uses git sparse-checkout and requires a working `git` on `PATH`.
+- Vendor plugins have opt-in runtime dependencies: `vendor github` requires
+  `git` on `PATH`; `vendor npx_skills` requires Node.js / `npx`. Install them
+  on demand with `ai-dotfiles vendor <vendor> deps install`. The core CLI
+  itself has no external runtime dependencies.
+- No auto-update for vendored items yet — re-run `vendor <v> install --force`
+  to refresh a catalog entry in place.
+- `vendor remove <name>` only deletes the catalog entry; if the item is
+  already symlinked from an active project or global manifest, first run
+  `ai-dotfiles remove <kind>:<name>` to detach the symlinks, then
+  `vendor remove`.
+- `vendor npx_skills` currently does not parse the upstream `skills` CLI
+  output. Both `list` and `install` against a real registry exit non-zero
+  because (a) the upstream formats skill names as indented bullets rather
+  than `- name` and (b) it writes copies into `./.claude/skills/` (relative
+  to `cwd`) rather than `$HOME/.claude/skills/`, so the vendor finds no
+  results in its staging `HOME`. Until this is fixed, prefer `vendor github`
+  for skill sources that live in a Git repo.
+- `init -g` is not safe to run under `poetry run` with a `HOME` override
+  (Poetry itself stores its virtualenvs under the real `$HOME`). To isolate
+  the command for testing, either invoke the installed entry point directly
+  (e.g. `HOME=$TMP/home ai-dotfiles init -g`) or set `$AI_DOTFILES_HOME`
+  only and let `~/.claude/` be re-linked.
 - Symlinks only; Windows is not officially supported.
 
 ## License
