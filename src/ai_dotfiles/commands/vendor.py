@@ -321,6 +321,40 @@ def _make_search_command(vendor: Vendor) -> click.Command | None:
     return _search
 
 
+def _make_refresh_command(vendor: Vendor) -> click.Command | None:
+    """Build the ``refresh`` subcommand for vendors that implement it.
+
+    Returns ``None`` for vendors without a ``refresh`` method.
+    Marketplace-backed vendors (buildwithclaude, tonsofskills) expose
+    ``refresh(force: bool = False) -> Path`` to re-fetch their cached
+    catalog. ``-f/--force`` bypasses the TTL check.
+    """
+    refresh_method = getattr(vendor, "refresh", None)
+    if refresh_method is None:
+        return None
+
+    @click.command(
+        name="refresh",
+        help=f"Re-fetch the '{vendor.name}' catalog cache.",
+    )
+    @click.option(
+        "-f",
+        "--force",
+        is_flag=True,
+        help="Re-fetch even if the cache is still fresh.",
+    )
+    def _refresh(force: bool) -> None:
+        try:
+            deps_mod.ensure(vendor)
+            path = refresh_method(force=force)
+        except AiDotfilesError as exc:
+            ui.error(str(exc))
+            sys.exit(exc.exit_code)
+        ui.success(f"Cache refreshed: {path}")
+
+    return _refresh
+
+
 def _make_deps_group(vendor: Vendor) -> click.Group:
     """Build the ``deps`` subgroup (``check``) for ``vendor``."""
 
@@ -367,6 +401,9 @@ def _register_vendors(parent: click.Group) -> None:
         search_cmd = _make_search_command(v)
         if search_cmd is not None:
             vendor_group.add_command(search_cmd)
+        refresh_cmd = _make_refresh_command(v)
+        if refresh_cmd is not None:
+            vendor_group.add_command(refresh_cmd)
         parent.add_command(vendor_group)
 
 
