@@ -139,11 +139,15 @@ available.
 | `vendor remove <name>`                            | Delete a vendored catalog entry by name (no-op for bare `.claude/` symlinks) |
 | `vendor github install <url> [--force]`           | Sparse-clone a GitHub subtree into the catalog |
 | `vendor github list <url>`                        | List the top-level entries the URL exposes |
-| `vendor github deps check \| install [--yes]`     | Check for `git`, or install it on demand |
+| `vendor github deps check`                        | Check that `git` is on `PATH` |
 | `vendor skills_sh install <source> [--force] [--select a,b]` | Install skills via the upstream `skills` npm CLI |
-| `vendor skills_sh list <source>`                 | List skills a source exposes |
-| `vendor skills_sh search <query>`                | Search the skills.sh marketplace by keyword |
-| `vendor skills_sh deps check \| install [--yes]` | Check for `npx` / Node.js, or install on demand |
+| `vendor skills_sh list <source>`                  | List skills a source exposes |
+| `vendor skills_sh search <query>`                 | Search the skills.sh marketplace by keyword |
+| `vendor skills_sh deps check`                     | Check that `npx` / Node.js is on `PATH` |
+| `vendor paks install <source> [--force]`          | Install a skill from the paks registry |
+| `vendor paks list <source>`                       | Echo the source back (paks models one source as one skill) |
+| `vendor paks search <query>`                      | Search the paks registry by keyword |
+| `vendor paks deps check`                          | Check that the `paks` binary is on `PATH` |
 
 After a successful `install`, the item is written to
 `catalog/<kind>s/<name>/` alongside a `.source` file recording the
@@ -166,8 +170,8 @@ fetched content.
 #### Example: skills.sh
 
 ```bash
-# One-time: install Node.js (npx ships with it)
-ai-dotfiles vendor skills_sh deps install
+# One-time: install Node.js so `npx` is on PATH (https://nodejs.org/)
+ai-dotfiles vendor skills_sh deps check
 
 # Search the skills.sh marketplace
 ai-dotfiles vendor skills_sh search react
@@ -178,6 +182,23 @@ ai-dotfiles vendor skills_sh list vercel-labs/agent-skills
 # Install a subset
 ai-dotfiles vendor skills_sh install vercel-labs/agent-skills --select deploy-to-vercel
 ai-dotfiles add skill:deploy-to-vercel
+```
+
+#### Example: paks
+
+```bash
+# One-time: install paks (https://paks.stakpak.dev)
+brew tap stakpak/stakpak && brew install paks
+
+# Check it's wired up
+ai-dotfiles vendor paks deps check
+
+# Search the paks registry
+ai-dotfiles vendor paks search kubernetes
+
+# Install one skill (paks = one source, one skill)
+ai-dotfiles vendor paks install kubernetes-deploy
+ai-dotfiles add skill:kubernetes-deploy
 ```
 
 ## Storage Structure
@@ -255,10 +276,11 @@ are enforced via `commitizen`.
 - `init -g --from` clones the storage repo but does not verify its layout; an
   unrelated repo will be accepted and may produce confusing errors on first
   `install`.
-- Vendor plugins have opt-in runtime dependencies: `vendor github` requires
-  `git` on `PATH`; `vendor skills_sh` requires Node.js / `npx`. Install them
-  on demand with `ai-dotfiles vendor <vendor> deps install`. The core CLI
-  itself has no external runtime dependencies.
+- Vendor plugins have opt-in runtime dependencies: `vendor github` needs
+  `git` on `PATH`, `vendor skills_sh` needs Node.js / `npx`, and
+  `vendor paks` needs the `paks` binary. Install them manually following
+  the URL printed by `ai-dotfiles vendor <vendor> deps check`; the core
+  CLI itself has no external runtime dependencies.
 - No auto-update for vendored items yet — re-run `vendor <v> install --force`
   to refresh a catalog entry in place.
 - `vendor remove <name>` only deletes the catalog entry; if the item is

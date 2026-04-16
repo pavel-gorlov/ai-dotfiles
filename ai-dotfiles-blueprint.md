@@ -656,6 +656,7 @@ module-level singleton'ы в `vendors/__init__.py`:
 REGISTRY: dict[str, Vendor] = {
     "github": cast(Vendor, GITHUB),
     "skills_sh": cast(Vendor, SKILLS_SH),
+    "paks": cast(Vendor, PAKS),
 }
 ```
 
@@ -734,11 +735,14 @@ class Vendor(Protocol):
 
 - `vendor github` → `git` на `PATH`.
 - `vendor skills_sh` → Node.js / `npx` на `PATH`.
+- `vendor paks` → нативный бинарник `paks` (Rust, см.
+  <https://paks.stakpak.dev>; macOS: `brew tap stakpak/stakpak && brew
+  install paks`). Установка out-of-band — CLI только проверяет
+  присутствие на `PATH`.
 
-Пользователь ставит зависимость по запросу через
-`ai-dotfiles vendor <name> deps install` (или
-`deps check` чтобы проверить). Неиспользуемые vendor-плагины ничего
-не требуют и не ломают запуск CLI без сетевого доступа.
+Пользователь ставит зависимость вручную по ссылке, которую покажет
+`ai-dotfiles vendor <name> deps check`. Неиспользуемые vendor-плагины
+ничего не требуют и не ломают запуск CLI без сетевого доступа.
 
 ## Заметки
 
