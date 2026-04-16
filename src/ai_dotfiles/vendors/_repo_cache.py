@@ -189,27 +189,52 @@ def read_frontmatter(skill_md: Path) -> dict[str, str]:
         return {}
 
     result: dict[str, str] = {}
-    for raw in lines[1:]:
+    i = 1
+    while i < len(lines):
+        raw = lines[i]
         stripped = raw.strip()
         if stripped == "---":
             break
         if not stripped or stripped.startswith("#"):
+            i += 1
             continue
         if ":" not in stripped:
+            i += 1
             continue
         key, _, rest = stripped.partition(":")
         key = key.strip()
         value = rest.strip()
+        i += 1
         if not key:
             continue
-        if value.startswith("[") and value.endswith("]"):
+        # YAML block scalars: `key: |` / `key: >` — collect following
+        # indented lines until dedent or the closing `---`.
+        if value in ("|", ">"):
+            collected: list[str] = []
+            while i < len(lines):
+                line = lines[i]
+                if line.strip() == "---":
+                    break
+                if not line.strip():
+                    collected.append("")
+                    i += 1
+                    continue
+                # Indented continuation.
+                if line.startswith((" ", "\t")):
+                    collected.append(line.strip())
+                    i += 1
+                    continue
+                # Dedent — end of this key.
+                break
+            joiner = "\n" if value == "|" else " "
+            value = joiner.join(collected).strip()
+        elif value.startswith("[") and value.endswith("]"):
             inner = value[1:-1]
             parts = [p.strip().strip("\"'") for p in inner.split(",")]
             value = ", ".join(p for p in parts if p)
-        else:
-            if (value.startswith('"') and value.endswith('"')) or (
-                value.startswith("'") and value.endswith("'")
-            ):
-                value = value[1:-1]
+        elif (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
+            value = value[1:-1]
         result[key] = value
     return result

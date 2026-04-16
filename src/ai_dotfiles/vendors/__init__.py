@@ -11,9 +11,11 @@ from __future__ import annotations
 from typing import cast
 
 from ai_dotfiles.vendors.base import Vendor
+from ai_dotfiles.vendors.buildwithclaude import BUILDWITHCLAUDE
 from ai_dotfiles.vendors.github import GITHUB
 from ai_dotfiles.vendors.paks import PAKS
 from ai_dotfiles.vendors.skills_sh import SKILLS_SH
+from ai_dotfiles.vendors.tonsofskills import TONSOFSKILLS
 
 # The singletons satisfy the :class:`Vendor` protocol structurally,
 # but mypy's strict protocol variance check rejects a direct assignment
@@ -25,6 +27,16 @@ REGISTRY: dict[str, Vendor] = {
     "github": cast(Vendor, GITHUB),
     "skills_sh": cast(Vendor, SKILLS_SH),
     "paks": cast(Vendor, PAKS),
+    "buildwithclaude": cast(Vendor, BUILDWITHCLAUDE),
+    "tonsofskills": cast(Vendor, TONSOFSKILLS),
 }
 
-__all__ = ["GITHUB", "PAKS", "REGISTRY", "SKILLS_SH", "Vendor"]
+__all__ = [
+    "BUILDWITHCLAUDE",
+    "GITHUB",
+    "PAKS",
+    "REGISTRY",
+    "SKILLS_SH",
+    "TONSOFSKILLS",
+    "Vendor",
+]
