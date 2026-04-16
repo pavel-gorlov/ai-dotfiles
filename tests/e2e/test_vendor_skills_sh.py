@@ -17,7 +17,7 @@ import pytest
 
 from ai_dotfiles.core.errors import ExternalError
 from ai_dotfiles.vendors.base import Vendor
-from ai_dotfiles.vendors.skills_sh import SKILLS_SH, FindResult
+from ai_dotfiles.vendors.skills_sh import SKILLS_SH, SearchResult
 
 FakeRun = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -436,13 +436,13 @@ def test_npx_dependency_is_installed_false_when_missing(
     assert npx_dep.is_installed() is False
 
 
-# ── find ──
+# ── search ──
 
 
 # Real fixture captured from ``npx skills find react`` (April 2026). Each
 # result is a name line + an arrow-prefixed marketplace URL line, plus
 # ANSI colour codes.
-_REAL_FIND_OUTPUT = (
+_REAL_SEARCH_OUTPUT = (
     "\x1b[38;5;250m███╗\x1b[0m\n"
     "\n"
     "\x1b[38;5;102mInstall with\x1b[0m npx skills add <owner/repo@skill>\n"
@@ -464,17 +464,17 @@ _REAL_FIND_OUTPUT = (
 )
 
 
-def test_find_parses_real_upstream_output(
+def test_search_parses_real_upstream_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Real `skills find` output parses into FindResult entries."""
+    """Real `skills find` output parses into SearchResult entries."""
     captured: dict[str, Any] = {}
-    _install_fake_run(monkeypatch, captured=captured, stdout=_REAL_FIND_OUTPUT)
+    _install_fake_run(monkeypatch, captured=captured, stdout=_REAL_SEARCH_OUTPUT)
 
-    results = SKILLS_SH.find("react")
+    results = SKILLS_SH.search("react")
 
     assert len(results) == 3
-    assert results[0] == FindResult(
+    assert results[0] == SearchResult(
         source="vercel-labs/agent-skills",
         name="vercel-react-best-practices",
         installs="321.7K",
@@ -487,27 +487,27 @@ def test_find_parses_real_upstream_output(
     assert "react" in captured["argv"]
 
 
-def test_find_without_installs_count(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_search_without_installs_count(monkeypatch: pytest.MonkeyPatch) -> None:
     """Missing install-count does not break parsing."""
     captured: dict[str, Any] = {}
     stdout = "alice/skills@thing\n" "\u2514 https://skills.sh/alice/skills/thing\n"
     _install_fake_run(monkeypatch, captured=captured, stdout=stdout)
 
-    results = SKILLS_SH.find("thing")
+    results = SKILLS_SH.search("thing")
     assert len(results) == 1
     assert results[0].installs == ""
     assert results[0].url == "https://skills.sh/alice/skills/thing"
 
 
-def test_find_empty_query_raises() -> None:
+def test_search_empty_query_raises() -> None:
     """Blank query is rejected before any subprocess call."""
     with pytest.raises(ValueError):
-        SKILLS_SH.find("")
+        SKILLS_SH.search("")
     with pytest.raises(ValueError):
-        SKILLS_SH.find("   ")
+        SKILLS_SH.search("   ")
 
 
-def test_find_nonzero_exit_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_search_nonzero_exit_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
     _install_fake_run(
         monkeypatch,
@@ -516,11 +516,11 @@ def test_find_nonzero_exit_raises(monkeypatch: pytest.MonkeyPatch) -> None:
         stderr="upstream boom\n",
     )
     with pytest.raises(ExternalError) as excinfo:
-        SKILLS_SH.find("query")
+        SKILLS_SH.search("query")
     assert "upstream boom" in str(excinfo.value)
 
 
-def test_find_empty_result_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_search_empty_result_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
     _install_fake_run(
         monkeypatch,
@@ -528,7 +528,7 @@ def test_find_empty_result_raises(monkeypatch: pytest.MonkeyPatch) -> None:
         stdout="no matches\n",
     )
     with pytest.raises(ExternalError) as excinfo:
-        SKILLS_SH.find("nothing")
+        SKILLS_SH.search("nothing")
     assert "no results" in str(excinfo.value).lower()
 
 

@@ -90,7 +90,7 @@ _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 #   <owner>/<repo>@<skill-name>   <NNK installs>
 #   └ https://skills.sh/<owner>/<repo>/<skill-name>
 # Match the first line: owner, repo, name + optional install count.
-_FIND_RESULT_RE = re.compile(
+_SEARCH_RESULT_RE = re.compile(
     r"^(?P<source>[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*)"
     r"@(?P<name>[A-Za-z0-9][A-Za-z0-9_:.-]*)"
     r"(?:\s+(?P<installs>\S+(?:\s+installs?)?))?\s*$"
@@ -110,7 +110,7 @@ def _strip_ansi(text: str) -> str:
 
 
 @dataclass(frozen=True)
-class FindResult:
+class SearchResult:
     """One hit from ``npx skills find <query>``."""
 
     source: str  # "vercel-labs/agent-skills"
@@ -119,8 +119,8 @@ class FindResult:
     url: str  # "https://skills.sh/..."
 
 
-def _parse_find_output(stdout: str) -> list[FindResult]:
-    """Parse ``npx skills find <query>`` stdout into :class:`FindResult` s.
+def _parse_search_output(stdout: str) -> list[SearchResult]:
+    """Parse ``npx skills find <query>`` stdout into :class:`SearchResult` s.
 
     Blocks look like::
 
@@ -132,12 +132,12 @@ def _parse_find_output(stdout: str) -> list[FindResult]:
     trailing word (so ``"321.7K"``) — empty string when upstream omits it.
     """
     cleaned = _strip_ansi(stdout)
-    results: list[FindResult] = []
+    results: list[SearchResult] = []
     lines = cleaned.splitlines()
     i = 0
     while i < len(lines):
         line = lines[i].rstrip()
-        match = _FIND_RESULT_RE.match(line)
+        match = _SEARCH_RESULT_RE.match(line)
         if match is None:
             i += 1
             continue
@@ -159,7 +159,9 @@ def _parse_find_output(stdout: str) -> list[FindResult]:
             elif next_line.startswith("http"):
                 url = next_line
 
-        results.append(FindResult(source=source, name=name, installs=installs, url=url))
+        results.append(
+            SearchResult(source=source, name=name, installs=installs, url=url)
+        )
         i += 2 if url else 1
     return results
 
@@ -349,7 +351,7 @@ class _SkillsShVendor:
             )
         return items
 
-    def find(self, query: str) -> list[FindResult]:
+    def search(self, query: str) -> list[SearchResult]:
         """Run ``npx skills find <query>`` and return ranked results.
 
         Upstream's ``find`` is interactive without a query; we always
@@ -361,7 +363,7 @@ class _SkillsShVendor:
             query: Search term forwarded to the upstream CLI.
 
         Returns:
-            Ordered list of :class:`FindResult`.
+            Ordered list of :class:`SearchResult`.
 
         Raises:
             ExternalError: On non-zero exit or empty result.
@@ -383,7 +385,7 @@ class _SkillsShVendor:
             if result.returncode != 0:
                 raise ExternalError(f"npx skills find failed: {result.stderr.strip()}")
 
-            hits = _parse_find_output(result.stdout)
+            hits = _parse_search_output(result.stdout)
             if not hits:
                 raise ExternalError(
                     f"npx skills find produced no results (query={query!r})."
@@ -394,4 +396,4 @@ class _SkillsShVendor:
 SKILLS_SH: _SkillsShVendor = _SkillsShVendor()
 """Module-level singleton registered as the skills.sh vendor."""
 
-__all__ = ["SKILLS_SH", "FindResult"]
+__all__ = ["SKILLS_SH", "SearchResult"]

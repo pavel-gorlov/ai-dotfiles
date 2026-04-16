@@ -142,7 +142,7 @@ available.
 | `vendor github deps check \| install [--yes]`     | Check for `git`, or install it on demand |
 | `vendor skills_sh install <source> [--force] [--select a,b]` | Install skills via the upstream `skills` npm CLI |
 | `vendor skills_sh list <source>`                 | List skills a source exposes |
-| `vendor skills_sh find <query>`                  | Search the skills.sh marketplace by keyword |
+| `vendor skills_sh search <query>`                | Search the skills.sh marketplace by keyword |
 | `vendor skills_sh deps check \| install [--yes]` | Check for `npx` / Node.js, or install on demand |
 
 After a successful `install`, the item is written to
@@ -170,7 +170,7 @@ fetched content.
 ai-dotfiles vendor skills_sh deps install
 
 # Search the skills.sh marketplace
-ai-dotfiles vendor skills_sh find react
+ai-dotfiles vendor skills_sh search react
 
 # Enumerate what a specific source exposes
 ai-dotfiles vendor skills_sh list vercel-labs/agent-skills

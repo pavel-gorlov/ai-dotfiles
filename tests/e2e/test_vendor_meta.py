@@ -507,10 +507,10 @@ def test_vendor_skills_sh_install_empty_select_entry_rejected(
     assert "empty entry" in result.output
 
 
-def test_vendor_skills_sh_find_prints_hits(
+def test_vendor_skills_sh_search_prints_hits(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`vendor skills_sh find <query>` prints source@name + URL per hit."""
+    """`vendor skills_sh search <query>` prints source@name + URL per hit."""
     _patch_which(monkeypatch, present={"npx"})
     stdout = (
         "vercel-labs/agent-skills@vercel-react-best-practices 321.7K installs\n"
@@ -522,7 +522,7 @@ def test_vendor_skills_sh_find_prints_hits(
     )
     _patch_npx_subprocess(monkeypatch, stdout=stdout)
 
-    result = runner.invoke(vendor, ["skills_sh", "find", "react"])
+    result = runner.invoke(vendor, ["skills_sh", "search", "react"])
 
     assert result.exit_code == 0, result.output
     assert "vercel-labs/agent-skills@vercel-react-best-practices" in result.output
@@ -531,24 +531,24 @@ def test_vendor_skills_sh_find_prints_hits(
     assert "alice/skills@thing" in result.output
 
 
-def test_vendor_skills_sh_find_no_results(
+def test_vendor_skills_sh_search_no_results(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """No matches → non-zero exit with error message."""
     _patch_which(monkeypatch, present={"npx"})
     _patch_npx_subprocess(monkeypatch, stdout="nothing here\n")
 
-    result = runner.invoke(vendor, ["skills_sh", "find", "zzznothing"])
+    result = runner.invoke(vendor, ["skills_sh", "search", "zzznothing"])
 
     assert result.exit_code != 0
     assert "no results" in result.output.lower()
 
 
-def test_vendor_github_has_no_find_subcommand(runner: CliRunner) -> None:
-    """GitHub vendor does not expose a find subcommand."""
+def test_vendor_github_has_no_search_subcommand(runner: CliRunner) -> None:
+    """GitHub vendor does not expose a search subcommand."""
     result = runner.invoke(vendor, ["github", "--help"])
     assert result.exit_code == 0
-    assert " find " not in result.output
+    assert " search " not in result.output
 
 
 def test_vendor_skills_sh_deps_check_missing(
