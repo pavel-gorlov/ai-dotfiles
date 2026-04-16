@@ -148,6 +148,16 @@ available.
 | `vendor paks list <source>`                       | Echo the source back (paks models one source as one skill) |
 | `vendor paks search <query>`                      | Search the paks registry by keyword |
 | `vendor paks deps check`                          | Check that the `paks` binary is on `PATH` |
+| `vendor buildwithclaude install <name> [--force]` | Install a skill from the buildwithclaude catalog |
+| `vendor buildwithclaude list <name>`              | Echo the skill name back |
+| `vendor buildwithclaude search <query>`           | Search the cached buildwithclaude catalog by keyword |
+| `vendor buildwithclaude refresh [--force]`        | Re-fetch the catalog cache (24h TTL) |
+| `vendor buildwithclaude deps check`               | Check that `git` is on `PATH` |
+| `vendor tonsofskills install <name> [--force]`    | Install a skill from the tonsofskills catalog |
+| `vendor tonsofskills list <name>`                 | Echo the skill name back |
+| `vendor tonsofskills search <query>`              | Search the cached tonsofskills catalog by keyword |
+| `vendor tonsofskills refresh [--force]`           | Re-fetch the catalog cache (24h TTL) |
+| `vendor tonsofskills deps check`                  | Check that `git` is on `PATH` |
 
 After a successful `install`, the item is written to
 `catalog/<kind>s/<name>/` alongside a `.source` file recording the
@@ -200,6 +210,37 @@ ai-dotfiles vendor paks search kubernetes
 ai-dotfiles vendor paks install kubernetes-deploy
 ai-dotfiles add skill:kubernetes-deploy
 ```
+
+#### Example: buildwithclaude
+
+```bash
+# One-off: prime the catalog cache (git clone, ~1 min)
+ai-dotfiles vendor buildwithclaude refresh
+
+# Search the cached catalog
+ai-dotfiles vendor buildwithclaude search typescript
+
+# Install one skill
+ai-dotfiles vendor buildwithclaude install mcp-builder
+ai-dotfiles add skill:mcp-builder
+```
+
+The catalog is mirrored under `~/.ai-dotfiles/.vendor-cache/` with a
+24h TTL; `search`/`install` auto-refresh when stale, or you can force
+it with `vendor buildwithclaude refresh --force`.
+
+#### Example: tonsofskills
+
+```bash
+ai-dotfiles vendor tonsofskills refresh   # slow first time: 20k files
+ai-dotfiles vendor tonsofskills search kubernetes
+ai-dotfiles vendor tonsofskills install generating-database-seed-data
+ai-dotfiles add skill:generating-database-seed-data
+```
+
+The upstream repo keeps a large `backups/` tree of historical
+snapshots; the vendor scans only the live `plugins/` subtree, so
+search results map to the actual curated catalog.
 
 ## Storage Structure
 
@@ -276,11 +317,21 @@ are enforced via `commitizen`.
 - `init -g --from` clones the storage repo but does not verify its layout; an
   unrelated repo will be accepted and may produce confusing errors on first
   `install`.
-- Vendor plugins have opt-in runtime dependencies: `vendor github` needs
-  `git` on `PATH`, `vendor skills_sh` needs Node.js / `npx`, and
-  `vendor paks` needs the `paks` binary. Install them manually following
-  the URL printed by `ai-dotfiles vendor <vendor> deps check`; the core
-  CLI itself has no external runtime dependencies.
+- Vendor plugins have opt-in runtime dependencies: `vendor github`,
+  `vendor buildwithclaude`, `vendor tonsofskills` need `git` on `PATH`;
+  `vendor skills_sh` needs Node.js / `npx`; `vendor paks` needs the
+  `paks` binary. Install them manually following the URL printed by
+  `ai-dotfiles vendor <vendor> deps check`; the core CLI itself has no
+  external runtime dependencies.
+- Marketplace-backed vendors (`buildwithclaude`, `tonsofskills`) keep a
+  local catalog mirror under `~/.ai-dotfiles/.vendor-cache/` (24h TTL).
+  `rm -rf ~/.ai-dotfiles/.vendor-cache/` is safe to free disk.
+- Offline mode works against the last successful `refresh`; if the
+  cache is empty and the machine is offline, `search`/`install` fail
+  with a git-error.
+- Plugin-level extras (hooks, agents bundled in plugins) are not
+  imported by the marketplace vendors — we extract `SKILL.md`
+  directories only.
 - No auto-update for vendored items yet — re-run `vendor <v> install --force`
   to refresh a catalog entry in place.
 - `vendor remove <name>` only deletes the catalog entry; if the item is

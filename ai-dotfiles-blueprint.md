@@ -721,6 +721,9 @@ class Vendor(Protocol):
    REGISTRY: dict[str, Vendor] = {
        "github": cast(Vendor, GITHUB),
        "skills_sh": cast(Vendor, SKILLS_SH),
+       "paks": cast(Vendor, PAKS),
+       "buildwithclaude": cast(Vendor, BUILDWITHCLAUDE),
+       "tonsofskills": cast(Vendor, TONSOFSKILLS),
        "<name>": cast(Vendor, MY_VENDOR),
    }
    ```
@@ -739,6 +742,11 @@ class Vendor(Protocol):
   <https://paks.stakpak.dev>; macOS: `brew tap stakpak/stakpak && brew
   install paks`). Установка out-of-band — CLI только проверяет
   присутствие на `PATH`.
+- `vendor buildwithclaude`, `vendor tonsofskills` → `git` на `PATH`.
+  Оба клонируют публичный маркетплейс-репо через общий
+  `vendors/_repo_cache` (24-часовой TTL, `refresh` подкоманда). Без
+  upstream CLI — напрямую к репозиторию: так проще и не ломается когда
+  у `ccpi` / `bwc-cli` отваливается фичаспособность.
 
 Пользователь ставит зависимость вручную по ссылке, которую покажет
 `ai-dotfiles vendor <name> deps check`. Неиспользуемые vendor-плагины

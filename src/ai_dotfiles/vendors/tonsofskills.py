@@ -67,7 +67,9 @@ class SearchResult:
 
 
 def _locate_skill(cache_root: Path, name: str) -> list[Path]:
-    return [d for d in _repo_cache.find_skill_dirs(cache_root) if d.name == name]
+    return [
+        d for d in _repo_cache.find_skill_dirs(cache_root / "plugins") if d.name == name
+    ]
 
 
 def _repo_relpath(cache_root: Path, entry: Path) -> str:
@@ -124,7 +126,7 @@ class _TonsOfSkillsVendor:
         cache_root = self.refresh(force=False)
 
         results: list[SearchResult] = []
-        for skill_dir in _repo_cache.find_skill_dirs(cache_root):
+        for skill_dir in _repo_cache.find_skill_dirs(cache_root / "plugins"):
             meta = _repo_cache.read_frontmatter(skill_dir / "SKILL.md")
             if not _matches(query, meta, skill_dir.name):
                 continue
