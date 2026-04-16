@@ -15,8 +15,8 @@ rather than redirecting ``HOME`` like we do for ``skills_sh``. Only
 
 from __future__ import annotations
 
-import json
 import os
+import re
 import shutil
 import subprocess  # noqa: S404 — vendor intentionally shells out to paks
 from collections.abc import Iterable
@@ -28,6 +28,24 @@ from ai_dotfiles.vendors.base import Dependency, FetchedItem
 
 _LICENSE_CANDIDATES: tuple[str, ...] = ("LICENSE", "LICENSE.md", "LICENSE.txt")
 _LICENSE_MAX_LEN = 60
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+# ``paks search <query>`` output format (v0.1.18):
+#   <2 spaces><owner>/<skill> <U+2193>N  [#tag ...]
+#   <4 spaces><description>
+#
+# Match the name line: `<owner>/<skill>` where both parts are identifier-like
+# (alphanumerics, hyphens, dots, underscores). Match is anchored to start
+# with exactly two spaces to exclude the trailing "Install: ..." footer,
+# which starts with two spaces then a capitalised word.
+_SEARCH_NAME_RE = re.compile(
+    r"^  (?P<owner>[A-Za-z0-9][A-Za-z0-9_.-]*)"
+    r"/(?P<skill>[A-Za-z0-9][A-Za-z0-9_.-]*)\b"
+    r"(?:\s+(?:\u2193|\u2191|\u21D3|\u21D1|\^|v)?(?P<installs>\d[\d.]*[KMkm]?))?"
+)
+# paks uses `<owner>--<skill>` as the directory name after install.
+_OWNER_DIR_SEP = "--"
 
 
 def _paks_is_installed() -> bool:
@@ -77,12 +95,16 @@ def _subprocess_env() -> dict[str, str]:
 
 @dataclass(frozen=True)
 class SearchResult:
-    """One hit from ``paks search <query> --format json``.
+    """One hit from ``paks search <query>``.
 
-    Field names intentionally mirror the ``skills_sh`` ``SearchResult``
-    so the CLI layer's duck-typed formatter can render both. Missing
-    upstream fields default to an empty string; the CLI suppresses
-    blanks when printing.
+    The CLI formatter renders ``{source}@{name}`` then an optional URL
+    line, matching the ``skills_sh`` output shape. For paks:
+
+    * ``source`` = upstream owner (e.g. ``wshpbson``)
+    * ``name``   = skill name (e.g. ``k8s-manifest-generator``)
+
+    To actually install the result, join them with ``/``:
+    ``paks install <source>/<name>``.
     """
 
     source: str
@@ -121,58 +143,60 @@ def _run(
         ) from exc
 
 
-def _extract_str(obj: dict[str, object], *keys: str) -> str:
-    """Return the first string-valued entry in ``obj`` among ``keys``.
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes (colour + cursor movement) from text."""
+    return _ANSI_ESCAPE_RE.sub("", text)
 
-    Upstream response shapes can vary across versions (e.g.
-    ``"description"`` vs ``"summary"``); we accept any of a handful
-    of synonyms and coerce non-string values to empty. Missing keys
-    return ``""``.
+
+def _parse_search_text(stdout: str) -> list[SearchResult]:
+    """Parse ``paks search <query>`` stdout into :class:`SearchResult` s.
+
+    Upstream (paks 0.1.18) has no JSON output mode, so we parse the
+    human-readable text. Each hit is two lines::
+
+        <2 sp><owner>/<skill>  <U+2193>N  [#tag ...]
+        <4 sp><description...>
+
+    Followed by a single ``Install: paks install <owner>/<skill>``
+    footer line, which the name regex rejects (no ``/`` inside the
+    identifier char class after the ``Install:`` prefix).
+
+    ANSI colour codes and any trailing ``#tag`` hashes are stripped
+    before matching; the description is captured best-effort from the
+    immediately-following indented line.
     """
-    for key in keys:
-        value = obj.get(key)
-        if isinstance(value, str):
-            return value
-    return ""
-
-
-def _parse_search_json(stdout: str) -> list[SearchResult]:
-    """Parse ``paks search --format json`` stdout into :class:`SearchResult`.
-
-    The upstream command prints a JSON array of objects. Field names
-    we care about: ``source`` / ``name`` / ``description`` / ``url``
-    (plus ``installs`` if present). Missing fields default to ``""``.
-
-    Raises:
-        ExternalError: If ``stdout`` isn't valid JSON or the top-level
-            value isn't an array.
-    """
-    try:
-        payload = json.loads(stdout)
-    except json.JSONDecodeError as exc:
-        raise ExternalError(f"paks search returned unparseable JSON: {exc}") from exc
-
-    if not isinstance(payload, list):
-        raise ExternalError(
-            "paks search JSON payload was not an array "
-            f"(got {type(payload).__name__})."
-        )
-
+    cleaned = _strip_ansi(stdout)
+    lines = cleaned.splitlines()
     results: list[SearchResult] = []
-    for entry in payload:
-        if not isinstance(entry, dict):
-            # Skip non-object entries defensively — a string-only array
-            # would otherwise explode the parser.
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip()
+        match = _SEARCH_NAME_RE.match(line)
+        if match is None:
+            i += 1
             continue
+        owner = match.group("owner")
+        skill = match.group("skill")
+        installs = match.group("installs") or ""
+
+        description = ""
+        if i + 1 < len(lines):
+            next_line = lines[i + 1]
+            # Description line uses 4+ spaces of indent; name lines use
+            # exactly 2, so 4-space leading prefix rules them out.
+            if next_line.startswith("    "):
+                description = next_line.strip()
+
         results.append(
             SearchResult(
-                source=_extract_str(entry, "source", "id", "slug"),
-                name=_extract_str(entry, "name", "title"),
-                description=_extract_str(entry, "description", "summary"),
-                url=_extract_str(entry, "url", "href", "link"),
-                installs=_extract_str(entry, "installs", "install_count"),
+                source=owner,
+                name=skill,
+                description=description,
+                url=f"https://paks.stakpak.dev/{owner}/{skill}",
+                installs=installs,
             )
         )
+        i += 2 if description else 1
     return results
 
 
@@ -202,25 +226,25 @@ class _PaksVendor:
         select: tuple[str, ...] | None,
         workdir: Path,
     ) -> list[FetchedItem]:
-        """Run ``paks install <source> --dir workdir/out --yes``.
+        """Run ``paks install <source> --dir <workdir/out>``.
 
-        The upstream CLI writes to ``<dir>/.claude/skills/<name>/``
-        when ``--agent claude-code --scope global`` is passed, so we
-        enumerate that directory to collect :class:`FetchedItem` s.
-        Some versions (or future flag combinations) may flatten the
-        layout to ``<dir>/<name>/``; we fall back to that if the
-        nested path is empty.
+        paks 0.1.x writes each skill into a single directory named
+        ``<owner>--<skill>/`` under the ``--dir`` target (``--dir``
+        overrides the ``--agent``/``--scope`` output layout). We
+        enumerate the first level and strip the ``<owner>--`` prefix
+        from the catalog entry name so the user can refer to it as
+        ``skill:<skill>`` without the registry owner clutter.
 
         Args:
-            source: Source argument passed through to ``paks install``.
+            source: Registry name (``<owner>/<skill>``), git URL, or
+                local path accepted by ``paks install``.
             select: Must be ``None`` or empty — paks has single-skill
                 semantics and has no selector flag.
             workdir: Staging directory owned by the caller.
 
         Returns:
-            One :class:`FetchedItem` per direct child directory found
-            under ``workdir/out/.claude/skills/`` (or ``workdir/out/``
-            as a fallback).
+            One :class:`FetchedItem` per direct child directory under
+            ``<workdir>/out/``.
 
         Raises:
             ElementError: When ``select`` is non-empty.
@@ -241,43 +265,31 @@ class _PaksVendor:
             "paks",
             "install",
             source,
-            "--agent",
-            "claude-code",
-            "--scope",
-            "global",
             "--dir",
             str(out),
-            "--yes",
+            "--force",
         ]
 
         result = _run(argv, cwd=workdir, env=_subprocess_env())
         if result.returncode != 0:
             raise ExternalError(f"paks install failed: {result.stderr.strip()}")
 
-        nested = out / ".claude" / "skills"
-        candidate_dirs: list[Path]
-        if nested.is_dir():
-            candidate_dirs = sorted(
-                entry for entry in nested.iterdir() if entry.is_dir()
-            )
-        else:
-            candidate_dirs = []
-
-        # Fallback: some paks builds / flag combos may flatten the
-        # output to `<out>/<skill>/` with no `.claude/skills` prefix.
-        if not candidate_dirs:
-            candidate_dirs = sorted(
-                entry
-                for entry in out.iterdir()
-                if entry.is_dir() and entry.name != ".claude"
-            )
+        candidate_dirs = sorted(
+            entry
+            for entry in out.iterdir()
+            if entry.is_dir() and entry.name != ".claude"
+        )
 
         items: list[FetchedItem] = []
         for entry in candidate_dirs:
+            raw = entry.name
+            # Strip the "<owner>--" prefix paks produces so the catalog
+            # entry matches the user's mental model.
+            pretty = raw.split(_OWNER_DIR_SEP, 1)[-1] if _OWNER_DIR_SEP in raw else raw
             items.append(
                 FetchedItem(
                     kind="skill",
-                    name=entry.name,
+                    name=pretty,
                     source_dir=entry,
                     origin=f"paks:{source}",
                     license=_detect_license(entry),
@@ -289,7 +301,7 @@ class _PaksVendor:
         return items
 
     def search(self, query: str) -> list[SearchResult]:
-        """Run ``paks search <query> --format json`` and return results.
+        """Run ``paks search <query>`` and parse the text output.
 
         Args:
             query: Search term forwarded to the upstream CLI.
@@ -298,8 +310,7 @@ class _PaksVendor:
             Ordered list of :class:`SearchResult`.
 
         Raises:
-            ExternalError: On non-zero exit, empty result, or a stdout
-                payload that isn't a JSON array.
+            ExternalError: On non-zero exit or empty result.
             ValueError: If ``query`` is blank.
         """
         if not query.strip():
@@ -309,13 +320,13 @@ class _PaksVendor:
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            argv = ["paks", "search", query, "--format", "json"]
+            argv = ["paks", "search", query]
             result = _run(argv, cwd=tmp_path, env=_subprocess_env())
 
             if result.returncode != 0:
                 raise ExternalError(f"paks search failed: {result.stderr.strip()}")
 
-            hits = _parse_search_json(result.stdout)
+            hits = _parse_search_text(result.stdout)
             if not hits:
                 raise ExternalError(
                     f"paks search produced no results (query={query!r})."

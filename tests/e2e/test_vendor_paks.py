@@ -2,13 +2,12 @@
 
 All tests exercise the :class:`~ai_dotfiles.vendors.base.Vendor`
 protocol surface directly. ``subprocess.run`` is monkeypatched to
-avoid invoking the real ``paks`` binary and to fake the target
-directory layout it would produce under ``<workdir>/out/``.
+avoid invoking the real ``paks`` binary and to fake the ``<--dir>``
+directory layout it would produce.
 """
 
 from __future__ import annotations
 
-import json
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -18,7 +17,7 @@ import pytest
 
 from ai_dotfiles.core.errors import ElementError, ExternalError
 from ai_dotfiles.vendors.base import Vendor
-from ai_dotfiles.vendors.paks import PAKS, SearchResult
+from ai_dotfiles.vendors.paks import PAKS
 
 FakeRun = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -44,12 +43,7 @@ def _install_fake_run(
     stderr: str = "",
     side_effect: Callable[[list[str], dict[str, Any]], None] | None = None,
 ) -> None:
-    """Patch ``subprocess.run`` in the paks vendor module.
-
-    Captures the invocation (argv, cwd, env) and optionally runs a
-    ``side_effect`` to lay down files on disk the way the real CLI
-    would.
-    """
+    """Patch ``subprocess.run`` in the paks vendor module."""
 
     def fake_run(
         argv: list[str],
@@ -75,45 +69,31 @@ def _install_fake_run(
     monkeypatch.setattr("ai_dotfiles.vendors.paks.subprocess.run", fake_run)
 
 
-def _materialize_nested(
-    argv: list[str],
-    *,
-    skills: dict[str, dict[str, str]],
-) -> None:
-    """Lay down ``<--dir>/.claude/skills/<name>/`` entries.
-
-    Reads the ``--dir`` argument from the captured argv so the
-    side-effect matches the real command's output layout.
-    """
-    out = _argv_dir(argv)
-    skills_root = out / ".claude" / "skills"
-    skills_root.mkdir(parents=True, exist_ok=True)
-    for skill_name, files in skills.items():
-        skill_dir = skills_root / skill_name
-        skill_dir.mkdir(parents=True, exist_ok=True)
-        for fname, body in files.items():
-            (skill_dir / fname).write_text(body, encoding="utf-8")
-
-
-def _materialize_flat(
-    argv: list[str],
-    *,
-    skills: dict[str, dict[str, str]],
-) -> None:
-    """Lay down ``<--dir>/<name>/`` entries (fallback layout)."""
-    out = _argv_dir(argv)
-    out.mkdir(parents=True, exist_ok=True)
-    for skill_name, files in skills.items():
-        skill_dir = out / skill_name
-        skill_dir.mkdir(parents=True, exist_ok=True)
-        for fname, body in files.items():
-            (skill_dir / fname).write_text(body, encoding="utf-8")
-
-
 def _argv_dir(argv: list[str]) -> Path:
     """Return the ``Path`` passed after ``--dir`` in ``argv``."""
     idx = argv.index("--dir")
     return Path(argv[idx + 1])
+
+
+def _materialize_out(
+    argv: list[str],
+    *,
+    skills: dict[str, dict[str, str]],
+) -> None:
+    """Lay down ``<--dir>/<owner>--<skill>/`` entries.
+
+    Mimics what ``paks install --dir <out>`` does in reality: each skill
+    lands in a single directory at the top level of ``--dir``, named
+    ``<owner>--<skill>``. ``skills`` keys are the raw directory names;
+    values are the files to create inside.
+    """
+    out = _argv_dir(argv)
+    out.mkdir(parents=True, exist_ok=True)
+    for raw_name, files in skills.items():
+        skill_dir = out / raw_name
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        for fname, body in files.items():
+            (skill_dir / fname).write_text(body, encoding="utf-8")
 
 
 # ── list_source ──
@@ -129,57 +109,55 @@ def test_list_source_returns_source_without_subprocess(
 
     monkeypatch.setattr("ai_dotfiles.vendors.paks.subprocess.run", boom)
 
-    assert list(PAKS.list_source("kubernetes-deploy")) == ["kubernetes-deploy"]
+    assert list(PAKS.list_source("stakpak/kubernetes-deploy")) == [
+        "stakpak/kubernetes-deploy"
+    ]
 
 
 # ── fetch ──
 
 
-def test_fetch_happy_path_nested_layout(
+def test_fetch_happy_path_strips_owner_prefix(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``out/.claude/skills/<name>/`` dirs materialize → FetchedItems."""
+    """paks produces ``<owner>--<skill>/``; catalog entry is just ``<skill>``."""
     captured: dict[str, Any] = {}
 
     def side_effect(argv: list[str], _env: dict[str, Any]) -> None:
-        _materialize_nested(
+        _materialize_out(
             argv,
             skills={
-                "alpha": {"SKILL.md": "# alpha\n"},
-                "beta": {"SKILL.md": "# beta\n"},
+                "wshpbson--k8s-manifest-generator": {"SKILL.md": "# k8s\n"},
             },
         )
 
     _install_fake_run(monkeypatch, captured=captured, side_effect=side_effect)
 
-    items = PAKS.fetch("stakpak/alpha", select=None, workdir=tmp_path)
+    items = PAKS.fetch("wshpbson/k8s-manifest-generator", select=None, workdir=tmp_path)
 
-    assert [i.name for i in items] == ["alpha", "beta"]
-    for item in items:
-        assert item.kind == "skill"
-        assert item.source_dir.is_dir()
-        assert item.origin == "paks:stakpak/alpha"
-        assert (item.source_dir / "SKILL.md").is_file()
-        assert item.license is None
+    assert len(items) == 1
+    assert items[0].name == "k8s-manifest-generator"
+    assert items[0].kind == "skill"
+    assert items[0].origin == "paks:wshpbson/k8s-manifest-generator"
+    assert items[0].source_dir.is_dir()
+    assert (items[0].source_dir / "SKILL.md").is_file()
 
 
-def test_fetch_fallback_flat_layout(
+def test_fetch_source_without_owner_prefix_keeps_dir_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """When ``out/.claude/skills`` is missing, enumerate ``out/*/``."""
+    """When dir name has no ``--`` separator, use it verbatim."""
     captured: dict[str, Any] = {}
 
     def side_effect(argv: list[str], _env: dict[str, Any]) -> None:
-        _materialize_flat(argv, skills={"only-skill": {"SKILL.md": "# only\n"}})
+        _materialize_out(argv, skills={"local-skill": {"SKILL.md": "x"}})
 
     _install_fake_run(monkeypatch, captured=captured, side_effect=side_effect)
 
-    items = PAKS.fetch("stakpak/only", select=None, workdir=tmp_path)
+    items = PAKS.fetch("./local-skill", select=None, workdir=tmp_path)
 
     assert len(items) == 1
-    assert items[0].name == "only-skill"
-    assert items[0].source_dir.is_dir()
-    assert items[0].origin == "paks:stakpak/only"
+    assert items[0].name == "local-skill"
 
 
 def test_fetch_with_select_raises_element_error(
@@ -200,7 +178,6 @@ def test_fetch_with_select_raises_element_error(
 def test_fetch_nonzero_exit_raises_external_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Non-zero exit → ExternalError with stderr in the message."""
     captured: dict[str, Any] = {}
     _install_fake_run(
         monkeypatch,
@@ -226,14 +203,12 @@ def test_fetch_empty_result_raises(
     assert "no skills" in str(excinfo.value).lower()
 
 
-def test_fetch_argv_contains_required_flags(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """argv includes ``--agent claude-code --scope global --dir <...> --yes``."""
+def test_fetch_argv_shape(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """argv = ``paks install <src> --dir <workdir/out> --force``."""
     captured: dict[str, Any] = {}
 
     def side_effect(argv: list[str], _env: dict[str, Any]) -> None:
-        _materialize_nested(argv, skills={"x": {"SKILL.md": "x"}})
+        _materialize_out(argv, skills={"stakpak--x": {"SKILL.md": "x"}})
 
     _install_fake_run(monkeypatch, captured=captured, side_effect=side_effect)
 
@@ -243,19 +218,16 @@ def test_fetch_argv_contains_required_flags(
     assert argv[0] == "paks"
     assert argv[1] == "install"
     assert "stakpak/x" in argv
-
-    agent_idx = argv.index("--agent")
-    assert argv[agent_idx + 1] == "claude-code"
-
-    scope_idx = argv.index("--scope")
-    assert argv[scope_idx + 1] == "global"
+    assert "--force" in argv
+    # No agent / scope / yes / format flags — --dir is enough.
+    assert "--agent" not in argv
+    assert "--scope" not in argv
+    assert "--yes" not in argv
 
     dir_idx = argv.index("--dir")
-    # The --dir value lives under the caller's workdir, inside an ``out`` subdir.
     dir_path = Path(argv[dir_idx + 1])
     assert dir_path == tmp_path / "out"
 
-    assert "--yes" in argv
     # Only PATH is forwarded.
     assert captured["env"] is not None
     assert set(captured["env"].keys()) == {"PATH"}
@@ -266,10 +238,10 @@ def test_fetch_detects_license(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     captured: dict[str, Any] = {}
 
     def side_effect(argv: list[str], _env: dict[str, Any]) -> None:
-        _materialize_nested(
+        _materialize_out(
             argv,
             skills={
-                "licensed": {
+                "owner--licensed": {
                     "SKILL.md": "# licensed\n",
                     "LICENSE": "\n\nMIT License\n\nCopyright 2026\n",
                 }
@@ -278,7 +250,7 @@ def test_fetch_detects_license(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 
     _install_fake_run(monkeypatch, captured=captured, side_effect=side_effect)
 
-    items = PAKS.fetch("stakpak/licensed", select=None, workdir=tmp_path)
+    items = PAKS.fetch("owner/licensed", select=None, workdir=tmp_path)
 
     assert len(items) == 1
     assert items[0].license == "MIT License"
@@ -302,64 +274,74 @@ def test_fetch_missing_paks_binary_raises(
 # ── search ──
 
 
-def _search_payload() -> str:
-    return json.dumps(
-        [
-            {
-                "source": "stakpak/kubernetes-deploy",
-                "name": "kubernetes-deploy",
-                "description": "Deploy to Kubernetes clusters.",
-                "url": "https://paks.stakpak.dev/stakpak/kubernetes-deploy",
-            },
-            {
-                "source": "stakpak/helm-charts",
-                "name": "helm-charts",
-                "description": "Render and apply Helm charts.",
-                "url": "https://paks.stakpak.dev/stakpak/helm-charts",
-            },
-        ]
-    )
+# Real fixture captured from ``paks search kubernetes`` (paks 0.1.18,
+# April 2026). Each hit is two lines: a name line with ``<owner>/<skill>``
+# at 2-space indent followed by a download count, then a 4-space-indented
+# description. ANSI colour codes around the name and count are stripped
+# by the parser.
+_REAL_SEARCH_OUTPUT = (
+    "\n"
+    "  \x1b[1;36mwshpbson\x1b[0m/\x1b[1mgitops-workflow\x1b[0m \x1b[2m\u21931\x1b[0m\n"
+    "    \x1b[2mImplement GitOps workflows with ArgoCD and Flux for automated,"
+    " declarati\u2026\x1b[0m\n"
+    "  \x1b[1;36mwshpbson\x1b[0m/\x1b[1mk8s-manifest-generator\x1b[0m"
+    " \x1b[2m\u21931\x1b[0m\n"
+    "    \x1b[2mCreate production-ready Kubernetes manifests for Deployments,"
+    " Services, \u2026\x1b[0m\n"
+    "  \x1b[1;36mstakpak\x1b[0m/\x1b[1mconfighub-usage-guide\x1b[0m"
+    " \x1b[2m\u21930\x1b[0m  \x1b[33m#confighub\x1b[0m \x1b[33m#kubernetes\x1b[0m\n"
+    "    \x1b[2mA comprehensive guide for using ConfigHub to manage Kubernetes"
+    " configura\u2026\x1b[0m\n"
+    "\n"
+    "  \x1b[2mInstall: paks install <owner>/<skill>\x1b[0m\n"
+)
 
 
-def test_search_parses_json_output(monkeypatch: pytest.MonkeyPatch) -> None:
-    """JSON array from ``paks search --format json`` parses correctly."""
+def test_search_parses_real_upstream_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Real paks search text parses into ordered SearchResult entries."""
     captured: dict[str, Any] = {}
-    _install_fake_run(monkeypatch, captured=captured, stdout=_search_payload())
+    _install_fake_run(monkeypatch, captured=captured, stdout=_REAL_SEARCH_OUTPUT)
 
     results = PAKS.search("kubernetes")
 
-    assert len(results) == 2
-    assert results[0] == SearchResult(
-        source="stakpak/kubernetes-deploy",
-        name="kubernetes-deploy",
-        description="Deploy to Kubernetes clusters.",
-        url="https://paks.stakpak.dev/stakpak/kubernetes-deploy",
-        installs="",
-    )
+    assert len(results) == 3
+    assert results[0].source == "wshpbson"
+    assert results[0].name == "gitops-workflow"
+    assert results[0].installs == "1"
+    assert "GitOps" in results[0].description
+    assert results[0].url == ("https://paks.stakpak.dev/wshpbson/gitops-workflow")
+    assert results[1].name == "k8s-manifest-generator"
+    assert results[2].source == "stakpak"
+    assert results[2].name == "confighub-usage-guide"
+    # argv does NOT include --format json (upstream doesn't support it).
     argv = captured["argv"]
     assert argv[0] == "paks"
     assert argv[1] == "search"
     assert "kubernetes" in argv
-    assert "--format" in argv and "json" in argv
+    assert "--format" not in argv
 
 
-def test_search_handles_missing_fields(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Missing JSON fields default to empty strings."""
+def test_search_footer_is_not_parsed_as_hit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The ``Install: paks install <owner>/<skill>`` footer is ignored."""
     captured: dict[str, Any] = {}
-    stdout = json.dumps([{"name": "lonely"}])
+    stdout = (
+        "  owner/name \u21932\n"
+        "    description\n"
+        "\n"
+        "  Install: paks install <owner>/<skill>\n"
+    )
     _install_fake_run(monkeypatch, captured=captured, stdout=stdout)
 
-    results = PAKS.search("lonely")
+    results = PAKS.search("x")
 
     assert len(results) == 1
-    assert results[0].name == "lonely"
-    assert results[0].source == ""
-    assert results[0].description == ""
-    assert results[0].url == ""
+    assert results[0].source == "owner"
+    assert results[0].name == "name"
 
 
 def test_search_nonzero_exit_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Non-zero exit → ExternalError with stderr in message."""
     captured: dict[str, Any] = {}
     _install_fake_run(
         monkeypatch,
@@ -374,23 +356,13 @@ def test_search_nonzero_exit_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_search_empty_result_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Empty JSON array → ExternalError."""
+    """No parseable hits → ExternalError."""
     captured: dict[str, Any] = {}
-    _install_fake_run(monkeypatch, captured=captured, stdout="[]")
+    _install_fake_run(monkeypatch, captured=captured, stdout="no results here\n")
 
     with pytest.raises(ExternalError) as excinfo:
         PAKS.search("nothing")
     assert "no results" in str(excinfo.value).lower()
-
-
-def test_search_unparseable_json_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Non-JSON stdout is surfaced as ExternalError rather than silently empty."""
-    captured: dict[str, Any] = {}
-    _install_fake_run(monkeypatch, captured=captured, stdout="not json at all")
-
-    with pytest.raises(ExternalError) as excinfo:
-        PAKS.search("anything")
-    assert "unparseable" in str(excinfo.value).lower()
 
 
 def test_search_empty_query_raises() -> None:
@@ -409,12 +381,10 @@ def test_vendor_metadata() -> None:
     assert PAKS.name == "paks"
     assert PAKS.display_name == "paks"
     assert PAKS.description == ("Install Claude Code skills from the paks registry.")
-    # Runtime protocol check.
     assert isinstance(PAKS, Vendor)
 
 
 def test_vendor_deps_contains_paks() -> None:
-    """The ``paks`` dep is declared with the upstream install URL."""
     dep_names = [d.name for d in PAKS.deps]
     assert dep_names == ["paks"]
     dep = PAKS.deps[0]
