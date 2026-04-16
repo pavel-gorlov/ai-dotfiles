@@ -173,6 +173,28 @@ poetry run black src/ tests/            # format
 poetry run pre-commit run --all-files   # everything at once
 ```
 
+### Install the dev version on `PATH`
+
+Expose the working tree as a global `ai-dotfiles` command — edits under `src/`
+are picked up without reinstalling.
+
+With `uv`:
+
+```bash
+uv tool install --editable .
+# uninstall: uv tool uninstall ai-dotfiles
+```
+
+With `pipx`:
+
+```bash
+pipx install --editable .
+# uninstall: pipx uninstall ai-dotfiles
+```
+
+Both place the entry point in `~/.local/bin/ai-dotfiles`; make sure that
+directory is on your `PATH`.
+
 Conventional commits (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`)
 are enforced via `commitizen`.
 
