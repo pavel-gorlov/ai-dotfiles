@@ -1,0 +1,172 @@
+---
+name: ai-dotfiles
+description: Manage ai-dotfiles CLI — install/add/remove packages, scaffold elements (skills/agents/rules), work with domains, stacks, vendors
+---
+
+# ai-dotfiles
+
+Use this skill when the user asks to install/add/remove Claude Code configuration elements, scaffold new skills/agents/rules, work with domains or stacks, or vendor external sources via the `ai-dotfiles` CLI.
+
+## When to use
+
+- User mentions `ai-dotfiles`, `~/.ai-dotfiles/`, `ai-dotfiles.json`, or `global.json`.
+- User wants to add/remove a skill, agent, rule, domain or stack to their Claude Code configuration.
+- User wants to vendor external sources (GitHub repos, paks, skills.sh) into their catalog.
+- User asks about the health of Claude Code symlinks in `~/.claude/` or `<project>/.claude/`.
+
+Prefer running the CLI over editing `~/.claude/` or manifests by hand — manifests and symlinks must stay in sync.
+
+## Commands
+
+### Setup
+
+- `ai-dotfiles init` — create `ai-dotfiles.json` in the current project.
+- `ai-dotfiles init -g` — scaffold global storage at `~/.ai-dotfiles/` (override via `AI_DOTFILES_HOME`).
+- `ai-dotfiles init -g --from <git-url>` — clone an existing storage repository.
+
+### Packages
+
+- `ai-dotfiles install` — symlink packages listed in `ai-dotfiles.json` into `<project>/.claude/`.
+- `ai-dotfiles install -g` — symlink packages from `global.json` into `~/.claude/`.
+- `ai-dotfiles add <spec>...` — add specifiers to the **project** manifest (`ai-dotfiles.json`) and symlink into `<project>/.claude/`.
+- `ai-dotfiles add -g <spec>...` — add specifiers to the **global** manifest (`~/.ai-dotfiles/global.json`) and symlink into `~/.claude/`.
+- `ai-dotfiles remove <spec>...` — remove from project manifest and unlink.
+- `ai-dotfiles remove -g <spec>...` — remove from global manifest and unlink.
+- `ai-dotfiles list` / `list -g` — show installed packages (project / global).
+- `ai-dotfiles list --available` — list everything present in the catalog and stacks.
+- `ai-dotfiles status` — report symlink health and a settings summary.
+
+### Elements
+
+- `ai-dotfiles create skill|agent|rule <name>` — scaffold an element in the catalog.
+- `ai-dotfiles delete skill|agent|rule <name>` — remove an element from the catalog.
+- `ai-dotfiles domain create|delete|list <name>` — manage domains (a folder under `catalog/`).
+- `ai-dotfiles domain add|remove <domain> <type> <name>` — manage elements inside a domain.
+- `ai-dotfiles stack create|delete|apply <name>` — manage stack presets (`.conf` files merged into the project manifest).
+
+### Vendors
+
+Vendors import external skills/agents/rules into `catalog/` and write a `.source` sidecar (origin, fetch date, license). After install, the CLI prints the `ai-dotfiles add` line to wire the item into a manifest.
+
+Meta commands (vendor-agnostic):
+
+- `ai-dotfiles vendor list` — registered vendors and whether their host deps (git, npx, paks, ...) are on `PATH`.
+- `ai-dotfiles vendor installed` — every catalog entry that came from a vendor (reads `.source`).
+- `ai-dotfiles vendor remove <name> [--kind skill|agent|rule] [-y]` — delete a vendored entry.
+
+Per-vendor subcommands follow the same shape — `install / list / search / deps check / refresh` (only the vendors that support caching expose `refresh`):
+
+| Vendor | Source format | Extra | Host dep |
+|--------|---------------|-------|----------|
+| `github`          | repo URL or `/tree/<branch>/<subpath>` URL | — (no `search`) | `git` |
+| `skills_sh`       | `<org>/<repo>` (npm `skills` CLI source) | `search`, `--select a,b` on install | `npx` (Node.js) |
+| `paks`            | `<skill-name>` (one source = one skill) | `search` | `paks` binary (`brew tap stakpak/stakpak && brew install paks`) |
+| `buildwithclaude` | `<skill-name>` from cached catalog | `search`, `refresh` (24h TTL) | `git` |
+| `tonsofskills`    | `<skill-name>` from cached catalog | `search`, `refresh` (24h TTL, slow first fetch — 20k files) | `git` |
+
+All `install` commands accept `-f/--force` (overwrite existing catalog entry). `skills_sh` additionally accepts `--select a,b,c` to install a subset.
+
+#### Typical per-vendor flow
+
+```bash
+# GitHub (direct subtree clone)
+ai-dotfiles vendor github install \
+  https://github.com/anthropics/skills/tree/main/skills/pdf
+ai-dotfiles add skill:pdf
+
+# skills.sh (npm-backed marketplace)
+ai-dotfiles vendor skills_sh deps check
+ai-dotfiles vendor skills_sh search react
+ai-dotfiles vendor skills_sh install vercel-labs/agent-skills --select deploy-to-vercel
+ai-dotfiles add skill:deploy-to-vercel
+
+# paks (stakpak registry, one-skill-per-source)
+ai-dotfiles vendor paks deps check
+ai-dotfiles vendor paks search kubernetes
+ai-dotfiles vendor paks install kubernetes-deploy
+ai-dotfiles add skill:kubernetes-deploy
+
+# buildwithclaude (cached marketplace)
+ai-dotfiles vendor buildwithclaude refresh          # prime cache (once)
+ai-dotfiles vendor buildwithclaude search typescript
+ai-dotfiles vendor buildwithclaude install mcp-builder
+ai-dotfiles add skill:mcp-builder
+
+# tonsofskills (cached marketplace; first refresh is slow)
+ai-dotfiles vendor tonsofskills refresh
+ai-dotfiles vendor tonsofskills search kubernetes
+ai-dotfiles vendor tonsofskills install generating-database-seed-data
+ai-dotfiles add skill:generating-database-seed-data
+```
+
+Cache path for `refresh`-capable vendors: `~/.ai-dotfiles/.vendor-cache/`. `search` / `install` auto-refresh when the cache is older than 24h; pass `--force` to skip the TTL check.
+
+Install ≠ activate. `vendor <name> install` only fetches content into `catalog/`. You still need `ai-dotfiles add [-g] <spec>` + `install` to link it into `.claude/`.
+
+### Specifier syntax
+
+Specifiers are the strings that appear in `packages` arrays:
+
+- `@domain` → `catalog/<domain>/` (whole domain directory).
+- `skill:name` → `catalog/skills/<name>/` (directory with `SKILL.md`).
+- `agent:name` → `catalog/agents/<name>.md`.
+- `rule:name` → `catalog/rules/<name>.md`.
+
+## Typical workflows
+
+### 1a. New skill → project
+
+```bash
+ai-dotfiles create skill my-skill      # scaffold in ~/.ai-dotfiles/catalog/skills/my-skill/
+ai-dotfiles add skill:my-skill         # add "skill:my-skill" to ai-dotfiles.json
+ai-dotfiles install                    # symlink into <project>/.claude/skills/
+```
+
+### 1b. New skill → global (`~/.claude/`)
+
+```bash
+ai-dotfiles create skill my-skill      # scaffold in ~/.ai-dotfiles/catalog/skills/my-skill/
+ai-dotfiles add -g skill:my-skill      # add "skill:my-skill" to ~/.ai-dotfiles/global.json
+                                       # and symlink into ~/.claude/skills/my-skill/
+```
+
+To remove from the global manifest:
+
+```bash
+ai-dotfiles remove -g skill:my-skill   # drop from global.json + unlink from ~/.claude/
+```
+
+The same `-g` flag works for any specifier: `@domain`, `skill:name`, `agent:name`, `rule:name`.
+
+### 2. Vendor an external pack
+
+```bash
+ai-dotfiles vendor <vendor> search <query>     # find candidates (where supported)
+ai-dotfiles vendor <vendor> install <source>   # fetch into catalog/
+ai-dotfiles add skill:<name>                   # or agent:/rule:/@domain; use -g for global
+ai-dotfiles install                            # or ai-dotfiles install -g
+ai-dotfiles status                             # verify symlinks are healthy
+```
+
+Use `ai-dotfiles vendor installed` to audit what vendors contributed, and `ai-dotfiles vendor remove <name>` to drop a vendored entry.
+
+### 3. Apply a stack preset
+
+```bash
+ai-dotfiles stack apply <name>         # merge preset into project manifest
+ai-dotfiles install
+```
+
+### 4. Diagnose broken config
+
+```bash
+ai-dotfiles status                     # broken symlinks + settings summary
+ai-dotfiles list --available           # cross-check against catalog contents
+```
+
+## Notes
+
+- Never edit `~/.claude/` directly for anything managed by ai-dotfiles — use `add` / `remove` so the manifest stays authoritative.
+- The manifest file is `<project>/ai-dotfiles.json` (per-project) or `~/.ai-dotfiles/global.json` (global). Specifiers live under `"packages"`.
+- `settings.fragment.json` inside a domain is deep-merged into `.claude/settings.json` on `install`.
+- On conflict or unexpected symlink state, run `ai-dotfiles status` first — do not resolve by deleting files manually.

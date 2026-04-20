@@ -34,6 +34,7 @@ EXPECTED_FILES = [
     "catalog/_example/rules/example-style.md",
     "catalog/_example/hooks/example-lint.sh",
     "catalog/_example/settings.fragment.json",
+    "catalog/skills/ai-dotfiles/SKILL.md",
     "stacks/README.md",
     "stacks/_example.conf",
     "README.md",
@@ -171,6 +172,7 @@ def test_templates_loadable() -> None:
         "skill_template.md",
         "agent_template.md",
         "rule_template.md",
+        "builtin_ai_dotfiles_skill.md",
     ]
     pkg = resources.files("ai_dotfiles.scaffold.templates")
     for name in expected_templates:

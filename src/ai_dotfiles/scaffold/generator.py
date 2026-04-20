@@ -110,6 +110,11 @@ def generate_storage_scaffold(root: Path) -> None:
         example_dir / "settings.fragment.json",
     )
 
+    _write_template(
+        "builtin_ai_dotfiles_skill.md",
+        catalog_dir / "skills" / "ai-dotfiles" / "SKILL.md",
+    )
+
     for sub in ("skills", "agents", "rules"):
         (catalog_dir / sub).mkdir(parents=True, exist_ok=True)
 

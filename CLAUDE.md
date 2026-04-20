@@ -34,6 +34,12 @@ src/ai_dotfiles/
 - No `print()` — use `ui.info()`, `ui.success()`, `ui.warn()`, `ui.error()`
 - All public functions have type annotations (mypy strict)
 
+### Builtin skill sync
+
+The file `src/ai_dotfiles/scaffold/templates/builtin_ai_dotfiles_skill.md` is shipped as the `ai-dotfiles` skill inside `catalog/skills/ai-dotfiles/SKILL.md` on `init -g`. It is the user-facing reference for the CLI.
+
+**After every user-visible change to the tool** (new command or subcommand, new/renamed flag, changed specifier syntax, new vendor, changed vendor source format, changed workflow), update this file in the same PR. Keep its command reference, vendor table, and workflows in sync with actual CLI behaviour. If behaviour drifts from the skill, users and Claude operating via the skill will give wrong advice.
+
 ## Code style
 
 - **Formatter**: Black (line-length 88)
