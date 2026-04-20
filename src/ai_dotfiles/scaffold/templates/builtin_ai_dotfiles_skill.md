@@ -1,13 +1,7 @@
 ---
 name: ai-dotfiles
 description: Manage Claude Code configuration via the ai-dotfiles CLI — install/add/remove skills, agents, rules, domains and stacks; scaffold new elements; vendor external sources from GitHub, paks or skills.sh; validate symlinks in ~/.claude/.
-when_to_use: |
-  - User mentions "ai-dotfiles", "~/.ai-dotfiles/", "AI_DOTFILES_HOME", "ai-dotfiles.json" or "global.json".
-  - User asks to add, remove, install or list a skill, agent, rule, domain or stack for Claude Code.
-  - User wants to scaffold a new skill, agent, rule, domain or stack.
-  - User wants to vendor external content (GitHub repos, paks registry, npx "skills" CLI, buildwithclaude, tonsofskills) into the catalog.
-  - User asks about the health of Claude Code symlinks under ~/.claude/ or <project>/.claude/, or about reconciling manifests with filesystem state.
-  - User edits ai-dotfiles.json or global.json manually and wants the CLI to sync symlinks/settings.
+when_to_use: Trigger when the user mentions "ai-dotfiles", "~/.ai-dotfiles/", "AI_DOTFILES_HOME", "ai-dotfiles.json" or "global.json"; adds/removes/installs/lists a skill, agent, rule, domain or stack for Claude Code; scaffolds a new element; vendors external content (GitHub, paks, npx skills CLI, buildwithclaude, tonsofskills); checks the health of Claude Code symlinks under ~/.claude/ or <project>/.claude/; reconciles ai-dotfiles.json or global.json with the filesystem.
 paths:
   - ai-dotfiles.json
   - "**/ai-dotfiles.json"

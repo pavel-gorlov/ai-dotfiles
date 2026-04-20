@@ -30,9 +30,7 @@ def update() -> None:
     try:
         root = paths.storage_root()
         if not root.is_dir():
-            ui.error(
-                f"Storage not found at {root}. Run 'ai-dotfiles init -g' first."
-            )
+            ui.error(f"Storage not found at {root}. Run 'ai-dotfiles init -g' first.")
             sys.exit(1)
         dest = sync_builtin_skill(root)
         ui.success(f"Updated {dest}")
