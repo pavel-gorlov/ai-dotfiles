@@ -115,7 +115,12 @@ def _meta_list() -> None:
         rows: list[list[str]] = []
         for name, vendor in REGISTRY.items():
             dep_cells = [
-                f"{d.name}: {'+' if d.is_installed() else 'x'}" for d in vendor.deps
+                (
+                    f"{d.name}: +"
+                    if d.is_installed()
+                    else f"{d.name}: x  ->  {d.install_url}"
+                )
+                for d in vendor.deps
             ]
             rows.append([name, vendor.description, ", ".join(dep_cells)])
         ui.info(_format_table(["NAME", "DESCRIPTION", "DEPS"], rows))
@@ -147,6 +152,102 @@ def _meta_installed() -> None:
     except AiDotfilesError as exc:
         ui.error(str(exc))
         sys.exit(exc.exit_code)
+
+
+def _adapt_hit(hit: object) -> dict[str, str]:
+    """Extract display fields from any vendor's ``SearchResult``.
+
+    Duck-typed so each vendor can keep its own ``SearchResult``
+    dataclass. Missing or ``None`` attributes fall back to ``""`` —
+    ``skills_sh`` has no ``description`` field, for example.
+    """
+    return {
+        "name": str(getattr(hit, "name", "") or ""),
+        "description": str(getattr(hit, "description", "") or ""),
+        "installs": str(getattr(hit, "installs", "") or ""),
+        "url": str(getattr(hit, "url", "") or ""),
+    }
+
+
+@click.command(name="search")
+@click.argument("query")
+@click.option(
+    "--vendor",
+    "-v",
+    "restrict",
+    multiple=True,
+    help="Restrict search to named vendors (repeatable).",
+)
+@click.option(
+    "--limit",
+    "-n",
+    type=int,
+    default=20,
+    show_default=True,
+    help="Maximum rows per vendor.",
+)
+def _meta_search(query: str, restrict: tuple[str, ...], limit: int) -> None:
+    """Search every active vendor and group results by vendor.
+
+    Vendors without a ``search`` method are silently skipped. Vendors
+    with missing deps emit a ``skipped (deps missing: …)`` header and
+    are not queried. Per-vendor ``search()`` errors are converted to
+    ``! === <name> — error: <msg> ===`` warnings on stderr so one
+    broken backend never halts the aggregate.
+    """
+    if not query.strip():
+        raise click.UsageError("query must not be empty")
+
+    unknown = [name for name in restrict if name not in REGISTRY]
+    if unknown:
+        raise click.UsageError(
+            f"unknown vendor(s): {', '.join(unknown)}; "
+            f"see 'ai-dotfiles vendor list'"
+        )
+
+    targets = [
+        (name, v)
+        for name, v in REGISTRY.items()
+        if (not restrict or name in restrict) and hasattr(v, "search")
+    ]
+
+    any_hits = False
+    for name, v in targets:
+        missing = [d for d in v.deps if not d.is_installed()]
+        if missing:
+            deps_hint = ", ".join(f"{d.name}  ->  {d.install_url}" for d in missing)
+            ui.info(f"=== {name} — skipped (deps missing: {deps_hint}) ===")
+            continue
+
+        try:
+            hits = list(v.search(query))[:limit]
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 — vendor failures must not halt aggregate
+            ui.warn(f"=== {name} — error: {exc} ===")
+            continue
+
+        ui.info(f"=== {name} ({len(hits)} results) ===")
+        if not hits:
+            click.echo("(no matches)")
+            continue
+
+        any_hits = True
+        rows = [
+            [a["name"], a["description"], a["installs"], a["url"]]
+            for a in (_adapt_hit(h) for h in hits)
+        ]
+        click.echo(
+            _format_table(
+                ["NAME", "DESCRIPTION", "INSTALLS", "URL"],
+                rows,
+            )
+        )
+
+    if not any_hits:
+        ui.info("No results.")
 
 
 @click.command(name="remove")
@@ -388,6 +489,7 @@ def vendor() -> None:
 
 vendor.add_command(_meta_list)
 vendor.add_command(_meta_installed)
+vendor.add_command(_meta_search)
 vendor.add_command(_meta_remove)
 
 

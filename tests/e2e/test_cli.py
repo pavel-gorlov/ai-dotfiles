@@ -24,7 +24,17 @@ TOP_LEVEL_COMMANDS = [
 
 DOMAIN_SUBCOMMANDS = ["add", "create", "delete", "list", "remove"]
 STACK_SUBCOMMANDS = ["add", "apply", "create", "delete", "list", "remove"]
-VENDOR_SUBCOMMANDS = ["github", "installed", "list", "skills_sh", "remove"]
+VENDOR_SUBCOMMANDS = [
+    "buildwithclaude",
+    "github",
+    "installed",
+    "list",
+    "paks",
+    "remove",
+    "search",
+    "skills_sh",
+    "tonsofskills",
+]
 VENDOR_GITHUB_SUBCOMMANDS = ["deps", "install", "list"]
 VENDOR_SKILLS_SH_SUBCOMMANDS = ["deps", "install", "list"]
 VENDOR_DEPS_SUBCOMMANDS = ["check"]
@@ -67,6 +77,15 @@ def test_help_vendor() -> None:
     assert result.exit_code == 0
     for name in VENDOR_SUBCOMMANDS:
         assert name in result.output, f"{name} missing from vendor --help"
+
+
+def test_help_vendor_search() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["vendor", "search", "--help"])
+    assert result.exit_code == 0
+    assert "--vendor" in result.output
+    assert "--limit" in result.output
+    assert "QUERY" in result.output
 
 
 def test_help_vendor_github() -> None:

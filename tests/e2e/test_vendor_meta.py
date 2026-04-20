@@ -162,6 +162,37 @@ def test_vendor_list_shows_both_vendors_with_deps(
     assert "npx: x" in result.output
 
 
+def test_vendor_list_shows_install_url_for_missing_deps(
+    runner: CliRunner,
+    tmp_storage: Path,  # noqa: ARG001 — AI_DOTFILES_HOME env is enough
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing deps render as ``<name>: x  ->  <install_url>``; installed
+    deps keep the bare ``<name>: +`` form."""
+
+    def fake_which(name: str) -> str | None:
+        return f"/usr/bin/{name}" if name == "git" else None
+
+    # Cover every vendor module that calls ``shutil.which`` to determine
+    # dependency status so the list reflects a deterministic state.
+    for module in (
+        "ai_dotfiles.vendors.github",
+        "ai_dotfiles.vendors.skills_sh",
+        "ai_dotfiles.vendors.paks",
+        "ai_dotfiles.vendors.buildwithclaude",
+        "ai_dotfiles.vendors.tonsofskills",
+    ):
+        monkeypatch.setattr(f"{module}.shutil.which", fake_which)
+
+    result = runner.invoke(vendor, ["list"])
+    assert result.exit_code == 0, result.output
+    # Installed dep: bare "+" form.
+    assert "git: +" in result.output
+    # Missing deps: include install URL with two-space arrows.
+    assert "npx: x  ->  https://nodejs.org/" in result.output
+    assert "paks: x  ->  https://paks.stakpak.dev" in result.output
+
+
 # ── vendor installed ─────────────────────────────────────────────────────────
 
 
@@ -570,3 +601,285 @@ def test_vendor_skills_sh_deps_check_present(
     result = runner.invoke(vendor, ["skills_sh", "deps", "check"])
     assert result.exit_code == 0, result.output
     assert "npx: + installed" in result.output
+
+
+# ── vendor search (aggregated meta command) ──────────────────────────────────
+
+
+def _patch_which_all(
+    monkeypatch: pytest.MonkeyPatch,
+    present: set[str],
+) -> None:
+    """Patch ``shutil.which`` in every vendor module for meta-search tests."""
+
+    def fake_which(name: str) -> str | None:
+        return f"/usr/bin/{name}" if name in present else None
+
+    for module in (
+        "ai_dotfiles.vendors.github",
+        "ai_dotfiles.vendors.skills_sh",
+        "ai_dotfiles.vendors.paks",
+        "ai_dotfiles.vendors.buildwithclaude",
+        "ai_dotfiles.vendors.tonsofskills",
+    ):
+        monkeypatch.setattr(f"{module}.shutil.which", fake_which)
+
+
+def _stub_all_searches(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub every search-capable vendor with a fixed, vendor-native hit list."""
+    from ai_dotfiles.vendors import (
+        BUILDWITHCLAUDE,
+        PAKS,
+        SKILLS_SH,
+        TONSOFSKILLS,
+    )
+    from ai_dotfiles.vendors import buildwithclaude as bwc_mod
+    from ai_dotfiles.vendors import paks as paks_mod
+    from ai_dotfiles.vendors import skills_sh as skillssh_mod
+    from ai_dotfiles.vendors import tonsofskills as tos_mod
+
+    def skills_sh_search(self: object, query: str) -> list[object]:
+        return [
+            skillssh_mod.SearchResult(
+                source="vercel-labs/agent-skills",
+                name="react-best-practices",
+                installs="321.7K",
+                url="https://skills.sh/vercel-labs/react",
+            ),
+        ]
+
+    def paks_search(self: object, query: str) -> list[object]:
+        return [
+            paks_mod.SearchResult(
+                source="wshpbson",
+                name="k8s-manifest-generator",
+                description="Generate k8s manifests",
+                url="https://paks.stakpak.dev/wshpbson/k8s",
+                installs="42",
+            ),
+        ]
+
+    def bwc_search(self: object, query: str) -> list[object]:
+        return [
+            bwc_mod.SearchResult(
+                source="buildwithclaude",
+                name="bwc-skill",
+                description="Something useful",
+                url="https://github.com/davepoon/buildwithclaude/tree/main/bwc",
+            ),
+        ]
+
+    def tos_search(self: object, query: str) -> list[object]:
+        return [
+            tos_mod.SearchResult(
+                source="tonsofskills",
+                name="tos-skill",
+                description="Tons of skill",
+                url="https://github.com/jeremylongshore/tos/tree/main/plugins/tos",
+            ),
+        ]
+
+    monkeypatch.setattr(type(SKILLS_SH), "search", skills_sh_search, raising=True)
+    monkeypatch.setattr(type(PAKS), "search", paks_search, raising=True)
+    monkeypatch.setattr(type(BUILDWITHCLAUDE), "search", bwc_search, raising=True)
+    monkeypatch.setattr(type(TONSOFSKILLS), "search", tos_search, raising=True)
+
+
+def test_vendor_meta_search_aggregates_across_vendors(
+    runner: CliRunner,
+    tmp_storage: Path,  # noqa: ARG001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every search-capable vendor contributes a section; github is absent."""
+    _patch_which_all(monkeypatch, present={"git", "npx", "paks"})
+    _stub_all_searches(monkeypatch)
+
+    result = runner.invoke(vendor, ["search", "anything"])
+    assert result.exit_code == 0, result.output
+
+    assert "=== skills_sh (1 results) ===" in result.output
+    assert "=== paks (1 results) ===" in result.output
+    assert "=== buildwithclaude (1 results) ===" in result.output
+    assert "=== tonsofskills (1 results) ===" in result.output
+    # URLs from each stub appear.
+    assert "https://skills.sh/vercel-labs/react" in result.output
+    assert "https://paks.stakpak.dev/wshpbson/k8s" in result.output
+    assert "https://github.com/davepoon/buildwithclaude/tree/main/bwc" in result.output
+    assert (
+        "https://github.com/jeremylongshore/tos/tree/main/plugins/tos" in result.output
+    )
+    # github has no search method — no section header.
+    assert "=== github" not in result.output
+
+
+def test_vendor_meta_search_skips_vendors_with_missing_deps(
+    runner: CliRunner,
+    tmp_storage: Path,  # noqa: ARG001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Vendors whose deps are absent print a 'skipped' header and are not queried."""
+    # Only git is present → skills_sh (npx) and paks (paks CLI) are skipped.
+    _patch_which_all(monkeypatch, present={"git"})
+    _stub_all_searches(monkeypatch)
+
+    result = runner.invoke(vendor, ["search", "x"])
+    assert result.exit_code == 0, result.output
+
+    assert (
+        "=== skills_sh — skipped (deps missing: npx  ->  https://nodejs.org/) ==="
+        in result.output
+    )
+    assert (
+        "=== paks — skipped (deps missing: paks  ->  https://paks.stakpak.dev) ==="
+        in result.output
+    )
+    # Git-backed vendors produce real sections.
+    assert "=== buildwithclaude (1 results) ===" in result.output
+    assert "=== tonsofskills (1 results) ===" in result.output
+
+
+def test_vendor_meta_search_filter_by_vendor(
+    runner: CliRunner,
+    tmp_storage: Path,  # noqa: ARG001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``-v`` restricts which vendors are queried."""
+    _patch_which_all(monkeypatch, present={"git", "npx", "paks"})
+    _stub_all_searches(monkeypatch)
+
+    result = runner.invoke(
+        vendor, ["search", "anything", "-v", "paks", "-v", "skills_sh"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "=== skills_sh (1 results) ===" in result.output
+    assert "=== paks (1 results) ===" in result.output
+    assert "=== buildwithclaude" not in result.output
+    assert "=== tonsofskills" not in result.output
+
+    # Restricting to github (no search method) → zero targets → "No results."
+    result2 = runner.invoke(vendor, ["search", "anything", "--vendor", "github"])
+    assert result2.exit_code == 0, result2.output
+    assert "No results." in result2.output
+    assert "=== github" not in result2.output
+
+
+def test_vendor_meta_search_limit_applied(
+    runner: CliRunner,
+    tmp_storage: Path,  # noqa: ARG001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``--limit N`` trims each vendor to N rows."""
+    from ai_dotfiles.vendors import PAKS
+    from ai_dotfiles.vendors import paks as paks_mod
+
+    _patch_which_all(monkeypatch, present={"paks"})
+
+    def paks_search(self: object, query: str) -> list[object]:
+        return [
+            paks_mod.SearchResult(
+                source="owner",
+                name=f"skill-{i:02d}",
+                description="",
+                url=f"https://paks.stakpak.dev/owner/skill-{i:02d}",
+                installs="",
+            )
+            for i in range(50)
+        ]
+
+    monkeypatch.setattr(type(PAKS), "search", paks_search, raising=True)
+
+    result = runner.invoke(vendor, ["search", "anything", "-v", "paks", "--limit", "3"])
+    assert result.exit_code == 0, result.output
+    assert "=== paks (3 results) ===" in result.output
+    assert "skill-00" in result.output
+    assert "skill-01" in result.output
+    assert "skill-02" in result.output
+    # Row 3 must be trimmed.
+    assert "skill-03" not in result.output
+
+
+def test_vendor_meta_search_vendor_error_continues(
+    runner: CliRunner,
+    tmp_storage: Path,  # noqa: ARG001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A raising vendor becomes a warning; others still render."""
+    from ai_dotfiles.vendors import PAKS, SKILLS_SH
+
+    _patch_which_all(monkeypatch, present={"npx", "paks"})
+    _stub_all_searches(monkeypatch)
+
+    def boom(self: object, query: str) -> list[object]:
+        raise RuntimeError("boom")
+
+    # skills_sh blows up; paks keeps its stubbed result.
+    monkeypatch.setattr(type(SKILLS_SH), "search", boom, raising=True)
+
+    result = runner.invoke(vendor, ["search", "x", "-v", "skills_sh", "-v", "paks"])
+    assert result.exit_code == 0, result.output
+    assert "=== skills_sh — error: boom ===" in result.output
+    assert "=== paks (1 results) ===" in result.output
+    # Sanity: the other vendor's data still reached stdout.
+    assert "k8s-manifest-generator" in result.output
+    # PAKS is still a frozen dataclass type after monkeypatch — no leakage needed.
+    _ = PAKS
+
+
+def test_vendor_meta_search_unknown_vendor_errors(
+    runner: CliRunner,
+    tmp_storage: Path,  # noqa: ARG001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``-v <unknown>`` aborts with a UsageError (non-zero exit)."""
+    _patch_which_all(monkeypatch, present={"git", "npx", "paks"})
+    result = runner.invoke(vendor, ["search", "x", "-v", "nope"])
+    assert result.exit_code != 0
+    assert "nope" in result.output
+
+
+def test_vendor_meta_search_empty_query(
+    runner: CliRunner,
+    tmp_storage: Path,  # noqa: ARG001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empty / whitespace-only query aborts with a UsageError."""
+    _patch_which_all(monkeypatch, present={"git", "npx", "paks"})
+    result = runner.invoke(vendor, ["search", ""])
+    assert result.exit_code != 0
+    assert "empty" in result.output.lower()
+
+
+def test_vendor_meta_search_no_matches_anywhere(
+    runner: CliRunner,
+    tmp_storage: Path,  # noqa: ARG001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """All vendors empty → headers + ``(no matches)`` + final ``No results.``."""
+    from ai_dotfiles.vendors import (
+        BUILDWITHCLAUDE,
+        PAKS,
+        SKILLS_SH,
+        TONSOFSKILLS,
+    )
+
+    _patch_which_all(monkeypatch, present={"git", "npx", "paks"})
+
+    def empty(self: object, query: str) -> list[object]:
+        return []
+
+    for vendor_singleton in (SKILLS_SH, PAKS, BUILDWITHCLAUDE, TONSOFSKILLS):
+        monkeypatch.setattr(type(vendor_singleton), "search", empty, raising=True)
+
+    result = runner.invoke(vendor, ["search", "zzzzzz"])
+    assert result.exit_code == 0, result.output
+    # Section headers present for each active vendor.
+    assert "=== skills_sh (0 results) ===" in result.output
+    assert "=== paks (0 results) ===" in result.output
+    assert "=== buildwithclaude (0 results) ===" in result.output
+    assert "=== tonsofskills (0 results) ===" in result.output
+    # Each empty section has the placeholder line.
+    assert result.output.count("(no matches)") >= 4
+    # Table headers must NOT appear — no body was rendered.
+    assert "NAME  DESCRIPTION" not in result.output
+    # Final fallback line.
+    assert "No results." in result.output

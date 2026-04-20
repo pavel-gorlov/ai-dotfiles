@@ -134,9 +134,10 @@ available.
 
 | Command | Description |
 |---------|-------------|
-| `vendor list`                                     | Show registered vendors and whether their host dependencies are installed |
+| `vendor list`                                     | Registered vendors + dependency status (with install URL for any missing dep). |
 | `vendor installed`                                | List every item in the catalog that was added by a vendor (reads `.source`) |
 | `vendor remove <name>`                            | Delete a vendored catalog entry by name (no-op for bare `.claude/` symlinks) |
+| `vendor search <query> [-v NAME ...] [--limit N]` | Aggregated search across every vendor whose deps are installed; results grouped by vendor. |
 | `vendor github install <url> [--force]`           | Sparse-clone a GitHub subtree into the catalog |
 | `vendor github list <url>`                        | List the top-level entries the URL exposes |
 | `vendor github deps check`                        | Check that `git` is on `PATH` |
@@ -241,6 +242,19 @@ ai-dotfiles add skill:generating-database-seed-data
 The upstream repo keeps a large `backups/` tree of historical
 snapshots; the vendor scans only the live `plugins/` subtree, so
 search results map to the actual curated catalog.
+
+#### Example: aggregated search
+
+```bash
+ai-dotfiles vendor list              # see which vendors are ready
+ai-dotfiles vendor search git        # query every active vendor
+ai-dotfiles vendor search git --limit 5
+ai-dotfiles vendor search git -v buildwithclaude -v tonsofskills
+```
+
+Vendors with missing deps are shown as `skipped (deps missing: ...)`
+with the install URL. Vendors without a `search` capability (e.g.
+`github`) are omitted silently.
 
 ## Storage Structure
 

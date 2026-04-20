@@ -50,8 +50,9 @@ Vendors import external skills/agents/rules into `catalog/` and write a `.source
 
 Meta commands (vendor-agnostic):
 
-- `ai-dotfiles vendor list` — registered vendors and whether their host deps (git, npx, paks, ...) are on `PATH`.
+- `ai-dotfiles vendor list` — registered vendors and whether their host deps (git, npx, paks, ...) are on `PATH`; shows install URL for any missing dep (useful before running `deps install`).
 - `ai-dotfiles vendor installed` — every catalog entry that came from a vendor (reads `.source`).
+- `ai-dotfiles vendor search <query> [-v NAME ...] [--limit N]` — one shot across every vendor whose deps are installed; results grouped by vendor.
 - `ai-dotfiles vendor remove <name> [--kind skill|agent|rule] [-y]` — delete a vendored entry.
 
 Per-vendor subcommands follow the same shape — `install / list / search / deps check / refresh` (only the vendors that support caching expose `refresh`):
