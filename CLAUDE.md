@@ -99,5 +99,5 @@ AiDotfilesError (base)
 ## Blueprint
 
 Full specification: [ai-dotfiles-blueprint.md](ai-dotfiles-blueprint.md)
-Implementation plan: [PLAN.md](PLAN.md)
+Implementation plan: [tasks/done/implementation-plan.md](tasks/done/implementation-plan.md)
 Task details: [tasks/](tasks/)
