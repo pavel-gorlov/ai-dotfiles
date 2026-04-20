@@ -158,12 +158,10 @@ def _adapt_hit(hit: object) -> dict[str, str]:
     """Extract display fields from any vendor's ``SearchResult``.
 
     Duck-typed so each vendor can keep its own ``SearchResult``
-    dataclass. Missing or ``None`` attributes fall back to ``""`` —
-    ``skills_sh`` has no ``description`` field, for example.
+    dataclass. Missing or ``None`` attributes fall back to ``""``.
     """
     return {
         "name": str(getattr(hit, "name", "") or ""),
-        "description": str(getattr(hit, "description", "") or ""),
         "installs": str(getattr(hit, "installs", "") or ""),
         "url": str(getattr(hit, "url", "") or ""),
     }
@@ -236,12 +234,11 @@ def _meta_search(query: str, restrict: tuple[str, ...], limit: int) -> None:
 
         any_hits = True
         rows = [
-            [a["name"], a["description"], a["installs"], a["url"]]
-            for a in (_adapt_hit(h) for h in hits)
+            [a["name"], a["installs"], a["url"]] for a in (_adapt_hit(h) for h in hits)
         ]
         click.echo(
             _format_table(
-                ["NAME", "DESCRIPTION", "INSTALLS", "URL"],
+                ["NAME", "INSTALLS", "URL"],
                 rows,
             )
         )

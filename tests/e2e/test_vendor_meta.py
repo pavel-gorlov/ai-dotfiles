@@ -880,6 +880,6 @@ def test_vendor_meta_search_no_matches_anywhere(
     # Each empty section has the placeholder line.
     assert result.output.count("(no matches)") >= 4
     # Table headers must NOT appear — no body was rendered.
-    assert "NAME  DESCRIPTION" not in result.output
+    assert "NAME  INSTALLS" not in result.output
     # Final fallback line.
     assert "No results." in result.output
