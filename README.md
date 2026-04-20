@@ -92,6 +92,7 @@ Run `ai-dotfiles <command> --help` for full options.
 | `list -g`                        | List installed packages (global) |
 | `list --available`               | List everything available in the catalog and stacks |
 | `status`                         | Show symlink health and merged settings summary |
+| `update`                         | Refresh CLI-managed files inside storage (today: the built-in `ai-dotfiles` skill) |
 
 ### Elements
 

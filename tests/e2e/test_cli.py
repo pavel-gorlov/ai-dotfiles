@@ -19,6 +19,7 @@ TOP_LEVEL_COMMANDS = [
     "remove",
     "stack",
     "status",
+    "update",
     "vendor",
 ]
 

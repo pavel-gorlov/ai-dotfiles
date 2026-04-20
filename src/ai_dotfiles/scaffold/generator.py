@@ -54,6 +54,24 @@ def _write_template(
         _chmod_plus_x(dest)
 
 
+_BUILTIN_SKILL_TEMPLATE = "builtin_ai_dotfiles_skill.md"
+_BUILTIN_SKILL_REL_PARTS = ("catalog", "skills", "ai-dotfiles", "SKILL.md")
+
+
+def sync_builtin_skill(root: Path) -> Path:
+    """Rewrite the built-in ``ai-dotfiles`` skill from package data.
+
+    Writes ``<root>/catalog/skills/ai-dotfiles/SKILL.md`` verbatim from
+    the shipped template, creating parent directories as needed. Safe to
+    call against existing storage — the only file touched is the
+    built-in skill, which is CLI-managed and not intended for hand
+    editing. Returns the absolute path that was written.
+    """
+    dest = root.joinpath(*_BUILTIN_SKILL_REL_PARTS)
+    _write_template(_BUILTIN_SKILL_TEMPLATE, dest)
+    return dest
+
+
 def generate_storage_scaffold(root: Path) -> None:
     """Create the full storage directory structure at ``root``.
 
@@ -110,10 +128,7 @@ def generate_storage_scaffold(root: Path) -> None:
         example_dir / "settings.fragment.json",
     )
 
-    _write_template(
-        "builtin_ai_dotfiles_skill.md",
-        catalog_dir / "skills" / "ai-dotfiles" / "SKILL.md",
-    )
+    sync_builtin_skill(root)
 
     for sub in ("skills", "agents", "rules"):
         (catalog_dir / sub).mkdir(parents=True, exist_ok=True)

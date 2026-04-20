@@ -31,6 +31,7 @@ Prefer running the CLI over editing `~/.claude/` or manifests by hand — manife
 - `ai-dotfiles init` — create `ai-dotfiles.json` in the current project.
 - `ai-dotfiles init -g` — scaffold global storage at `~/.ai-dotfiles/` (override via `AI_DOTFILES_HOME`). Pre-existing files in `~/.claude/` (`CLAUDE.md`, `settings.json`, hooks, output-styles) are **adopted** — they replace the scaffold templates inside `global/` and are then symlinked back, so your previous config stays authoritative and no backup dir is created.
 - `ai-dotfiles init -g --from <git-url>` — clone an existing storage repository. Conflicting local files under `~/.claude/` are moved to `~/.dotfiles-backup/` (the cloned content wins).
+- `ai-dotfiles update` — refresh CLI-managed files inside an existing storage. Today: rewrites the built-in `ai-dotfiles` skill (`catalog/skills/ai-dotfiles/SKILL.md`) from the installed CLI's template. User-authored skills/agents/rules/manifests and `global/` content are never touched. Run after upgrading the CLI.
 
 ### Packages
 

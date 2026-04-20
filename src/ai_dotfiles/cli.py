@@ -10,6 +10,7 @@ from ai_dotfiles.commands.list_cmd import list_cmd
 from ai_dotfiles.commands.remove import remove
 from ai_dotfiles.commands.stack import stack
 from ai_dotfiles.commands.status import status
+from ai_dotfiles.commands.update import update
 from ai_dotfiles.commands.vendor import vendor
 
 
@@ -25,6 +26,7 @@ cli.add_command(add)
 cli.add_command(remove)
 cli.add_command(list_cmd)
 cli.add_command(status)
+cli.add_command(update)
 cli.add_command(vendor)
 cli.add_command(create)
 cli.add_command(delete)
