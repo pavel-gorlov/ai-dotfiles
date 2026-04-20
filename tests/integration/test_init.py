@@ -120,9 +120,10 @@ def test_init_from_without_global(
     assert "--from requires -g" in result.output
 
 
-def test_init_global_creates_backup(
+def test_init_global_adopts_existing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """``init -g`` adopts pre-existing ~/.claude/ files — no backup is made."""
     storage = tmp_path / ".ai-dotfiles"
     home = tmp_path / "home"
     home.mkdir()
@@ -138,9 +139,28 @@ def test_init_global_creates_backup(
     result = runner.invoke(init, ["-g"])
 
     assert result.exit_code == 0, result.output
-    # Old file backed up under ~/.dotfiles-backup, new one is a symlink.
+    # User's file promoted into storage; target is now a symlink to it.
     assert (claude_dir / "CLAUDE.md").is_symlink()
-    backed = home / ".dotfiles-backup" / ".claude" / "CLAUDE.md"
-    assert backed.is_file()
-    assert backed.read_text(encoding="utf-8") == "user-previous-content\n"
-    assert "backed up" in result.output.lower()
+    promoted = storage / "global" / "CLAUDE.md"
+    assert promoted.is_file()
+    assert promoted.read_text(encoding="utf-8") == "user-previous-content\n"
+    # No backup directory created.
+    assert not (home / ".dotfiles-backup").exists()
+    assert "adopted" in result.output.lower()
+
+
+def test_init_global_no_backup_dir_when_clean(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No ~/.dotfiles-backup/ is created when there is nothing to back up."""
+    storage = tmp_path / ".ai-dotfiles"
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("AI_DOTFILES_HOME", str(storage))
+    monkeypatch.setenv("HOME", str(home))
+
+    runner = CliRunner()
+    result = runner.invoke(init, ["-g"])
+
+    assert result.exit_code == 0, result.output
+    assert not (home / ".dotfiles-backup").exists()

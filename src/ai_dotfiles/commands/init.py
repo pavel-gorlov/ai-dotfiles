@@ -39,14 +39,18 @@ def _run_init_project() -> None:
 
 
 def _report_link_messages(messages: list[str]) -> None:
-    """Emit one info line per link operation; flag any backups created."""
-    backup_created = False
+    """Emit one info line per link operation; note adopted files, if any."""
+    adopted: list[str] = []
     for msg in messages:
         ui.info(f"  {msg}")
-        if msg.startswith("backed-up "):
-            backup_created = True
-    if backup_created:
-        ui.info(f"Existing files backed up to {paths.backup_dir()}")
+        if msg.startswith("adopted "):
+            adopted.append(msg.removeprefix("adopted "))
+    if adopted:
+        joined = ", ".join(adopted)
+        ui.info(
+            f"Adopted existing {joined} into {paths.global_dir()} "
+            "(your previous content is preserved as the storage source)."
+        )
 
 
 def _run_init_global(from_url: str | None) -> None:
@@ -72,6 +76,7 @@ def _run_init_global(from_url: str | None) -> None:
         paths.global_dir(),
         paths.claude_global_dir(),
         paths.backup_dir(),
+        adopt=from_url is None,
     )
     ui.success(f"Linked global/ -> {paths.claude_global_dir()}")
     _report_link_messages(messages)

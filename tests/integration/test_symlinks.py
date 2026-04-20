@@ -111,6 +111,20 @@ def test_safe_symlink_backup_preserves_structure(
     assert (backup / ".claude" / "hooks" / "lint.sh").read_text() == "#old\n"
 
 
+def test_safe_symlink_adopt_target_becomes_source(
+    home: Path, backup: Path, storage: Path, claude_dir: Path
+) -> None:
+    """adopt=True: target file replaces source; no backup dir created."""
+    source = _make_file(storage / "CLAUDE.md", "scaffold\n")
+    target = _make_file(claude_dir / "CLAUDE.md", "user\n")
+    status = safe_symlink(source, target, backup, adopt=True)
+    assert status == "adopted"
+    assert target.is_symlink()
+    assert target.resolve() == source.resolve()
+    assert source.read_text() == "user\n"
+    assert not backup.exists()
+
+
 def test_safe_symlink_creates_parent_dirs(
     home: Path, backup: Path, storage: Path
 ) -> None:

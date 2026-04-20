@@ -53,11 +53,17 @@ def _backup_target_for(target: Path, backup_root: Path) -> Path:
     return backup_root / rel
 
 
-def safe_symlink(source: Path, target: Path, backup: Path) -> str:
+def safe_symlink(
+    source: Path, target: Path, backup: Path, *, adopt: bool = False
+) -> str:
     """Create symlink ``target`` -> ``source`` idempotently.
 
     Returns one of: ``"linked"``, ``"already-linked"``, ``"relinked"``,
-    ``"backed-up"``.
+    ``"backed-up"``, ``"adopted"``.
+
+    When ``adopt`` is True and ``target`` exists as a real file or directory,
+    the target's content replaces ``source`` (so the user's pre-existing
+    content becomes the source of truth) instead of being moved to ``backup``.
     """
     source_abs = source.resolve() if source.exists() else source.absolute()
     if not source_abs.exists():
@@ -91,19 +97,33 @@ def safe_symlink(source: Path, target: Path, backup: Path) -> str:
             ) from exc
         status = "relinked"
     elif target.exists():
-        dest = _backup_target_for(target, backup)
-        try:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            if dest.exists() or dest.is_symlink():
-                # Avoid shutil.move merging into an existing backup directory.
-                if dest.is_dir() and not dest.is_symlink():
-                    shutil.rmtree(dest)
-                else:
-                    dest.unlink()
-            shutil.move(str(target), str(dest))
-        except OSError as exc:
-            raise LinkError(f"Failed to back up {target} -> {dest}: {exc}") from exc
-        status = "backed-up"
+        if adopt:
+            try:
+                if source_abs.is_dir() and not source_abs.is_symlink():
+                    shutil.rmtree(source_abs)
+                elif source_abs.exists() or source_abs.is_symlink():
+                    source_abs.unlink()
+                source_abs.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(target), str(source_abs))
+            except OSError as exc:
+                raise LinkError(
+                    f"Failed to adopt {target} -> {source_abs}: {exc}"
+                ) from exc
+            status = "adopted"
+        else:
+            dest = _backup_target_for(target, backup)
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if dest.exists() or dest.is_symlink():
+                    # Avoid shutil.move merging into an existing backup dir.
+                    if dest.is_dir() and not dest.is_symlink():
+                        shutil.rmtree(dest)
+                    else:
+                        dest.unlink()
+                shutil.move(str(target), str(dest))
+            except OSError as exc:
+                raise LinkError(f"Failed to back up {target} -> {dest}: {exc}") from exc
+            status = "backed-up"
     else:
         status = "linked"
 
@@ -216,12 +236,19 @@ def unlink_standalone(target: Path) -> bool:
     return remove_symlink(target)
 
 
-def link_global_files(global_dir: Path, claude_dir: Path, backup: Path) -> list[str]:
+def link_global_files(
+    global_dir: Path, claude_dir: Path, backup: Path, *, adopt: bool = False
+) -> list[str]:
     """Link ``global/`` contents into ``claude_dir`` file-by-file.
 
     Handles ``CLAUDE.md``, ``settings.json``, and every file inside
     ``hooks/`` and ``output-styles/`` individually (never a directory
     symlink). Skips ``README.md`` everywhere.
+
+    When ``adopt`` is True, pre-existing target files are promoted into
+    ``global_dir`` (replacing the scaffold templates) instead of being backed
+    up. Use this on ``init -g`` so the user's existing ``~/.claude/`` config
+    becomes the storage source of truth.
     """
     if not global_dir.is_dir():
         raise LinkError(f"Global dir does not exist: {global_dir}")
@@ -231,7 +258,7 @@ def link_global_files(global_dir: Path, claude_dir: Path, backup: Path) -> list[
     for top_name in ("CLAUDE.md", "settings.json"):
         src = global_dir / top_name
         if src.exists():
-            status = safe_symlink(src, claude_dir / top_name, backup)
+            status = safe_symlink(src, claude_dir / top_name, backup, adopt=adopt)
             messages.append(f"{status} {top_name}")
 
     for sub in ("hooks", "output-styles"):
@@ -242,7 +269,7 @@ def link_global_files(global_dir: Path, claude_dir: Path, backup: Path) -> list[
             if child.name == "README.md":
                 continue
             target = claude_dir / sub / child.name
-            status = safe_symlink(child, target, backup)
+            status = safe_symlink(child, target, backup, adopt=adopt)
             messages.append(f"{status} {sub}/{child.name}")
 
     return messages
