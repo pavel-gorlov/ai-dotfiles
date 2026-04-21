@@ -10,6 +10,7 @@ from ai_dotfiles.cli import cli
 
 TOP_LEVEL_COMMANDS = [
     "add",
+    "completion",
     "create",
     "delete",
     "domain",
@@ -23,6 +24,7 @@ TOP_LEVEL_COMMANDS = [
     "vendor",
 ]
 
+COMPLETION_SUBCOMMANDS = ["install", "uninstall"]
 DOMAIN_SUBCOMMANDS = ["add", "create", "delete", "list", "remove"]
 STACK_SUBCOMMANDS = ["add", "apply", "create", "delete", "list", "remove"]
 VENDOR_SUBCOMMANDS = [
@@ -54,6 +56,14 @@ def test_help() -> None:
     assert result.exit_code == 0
     for name in TOP_LEVEL_COMMANDS:
         assert name in result.output, f"{name} missing from --help"
+
+
+def test_help_completion() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["completion", "--help"])
+    assert result.exit_code == 0
+    for name in COMPLETION_SUBCOMMANDS:
+        assert name in result.output, f"{name} missing from completion --help"
 
 
 def test_help_domain() -> None:

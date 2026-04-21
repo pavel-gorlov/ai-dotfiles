@@ -23,6 +23,20 @@ poetry install
 poetry run ai-dotfiles --help
 ```
 
+### Enable tab completion (bash / zsh)
+
+```bash
+ai-dotfiles completion install          # auto-detects $SHELL
+# or: ai-dotfiles completion install --shell bash
+# or: ai-dotfiles completion install --shell zsh
+```
+
+This writes a completion script to `~/.ai-dotfiles/completions/` and appends a
+marker-guarded source block to `~/.bashrc` or `~/.zshrc` (idempotent — safe to
+re-run). Restart your shell or `source` the rc file to activate. Use
+`--print` to print the script to stdout without touching any files, or
+`ai-dotfiles completion uninstall` to remove the block and cached script.
+
 ## Quick Start
 
 ```bash
@@ -93,6 +107,8 @@ Run `ai-dotfiles <command> --help` for full options.
 | `list --available`               | List everything available in the catalog and stacks |
 | `status`                         | Show symlink health and merged settings summary |
 | `update`                         | Refresh CLI-managed files inside storage (today: the built-in `ai-dotfiles` skill) |
+| `completion install [--shell bash\|zsh] [--print]` | Install tab completion into `~/.bashrc` / `~/.zshrc` (auto-detects shell from `$SHELL`) |
+| `completion uninstall [--shell bash\|zsh]` | Remove the completion block and delete the cached script |
 
 ### Elements
 

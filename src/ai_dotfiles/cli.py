@@ -2,6 +2,7 @@ import click
 
 from ai_dotfiles import __version__
 from ai_dotfiles.commands.add import add
+from ai_dotfiles.commands.completion import completion
 from ai_dotfiles.commands.create_delete import create, delete
 from ai_dotfiles.commands.domain import domain
 from ai_dotfiles.commands.init import init
@@ -32,3 +33,4 @@ cli.add_command(create)
 cli.add_command(delete)
 cli.add_command(domain)
 cli.add_command(stack)
+cli.add_command(completion)

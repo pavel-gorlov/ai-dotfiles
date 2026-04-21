@@ -37,6 +37,11 @@ def stacks_dir() -> Path:
     return storage_root() / "stacks"
 
 
+def completion_dir() -> Path:
+    """Cached shell completion scripts (``~/.ai-dotfiles/completions``)."""
+    return storage_root() / "completions"
+
+
 def global_manifest_path() -> Path:
     """Manifest of globally installed packages."""
     return storage_root() / "global.json"
