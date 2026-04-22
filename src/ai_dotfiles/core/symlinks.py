@@ -236,6 +236,70 @@ def unlink_standalone(target: Path) -> bool:
     return remove_symlink(target)
 
 
+def prune_dangling(claude_dir: Path, storage: Path) -> list[str]:
+    """Remove dangling symlinks in ``claude_dir`` that point into ``storage``.
+
+    Walks ``claude_dir/{skills,agents,rules,hooks}`` plus the top-level
+    ``claude_dir`` for ``CLAUDE.md`` / ``settings.json`` style files. A symlink
+    is pruned only when:
+
+    1. it is a symlink (real files are never touched),
+    2. its target resolves into ``storage`` (user's own symlinks pointing
+       elsewhere stay put), and
+    3. the resolved target no longer exists.
+
+    Returns a list of removed labels like ``skills/foo``.
+    """
+    if not claude_dir.is_dir():
+        return []
+    try:
+        storage_abs = storage.resolve()
+    except OSError:
+        return []
+
+    removed: list[str] = []
+
+    def _maybe_prune(entry: Path, label: str) -> None:
+        if not entry.is_symlink():
+            return
+        try:
+            raw = Path(os.readlink(entry))
+        except OSError:
+            return
+        raw_abs = raw if raw.is_absolute() else (entry.parent / raw)
+        try:
+            resolved = raw_abs.resolve(strict=False)
+        except OSError:
+            return
+        # Only touch symlinks into our own storage tree.
+        try:
+            resolved.relative_to(storage_abs)
+        except ValueError:
+            return
+        # Not dangling — target still exists.
+        if resolved.exists():
+            return
+        try:
+            entry.unlink()
+        except OSError:
+            return
+        removed.append(label)
+
+    # Top-level managed files
+    for top_name in ("CLAUDE.md", "settings.json"):
+        _maybe_prune(claude_dir / top_name, top_name)
+
+    # Managed subdirectories
+    for sub in _DOMAIN_SUBDIRS + ("output-styles",):
+        sub_dir = claude_dir / sub
+        if not sub_dir.is_dir():
+            continue
+        for child in sorted(sub_dir.iterdir()):
+            _maybe_prune(child, f"{sub}/{child.name}")
+
+    return removed
+
+
 def link_global_files(
     global_dir: Path, claude_dir: Path, backup: Path, *, adopt: bool = False
 ) -> list[str]:

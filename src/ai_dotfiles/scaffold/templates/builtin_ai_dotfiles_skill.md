@@ -36,6 +36,7 @@ After installing completion, arguments themselves tab-complete too:
 
 - `ai-dotfiles install` — symlink packages listed in `ai-dotfiles.json` into `<project>/.claude/`.
 - `ai-dotfiles install -g` — symlink packages from `global.json` into `~/.claude/`.
+- `ai-dotfiles install --prune [-g]` — after linking, also remove stale symlinks under `~/.claude/` (or `<project>/.claude/`) that point into storage but no longer resolve — useful after renaming or deleting a catalog element, or after a pull that changed catalog layout. User-owned symlinks pointing outside ai-dotfiles storage are left alone.
 - `ai-dotfiles add <spec>...` — add specifiers to the **project** manifest (`ai-dotfiles.json`) and symlink into `<project>/.claude/`.
 - `ai-dotfiles add -g <spec>...` — add specifiers to the **global** manifest (`~/.ai-dotfiles/global.json`) and symlink into `~/.claude/`.
 - `ai-dotfiles remove <spec>...` — remove from project manifest and unlink.

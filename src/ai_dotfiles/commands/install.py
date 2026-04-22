@@ -30,19 +30,28 @@ from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
     is_flag=True,
     help="Install the global manifest instead of the project one.",
 )
-def install(is_global: bool) -> None:
+@click.option(
+    "--prune",
+    is_flag=True,
+    help=(
+        "After linking, remove stale symlinks that point into ai-dotfiles "
+        "storage but no longer resolve (e.g. after renaming or deleting a "
+        "catalog element)."
+    ),
+)
+def install(is_global: bool, prune: bool) -> None:
     """Install packages from the manifest (project by default, or global)."""
     try:
         if is_global:
-            _install_global()
+            _install_global(prune=prune)
         else:
-            _install_project()
+            _install_project(prune=prune)
     except AiDotfilesError as exc:
         ui.error(str(exc))
         raise SystemExit(exc.exit_code) from exc
 
 
-def _install_project() -> None:
+def _install_project(*, prune: bool = False) -> None:
     root = paths.find_project_root()
     if root is None or not paths.project_manifest_path(root).is_file():
         raise ConfigError("ai-dotfiles.json not found. Run 'ai-dotfiles init' first.")
@@ -52,35 +61,43 @@ def _install_project() -> None:
 
     ui.info(f"Installing from {manifest_path.name}...")
 
-    if not packages:
-        ui.info("Nothing to install.")
-        return
-
     catalog = paths.catalog_dir()
     backup = paths.backup_dir()
     claude_dir = paths.project_claude_dir(root)
     claude_dir.mkdir(parents=True, exist_ok=True)
 
-    parsed = elements.parse_elements(packages)
-    for element in parsed:
-        elements.validate_element_exists(element, catalog)
-
+    parsed: list[Element] = []
     linked_items: list[str] = []
-    for element in parsed:
-        linked_items.extend(_link_element(element, claude_dir, catalog, backup))
-
-    fragments = settings_merge.collect_domain_fragments(packages, catalog)
+    fragment_count = 0
     settings_written = False
-    if fragments:
-        assembled = settings_merge.assemble_settings(fragments)
-        if assembled:
-            settings_merge.write_settings(assembled, claude_dir / "settings.json")
-            settings_written = True
 
-    _print_summary(parsed, linked_items, settings_written, len(fragments))
+    if packages:
+        parsed = elements.parse_elements(packages)
+        for element in parsed:
+            elements.validate_element_exists(element, catalog)
+
+        for element in parsed:
+            linked_items.extend(_link_element(element, claude_dir, catalog, backup))
+
+        fragments = settings_merge.collect_domain_fragments(packages, catalog)
+        fragment_count = len(fragments)
+        if fragments:
+            assembled = settings_merge.assemble_settings(fragments)
+            if assembled:
+                settings_merge.write_settings(assembled, claude_dir / "settings.json")
+                settings_written = True
+
+    if prune:
+        _report_pruned(claude_dir, paths.storage_root())
+
+    if not packages:
+        ui.info("Nothing to install.")
+        return
+
+    _print_summary(parsed, linked_items, settings_written, fragment_count)
 
 
-def _install_global() -> None:
+def _install_global(*, prune: bool = False) -> None:
     storage = paths.storage_root()
     if not storage.is_dir():
         raise ConfigError(
@@ -134,6 +151,9 @@ def _install_global() -> None:
                 settings_merge.write_settings(assembled, settings_path)
                 settings_written = True
 
+    if prune:
+        _report_pruned(claude_dir, storage)
+
     _print_summary(
         parsed,
         linked_items,
@@ -141,6 +161,18 @@ def _install_global() -> None:
         fragment_count,
         extra_global=len(global_messages),
     )
+
+
+def _report_pruned(claude_dir: Path, storage: Path) -> None:
+    """Run prune_dangling and print one line per removed symlink."""
+    removed = symlinks.prune_dangling(claude_dir, storage)
+    if not removed:
+        return
+    ui.info(
+        f"Pruned {len(removed)} dangling symlink{'s' if len(removed) != 1 else ''}:"
+    )
+    for label in removed:
+        ui.info(f"  - {label}")
 
 
 def _link_element(
