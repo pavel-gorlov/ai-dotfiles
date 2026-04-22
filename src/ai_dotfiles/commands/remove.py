@@ -9,6 +9,10 @@ import click
 
 from ai_dotfiles import ui
 from ai_dotfiles.core import manifest, symlinks
+from ai_dotfiles.core.completions import (
+    complete_installed_specifiers,
+    make_completer,
+)
 from ai_dotfiles.core.elements import (
     Element,
     ElementType,
@@ -78,7 +82,12 @@ def _rebuild_settings(manifest_path: Path, claude_dir: Path, catalog: Path) -> N
 
 
 @click.command()
-@click.argument("packages", nargs=-1, required=True)
+@click.argument(
+    "packages",
+    nargs=-1,
+    required=True,
+    shell_complete=make_completer(complete_installed_specifiers),
+)
 @click.option(
     "-g", "--global", "is_global", is_flag=True, help="Operate on global manifest."
 )

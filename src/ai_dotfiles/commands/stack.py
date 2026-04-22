@@ -16,6 +16,10 @@ import click
 
 from ai_dotfiles import ui
 from ai_dotfiles.core import manifest, symlinks
+from ai_dotfiles.core.completions import (
+    complete_stack_names,
+    make_completer,
+)
 from ai_dotfiles.core.elements import (
     Element,
     ElementType,
@@ -238,7 +242,7 @@ def remove_from_stack(name: str, items: tuple[str, ...]) -> None:
 
 
 @stack.command("apply")
-@click.argument("name")
+@click.argument("name", shell_complete=make_completer(complete_stack_names))
 def apply_stack(name: str) -> None:
     """Apply stack NAME to the current project's manifest."""
     try:
