@@ -17,6 +17,7 @@ TOP_LEVEL_COMMANDS = [
     "init",
     "install",
     "list",
+    "pull",
     "remove",
     "stack",
     "status",
