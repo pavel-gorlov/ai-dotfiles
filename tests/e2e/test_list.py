@@ -65,7 +65,8 @@ def test_list_project_with_packages(storage: Path, project: Path) -> None:
 
     assert result.exit_code == 0, result.output
     out = result.output
-    assert "Packages (ai-dotfiles.json):" in out
+    assert "Project (ai-dotfiles.json):" in out
+    assert "Global" in out  # header appears even when global.json is missing
     assert "Domains:" in out
     assert "@python" in out
     assert "@telegram-api" in out
@@ -78,21 +79,51 @@ def test_list_project_with_packages(storage: Path, project: Path) -> None:
     assert "rule:security" in out
 
 
+def test_list_shows_project_and_global(storage: Path, project: Path) -> None:
+    _write_manifest(project / "ai-dotfiles.json", ["@python", "skill:code-review"])
+    _write_manifest(storage / "global.json", ["@devops", "agent:researcher"])
+
+    result = CliRunner().invoke(list_cmd, [])
+
+    assert result.exit_code == 0, result.output
+    out = result.output
+    # Both scope headers present
+    assert "Project (ai-dotfiles.json):" in out
+    assert "Global (global.json):" in out
+    # Project content
+    assert "@python" in out
+    assert "skill:code-review" in out
+    # Global content
+    assert "@devops" in out
+    assert "agent:researcher" in out
+    # Project block comes before Global
+    assert out.index("Project") < out.index("Global")
+
+
 def test_list_project_empty(storage: Path, project: Path) -> None:
     _write_manifest(project / "ai-dotfiles.json", [])
 
     result = CliRunner().invoke(list_cmd, [])
 
     assert result.exit_code == 0, result.output
+    # Project section prints the empty note (and Global note since it's missing too)
     assert "No packages installed." in result.output
 
 
-def test_list_project_missing_manifest(storage: Path, project: Path) -> None:
+def test_list_project_missing_manifest_still_shows_global(
+    storage: Path, project: Path
+) -> None:
+    """No project manifest → friendly note, no error; global section still shown."""
+    _write_manifest(storage / "global.json", ["skill:code-review"])
+
     result = CliRunner().invoke(list_cmd, [])
 
-    assert result.exit_code != 0
-    # ui.error writes to stderr; CliRunner captures both in .output by default.
-    assert "ai-dotfiles.json not found" in result.output
+    assert result.exit_code == 0, result.output
+    out = result.output
+    assert "Project:" in out
+    assert "No ai-dotfiles.json" in out
+    assert "Global (global.json):" in out
+    assert "skill:code-review" in out
 
 
 # ── list -g ───────────────────────────────────────────────────────────────
@@ -108,10 +139,12 @@ def test_list_global(storage: Path) -> None:
 
     assert result.exit_code == 0, result.output
     out = result.output
-    assert "Packages (global.json):" in out
+    assert "Global (global.json):" in out
     assert "@python" in out
     assert "skill:code-review" in out
     assert "agent:researcher" in out
+    # With -g only the Global section is shown; no Project header
+    assert "Project" not in out
 
 
 # ── list --available ──────────────────────────────────────────────────────

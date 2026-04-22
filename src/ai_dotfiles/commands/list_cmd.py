@@ -2,8 +2,9 @@
 
 Three modes:
 
-* ``ai-dotfiles list``               — packages from project ``ai-dotfiles.json``
-* ``ai-dotfiles list -g``            — packages from ``~/.ai-dotfiles/global.json``
+* ``ai-dotfiles list``               — both scopes grouped separately:
+  project ``ai-dotfiles.json`` and global ``~/.ai-dotfiles/global.json``
+* ``ai-dotfiles list -g``            — only ``~/.ai-dotfiles/global.json``
 * ``ai-dotfiles list --available``   — everything present in ``catalog/``
   and ``stacks/`` under the storage root
 """
@@ -18,7 +19,7 @@ import click
 from ai_dotfiles import ui
 from ai_dotfiles.core import manifest, paths
 from ai_dotfiles.core.elements import Element, ElementType, parse_element
-from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
+from ai_dotfiles.core.errors import AiDotfilesError
 
 # Catalog top-level directories that are not standalone domains.
 _RESERVED_CATALOG_DIRS: frozenset[str] = frozenset(
@@ -45,9 +46,9 @@ def list_cmd(is_global: bool, available: bool) -> None:
         if available:
             _list_available()
         elif is_global:
-            _list_manifest(paths.global_manifest_path())
+            _list_scope_block("Global", paths.global_manifest_path())
         else:
-            _list_project()
+            _list_both_scopes()
     except AiDotfilesError as exc:
         ui.error(str(exc))
         sys.exit(exc.exit_code)
@@ -56,19 +57,31 @@ def list_cmd(is_global: bool, available: bool) -> None:
 # ── Manifest listing ─────────────────────────────────────────────────────
 
 
-def _list_project() -> None:
+def _list_both_scopes() -> None:
+    """Show project + global packages in two labelled groups."""
     root = paths.find_project_root()
-    if root is None or not paths.project_manifest_path(root).is_file():
-        raise ConfigError("ai-dotfiles.json not found. Run 'ai-dotfiles init' first.")
-    _list_manifest(paths.project_manifest_path(root))
+    project_manifest = paths.project_manifest_path(root) if root is not None else None
+    _list_scope_block("Project", project_manifest)
+    ui.info("")
+    _list_scope_block("Global", paths.global_manifest_path())
 
 
-def _list_manifest(manifest_path: Path) -> None:
+def _list_scope_block(label: str, manifest_path: Path | None) -> None:
+    """Print a single scope section — header, blank line, body or a note."""
+    if manifest_path is None or not manifest_path.is_file():
+        ui.info(f"{label}:")
+        ui.info("")
+        if label == "Project":
+            ui.info("  No ai-dotfiles.json — run 'ai-dotfiles init' in a project.")
+        else:
+            ui.info("  No global.json — run 'ai-dotfiles init -g' to scaffold storage.")
+        return
+
     packages = manifest.get_packages(manifest_path)
-    ui.info(f"Packages ({manifest_path.name}):")
+    ui.info(f"{label} ({manifest_path.name}):")
     ui.info("")
     if not packages:
-        ui.info("No packages installed.")
+        ui.info("  No packages installed.")
         return
 
     grouped = _group_packages(packages)
