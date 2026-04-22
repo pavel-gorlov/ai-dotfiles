@@ -167,6 +167,24 @@ ai-dotfiles stack apply <name>         # merge preset into project manifest
 ai-dotfiles install
 ```
 
+### 4. Reconcile after a rename or a pull (`--prune`)
+
+When a catalog element is renamed, removed, or restructured — either locally or by someone else whose changes you pulled via `ai-dotfiles pull` — the symlink under `~/.claude/` (or `<project>/.claude/`) keeps pointing at the old path and becomes dangling. Plain `install` creates the *new* symlink but does NOT clean up the old one.
+
+```bash
+# On the machine where you renamed / deleted something:
+ai-dotfiles install --prune            # project scope
+ai-dotfiles install -g --prune         # global scope
+
+# On another machine after pulling:
+ai-dotfiles pull
+ai-dotfiles install -g --prune         # + install --prune in each project using @gitflow etc.
+```
+
+`--prune` only removes symlinks that (a) are symlinks, (b) point into `~/.ai-dotfiles/`, and (c) resolve to a path that no longer exists. User-owned symlinks pointing outside storage and real files are never touched. The default `install` without `--prune` stays conservative (create-only) so accidental invocations can't nuke a stale link you still want.
+
+After pruning, `ai-dotfiles status` should report `All OK`.
+
 ### 4. Diagnose broken config
 
 ```bash

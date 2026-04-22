@@ -56,6 +56,11 @@ def remote_and_storage(
     # The real storage
     _run(["git", "clone", str(remote), str(storage)], cwd=tmp_path)
 
+    # Repo-local committer identity so `git pull --rebase` can create replay
+    # commits even on CI runners where no global git config is set.
+    _run(["git", "config", "user.email", "t@example.com"], cwd=storage)
+    _run(["git", "config", "user.name", "Test"], cwd=storage)
+
     monkeypatch.setenv("AI_DOTFILES_HOME", str(storage))
     return remote, storage
 
