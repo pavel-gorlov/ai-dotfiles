@@ -21,6 +21,16 @@ Prefer running the CLI over editing `~/.claude/` or manifests by hand — manife
 - `ai-dotfiles completion install [--shell bash|zsh] [--print]` — install tab completion. Writes the Click-generated script to `~/.ai-dotfiles/completions/ai-dotfiles.<shell>` and patches `~/.bashrc` / `~/.zshrc` with a marker-guarded source block (idempotent — safe to re-run). Auto-detects the shell from `$SHELL`; `--print` emits the script to stdout without touching any files.
 - `ai-dotfiles completion uninstall [--shell bash|zsh]` — remove the completion block from the rc file and delete the cached script.
 
+After installing completion, arguments themselves tab-complete too:
+
+- `add <TAB>` / `add -g <TAB>` — catalog specifiers, fresh-first (not yet installed), installed last; scope follows `-g`.
+- `remove <TAB>` / `remove -g <TAB>` — only specifiers already in the manifest for that scope.
+- `stack apply|delete|list <TAB>` — existing stack names (`.conf` basenames).
+- `stack add <name> <TAB>` — catalog specifiers; `stack remove <name> <TAB>` — items currently in that stack.
+- `domain delete|list <TAB>` — existing domain names; `domain remove <name> <type> <TAB>` — elements of that type in that domain.
+- `delete skill|agent|rule <TAB>` — existing standalone elements of the preceding type.
+- `vendor remove <TAB>` — names with `.source` sidecars in the catalog.
+
 ### Packages
 
 - `ai-dotfiles install` — symlink packages listed in `ai-dotfiles.json` into `<project>/.claude/`.

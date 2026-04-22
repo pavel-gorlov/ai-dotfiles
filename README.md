@@ -37,6 +37,11 @@ re-run). Restart your shell or `source` the rc file to activate. Use
 `--print` to print the script to stdout without touching any files, or
 `ai-dotfiles completion uninstall` to remove the block and cached script.
 
+Once installed, **argument values** tab-complete too — package specifiers
+for `add`/`remove`, stack names for `stack apply`, domain names for
+`domain list/remove`, and so on. The `-g` flag scopes `add`/`remove`
+completion to the global vs project manifest.
+
 ## Quick Start
 
 ```bash
