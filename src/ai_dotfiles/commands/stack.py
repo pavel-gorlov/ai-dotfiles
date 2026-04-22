@@ -17,6 +17,8 @@ import click
 from ai_dotfiles import ui
 from ai_dotfiles.core import manifest, symlinks
 from ai_dotfiles.core.completions import (
+    complete_available_specifiers,
+    complete_stack_items,
     complete_stack_names,
     make_completer,
 )
@@ -135,7 +137,7 @@ def create_stack(name: str) -> None:
 
 
 @stack.command("delete")
-@click.argument("name")
+@click.argument("name", shell_complete=make_completer(complete_stack_names))
 def delete_stack(name: str) -> None:
     """Delete the stack NAME."""
     try:
@@ -153,7 +155,7 @@ def delete_stack(name: str) -> None:
 
 
 @stack.command("list")
-@click.argument("name")
+@click.argument("name", shell_complete=make_completer(complete_stack_names))
 def list_stack(name: str) -> None:
     """List the contents of stack NAME."""
     try:
@@ -173,8 +175,13 @@ def list_stack(name: str) -> None:
 
 
 @stack.command("add")
-@click.argument("name")
-@click.argument("items", nargs=-1, required=True)
+@click.argument("name", shell_complete=make_completer(complete_stack_names))
+@click.argument(
+    "items",
+    nargs=-1,
+    required=True,
+    shell_complete=make_completer(complete_available_specifiers),
+)
 def add_to_stack(name: str, items: tuple[str, ...]) -> None:
     """Append ITEMS to stack NAME (duplicates skipped)."""
     try:
@@ -210,8 +217,13 @@ def add_to_stack(name: str, items: tuple[str, ...]) -> None:
 
 
 @stack.command("remove")
-@click.argument("name")
-@click.argument("items", nargs=-1, required=True)
+@click.argument("name", shell_complete=make_completer(complete_stack_names))
+@click.argument(
+    "items",
+    nargs=-1,
+    required=True,
+    shell_complete=make_completer(complete_stack_items),
+)
 def remove_from_stack(name: str, items: tuple[str, ...]) -> None:
     """Remove ITEMS from stack NAME."""
     try:

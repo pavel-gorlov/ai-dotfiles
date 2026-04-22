@@ -22,6 +22,10 @@ from pathlib import Path
 import click
 
 from ai_dotfiles import ui
+from ai_dotfiles.core.completions import (
+    complete_standalone_elements,
+    make_completer,
+)
 from ai_dotfiles.core.elements import parse_element
 from ai_dotfiles.core.errors import AiDotfilesError, ElementError
 from ai_dotfiles.core.manifest import get_packages
@@ -138,7 +142,7 @@ def create(element_type: str, name: str) -> None:
 
 @click.command()
 @click.argument("element_type", type=click.Choice(list(_VALID_TYPES)))
-@click.argument("name")
+@click.argument("name", shell_complete=make_completer(complete_standalone_elements))
 @click.option("--force", "-f", is_flag=True, help="Skip confirmation prompt.")
 def delete(element_type: str, name: str, force: bool) -> None:
     """Delete a standalone ELEMENT_TYPE called NAME from catalog/."""

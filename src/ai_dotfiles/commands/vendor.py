@@ -33,6 +33,10 @@ import click
 
 from ai_dotfiles import ui
 from ai_dotfiles.commands.create_delete import find_usage
+from ai_dotfiles.core.completions import (
+    complete_vendored_names,
+    make_completer,
+)
 from ai_dotfiles.core.errors import AiDotfilesError, ElementError
 from ai_dotfiles.core.paths import catalog_dir, find_project_root, storage_root
 from ai_dotfiles.vendors import REGISTRY, source_file
@@ -248,7 +252,10 @@ def _meta_search(query: str, restrict: tuple[str, ...], limit: int) -> None:
 
 
 @click.command(name="remove")
-@click.argument("name")
+@click.argument(
+    "name",
+    shell_complete=make_completer(complete_vendored_names),
+)
 @click.option(
     "--kind",
     type=click.Choice(list(_VALID_KINDS)),

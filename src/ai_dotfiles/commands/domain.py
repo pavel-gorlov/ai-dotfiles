@@ -20,6 +20,11 @@ import click
 
 from ai_dotfiles import ui
 from ai_dotfiles.core import manifest
+from ai_dotfiles.core.completions import (
+    complete_domain_elements,
+    complete_domain_names,
+    make_completer,
+)
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError, ElementError
 from ai_dotfiles.core.paths import (
     catalog_dir,
@@ -132,7 +137,7 @@ def create(name: str) -> None:
 
 
 @domain.command("delete")
-@click.argument("name")
+@click.argument("name", shell_complete=make_completer(complete_domain_names))
 @click.option("-y", "--yes", is_flag=True, help="Skip confirmation prompt.")
 def delete(name: str, yes: bool) -> None:
     """Delete the domain at catalog/<NAME>/."""
@@ -162,7 +167,7 @@ def delete(name: str, yes: bool) -> None:
 
 
 @domain.command("list")
-@click.argument("name")
+@click.argument("name", shell_complete=make_completer(complete_domain_names))
 def list_domain(name: str) -> None:
     """List the contents of catalog/<NAME>/."""
     try:
@@ -204,7 +209,7 @@ def list_domain(name: str) -> None:
 
 
 @domain.command("add")
-@click.argument("name")
+@click.argument("name", shell_complete=make_completer(complete_domain_names))
 @click.argument("element_type", type=click.Choice(list(_ELEMENT_TYPES)))
 @click.argument("element_name")
 def add_element(name: str, element_type: str, element_name: str) -> None:
@@ -231,9 +236,12 @@ def add_element(name: str, element_type: str, element_name: str) -> None:
 
 
 @domain.command("remove")
-@click.argument("name")
+@click.argument("name", shell_complete=make_completer(complete_domain_names))
 @click.argument("element_type", type=click.Choice(list(_ELEMENT_TYPES)))
-@click.argument("element_name")
+@click.argument(
+    "element_name",
+    shell_complete=make_completer(complete_domain_elements),
+)
 def remove_element(name: str, element_type: str, element_name: str) -> None:
     """Remove ELEMENT_NAME (of ELEMENT_TYPE) from domain NAME."""
     try:
