@@ -30,6 +30,7 @@ from ai_dotfiles.core.elements import (
     validate_element_exists,
 )
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
+from ai_dotfiles.core.mcp_apply import rebuild_claude_config
 from ai_dotfiles.core.paths import (
     backup_dir,
     catalog_dir,
@@ -46,17 +47,20 @@ from ai_dotfiles.core.settings_merge import (
 )
 
 
-def _resolve_scope(is_global: bool) -> tuple[Path, Path]:
-    """Return ``(manifest_path, claude_dir)`` for the selected scope."""
+def _resolve_scope(is_global: bool) -> tuple[Path, Path, Path | None]:
+    """Return ``(manifest_path, claude_dir, project_root)`` for the scope.
+
+    ``project_root`` is ``None`` for the global scope.
+    """
     if is_global:
-        return global_manifest_path(), claude_global_dir()
+        return global_manifest_path(), claude_global_dir(), None
 
     root = find_project_root()
     if root is None:
         raise ConfigError(
             "No project found. Run 'ai-dotfiles init' first or pass -g for global."
         )
-    return project_manifest_path(root), project_claude_dir(root)
+    return project_manifest_path(root), project_claude_dir(root), root
 
 
 def _link_element(element: Element, claude_dir: Path, catalog: Path) -> None:
@@ -67,7 +71,10 @@ def _link_element(element: Element, claude_dir: Path, catalog: Path) -> None:
 
 
 def _rebuild_settings(manifest_path: Path, claude_dir: Path, catalog: Path) -> None:
-    """Reassemble ``settings.json`` from all domain fragments in the manifest."""
+    """Reassemble ``settings.json`` from all domain fragments in the manifest.
+
+    Used for the global scope, where MCP is not (yet) wired up.
+    """
     packages = manifest.get_packages(manifest_path)
     fragments = collect_domain_fragments(packages, catalog)
     settings = assemble_settings(fragments)
@@ -93,7 +100,7 @@ def add(packages: tuple[str, ...], is_global: bool) -> None:
         for element in elements:
             validate_element_exists(element, catalog)
 
-        manifest_path, claude_dir = _resolve_scope(is_global)
+        manifest_path, claude_dir, project_root = _resolve_scope(is_global)
         claude_dir.mkdir(parents=True, exist_ok=True)
 
         raw_items = [element.raw for element in elements]
@@ -117,7 +124,17 @@ def add(packages: tuple[str, ...], is_global: bool) -> None:
                 ui.info(f"  ~ {element.raw} (already installed)")
 
         has_domain = any(el.type is ElementType.DOMAIN for el in elements)
-        _rebuild_settings(manifest_path, claude_dir, catalog)
+        if project_root is not None:
+            rebuild_claude_config(
+                manifest_path=manifest_path,
+                claude_dir=claude_dir,
+                catalog=catalog,
+                project_root=project_root,
+                backup_root=backup_dir(),
+                warn=ui.warn,
+            )
+        else:
+            _rebuild_settings(manifest_path, claude_dir, catalog)
         if has_domain:
             ui.info(f"Settings: rebuilt {claude_dir.name}/settings.json")
 

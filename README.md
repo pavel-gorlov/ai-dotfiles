@@ -76,6 +76,9 @@ ai-dotfiles install
 - **Settings merge** — each domain may ship a `settings.fragment.json`;
   `ai-dotfiles` deep-merges active fragments into `.claude/settings.json` on
   every `add` / `remove` / `install`.
+- **MCP servers** — domains may also ship `mcp.fragment.json` to declare
+  MCP servers; they are merged into `<project>/.mcp.json` on `ai-dotfiles
+  add` with `mcp__<server>__*` permissions auto-wired into `settings.json`.
 
 ## Element Format
 

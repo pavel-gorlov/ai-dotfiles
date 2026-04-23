@@ -21,7 +21,9 @@ from ai_dotfiles.core.elements import (
     resolve_target_paths,
 )
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
+from ai_dotfiles.core.mcp_apply import rebuild_claude_config
 from ai_dotfiles.core.paths import (
+    backup_dir,
     catalog_dir,
     claude_global_dir,
     find_project_root,
@@ -36,17 +38,20 @@ from ai_dotfiles.core.settings_merge import (
 )
 
 
-def _resolve_scope(is_global: bool) -> tuple[Path, Path]:
-    """Return ``(manifest_path, claude_dir)`` for the selected scope."""
+def _resolve_scope(is_global: bool) -> tuple[Path, Path, Path | None]:
+    """Return ``(manifest_path, claude_dir, project_root)`` for the scope.
+
+    ``project_root`` is ``None`` for the global scope.
+    """
     if is_global:
-        return global_manifest_path(), claude_global_dir()
+        return global_manifest_path(), claude_global_dir(), None
 
     root = find_project_root()
     if root is None:
         raise ConfigError(
             "No project found. Run 'ai-dotfiles init' first or pass -g for global."
         )
-    return project_manifest_path(root), project_claude_dir(root)
+    return project_manifest_path(root), project_claude_dir(root), root
 
 
 def _unlink_element(element: Element, claude_dir: Path, catalog: Path) -> None:
@@ -97,7 +102,7 @@ def remove(packages: tuple[str, ...], is_global: bool) -> None:
         elements = parse_elements(list(packages))
 
         catalog = catalog_dir()
-        manifest_path, claude_dir = _resolve_scope(is_global)
+        manifest_path, claude_dir, project_root = _resolve_scope(is_global)
 
         raw_items = [element.raw for element in elements]
         removed = manifest.remove_packages(manifest_path, raw_items)
@@ -117,7 +122,17 @@ def remove(packages: tuple[str, ...], is_global: bool) -> None:
             else:
                 ui.info(f"  ~ {element.raw} (not installed)")
 
-        _rebuild_settings(manifest_path, claude_dir, catalog)
+        if project_root is not None:
+            rebuild_claude_config(
+                manifest_path=manifest_path,
+                claude_dir=claude_dir,
+                catalog=catalog,
+                project_root=project_root,
+                backup_root=backup_dir(),
+                warn=ui.warn,
+            )
+        else:
+            _rebuild_settings(manifest_path, claude_dir, catalog)
         had_domain = any(
             el.type is ElementType.DOMAIN for el in elements if el.raw in removed_set
         )

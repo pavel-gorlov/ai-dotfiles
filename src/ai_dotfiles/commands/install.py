@@ -20,6 +20,7 @@ from ai_dotfiles import ui
 from ai_dotfiles.core import elements, manifest, paths, settings_merge, symlinks
 from ai_dotfiles.core.elements import Element, ElementType
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
+from ai_dotfiles.core.mcp_apply import rebuild_claude_config
 
 
 @click.command("install")
@@ -81,11 +82,15 @@ def _install_project(*, prune: bool = False) -> None:
 
         fragments = settings_merge.collect_domain_fragments(packages, catalog)
         fragment_count = len(fragments)
-        if fragments:
-            assembled = settings_merge.assemble_settings(fragments)
-            if assembled:
-                settings_merge.write_settings(assembled, claude_dir / "settings.json")
-                settings_written = True
+        rebuild_claude_config(
+            manifest_path=manifest_path,
+            claude_dir=claude_dir,
+            catalog=catalog,
+            project_root=root,
+            backup_root=backup,
+            warn=ui.warn,
+        )
+        settings_written = (claude_dir / "settings.json").exists()
 
     if prune:
         _report_pruned(claude_dir, paths.storage_root())

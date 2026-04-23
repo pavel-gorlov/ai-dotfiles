@@ -36,7 +36,9 @@ __all__ = [
 _NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_-]*$")
 
 # Files to skip when expanding a domain's subdirectories.
-_DOMAIN_SKIP_FILES: frozenset[str] = frozenset({"README.md", "settings.fragment.json"})
+_DOMAIN_SKIP_FILES: frozenset[str] = frozenset(
+    {"README.md", "settings.fragment.json", "mcp.fragment.json"}
+)
 
 # Subdirectories of a domain that contain linkable elements, mapped to the
 # corresponding sub-path under ``claude_dir``.
