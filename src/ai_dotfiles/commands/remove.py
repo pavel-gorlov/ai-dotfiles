@@ -21,6 +21,7 @@ from ai_dotfiles.core.elements import (
     resolve_target_paths,
 )
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
+from ai_dotfiles.core.gitignore import collect_managed_paths, sync_gitignore
 from ai_dotfiles.core.mcp_apply import rebuild_claude_config
 from ai_dotfiles.core.paths import (
     backup_dir,
@@ -30,6 +31,7 @@ from ai_dotfiles.core.paths import (
     global_manifest_path,
     project_claude_dir,
     project_manifest_path,
+    storage_root,
 )
 from ai_dotfiles.core.settings_merge import (
     assemble_settings,
@@ -86,6 +88,24 @@ def _rebuild_settings(manifest_path: Path, claude_dir: Path, catalog: Path) -> N
     write_settings(settings, settings_path)
 
 
+def _maybe_sync_gitignore(
+    *,
+    project_root: Path | None,
+    claude_dir: Path,
+    manifest_path: Path,
+    no_gitignore: bool,
+) -> None:
+    """Regenerate the managed .gitignore block unless opted out."""
+    if project_root is None or no_gitignore:
+        return
+    if not manifest.get_flag(manifest_path, "manage_gitignore", True):
+        return
+    if not manifest.get_flag(global_manifest_path(), "manage_gitignore", True):
+        return
+    paths = collect_managed_paths(claude_dir, storage_root())
+    sync_gitignore(project_root, paths)
+
+
 @click.command()
 @click.argument(
     "packages",
@@ -96,7 +116,13 @@ def _rebuild_settings(manifest_path: Path, claude_dir: Path, catalog: Path) -> N
 @click.option(
     "-g", "--global", "is_global", is_flag=True, help="Operate on global manifest."
 )
-def remove(packages: tuple[str, ...], is_global: bool) -> None:
+@click.option(
+    "--no-gitignore",
+    is_flag=True,
+    help="Do not touch .gitignore even if the project manages vendored "
+    "symlink paths.",
+)
+def remove(packages: tuple[str, ...], is_global: bool, no_gitignore: bool) -> None:
     """Remove PACKAGES from the manifest and unlink their elements."""
     try:
         elements = parse_elements(list(packages))
@@ -138,6 +164,13 @@ def remove(packages: tuple[str, ...], is_global: bool) -> None:
         )
         if had_domain:
             ui.info(f"Settings: rebuilt {claude_dir.name}/settings.json")
+
+        _maybe_sync_gitignore(
+            project_root=project_root,
+            claude_dir=claude_dir,
+            manifest_path=manifest_path,
+            no_gitignore=no_gitignore,
+        )
 
     except AiDotfilesError as exc:
         ui.error(str(exc))

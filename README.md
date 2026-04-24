@@ -79,6 +79,10 @@ ai-dotfiles install
 - **MCP servers** — domains may also ship `mcp.fragment.json` to declare
   MCP servers; they are merged into `<project>/.mcp.json` on `ai-dotfiles
   add` with `mcp__<server>__*` permissions auto-wired into `settings.json`.
+- **Gitignore sync** — the CLI keeps a managed block inside
+  `<project>/.gitignore` listing every vendored symlink under `.claude/`,
+  so per-machine paths never land in git history. Opt out with
+  `--no-gitignore` or `"manage_gitignore": false` in the manifest.
 
 ## Element Format
 

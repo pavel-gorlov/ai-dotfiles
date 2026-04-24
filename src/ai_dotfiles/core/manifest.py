@@ -71,6 +71,22 @@ def get_packages(path: Path) -> list[str]:
     return list(packages)
 
 
+def get_flag(path: Path, key: str, default: bool) -> bool:
+    """Return a top-level boolean flag from the manifest.
+
+    Returns ``default`` if the manifest doesn't exist, the key is missing,
+    or the value is not a bool. Never raises.
+    """
+    try:
+        data = read_manifest(path)
+    except ConfigError:
+        return default
+    value = data.get(key, default)
+    if not isinstance(value, bool):
+        return default
+    return value
+
+
 def add_packages(path: Path, items: list[str]) -> list[str]:
     """Append ``items`` to ``packages`` (skipping duplicates).
 

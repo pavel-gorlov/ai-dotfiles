@@ -20,6 +20,7 @@ from ai_dotfiles import ui
 from ai_dotfiles.core import elements, manifest, paths, settings_merge, symlinks
 from ai_dotfiles.core.elements import Element, ElementType
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
+from ai_dotfiles.core.gitignore import collect_managed_paths, sync_gitignore
 from ai_dotfiles.core.mcp_apply import rebuild_claude_config
 
 
@@ -40,19 +41,25 @@ from ai_dotfiles.core.mcp_apply import rebuild_claude_config
         "catalog element)."
     ),
 )
-def install(is_global: bool, prune: bool) -> None:
+@click.option(
+    "--no-gitignore",
+    is_flag=True,
+    help="Do not touch .gitignore even if the project manages vendored "
+    "symlink paths.",
+)
+def install(is_global: bool, prune: bool, no_gitignore: bool) -> None:
     """Install packages from the manifest (project by default, or global)."""
     try:
         if is_global:
             _install_global(prune=prune)
         else:
-            _install_project(prune=prune)
+            _install_project(prune=prune, no_gitignore=no_gitignore)
     except AiDotfilesError as exc:
         ui.error(str(exc))
         raise SystemExit(exc.exit_code) from exc
 
 
-def _install_project(*, prune: bool = False) -> None:
+def _install_project(*, prune: bool = False, no_gitignore: bool = False) -> None:
     root = paths.find_project_root()
     if root is None or not paths.project_manifest_path(root).is_file():
         raise ConfigError("ai-dotfiles.json not found. Run 'ai-dotfiles init' first.")
@@ -97,6 +104,13 @@ def _install_project(*, prune: bool = False) -> None:
 
     if prune:
         _report_pruned(claude_dir, paths.storage_root())
+
+    _maybe_sync_gitignore(
+        project_root=root,
+        claude_dir=claude_dir,
+        manifest_path=manifest_path,
+        no_gitignore=no_gitignore,
+    )
 
     if not packages:
         ui.info("Nothing to install.")
@@ -169,6 +183,29 @@ def _install_global(*, prune: bool = False) -> None:
         fragment_count,
         extra_global=len(global_messages),
     )
+
+
+def _maybe_sync_gitignore(
+    *,
+    project_root: Path | None,
+    claude_dir: Path,
+    manifest_path: Path,
+    no_gitignore: bool,
+) -> None:
+    """Regenerate the managed .gitignore block unless opted out.
+
+    No-op in the global scope or when the user disabled the feature via
+    ``--no-gitignore`` or ``manage_gitignore: false`` in either the
+    project or the global manifest (project precedence).
+    """
+    if project_root is None or no_gitignore:
+        return
+    if not manifest.get_flag(manifest_path, "manage_gitignore", True):
+        return
+    if not manifest.get_flag(paths.global_manifest_path(), "manage_gitignore", True):
+        return
+    managed = collect_managed_paths(claude_dir, paths.storage_root())
+    sync_gitignore(project_root, managed)
 
 
 def _report_pruned(claude_dir: Path, storage: Path) -> None:
