@@ -121,12 +121,23 @@ def rebuild_claude_config(
         # No fragments at all -> drop generated settings.json.
         settings_path.unlink()
 
+    # Write order matters for crash recovery. Two files (.mcp.json and the
+    # ownership map) are updated together but cannot be made atomic across
+    # both. We pick an order that is self-healing on the next run:
+    #
+    #   * On upsert: ownership FIRST, then .mcp.json. If the .mcp.json write
+    #     fails mid-flight, the next rebuild sees a server it owns that is
+    #     absent from .mcp.json — merge_with_existing_mcp will simply add
+    #     it from new_servers.
+    #   * On delete: .mcp.json FIRST, then ownership. If the ownership
+    #     delete fails, the next rebuild sees ownership for servers that
+    #     are no longer declared — merge drops them.
     mcp_changed = False
     if effective_servers:
+        save_ownership(claude_dir, new_ownership)
         if mcp_path.exists():
             backup_mcp_json(mcp_path, backup_root, project_root.name)
         write_mcp_json(merged, mcp_path)
-        save_ownership(claude_dir, new_ownership)
         warn_unset_env_vars(effective_servers, warn)
         warn_missing_npm_requires(mcp_fragments, project_root, warn)
         mcp_changed = True

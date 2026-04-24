@@ -82,15 +82,18 @@ def _install_project(*, prune: bool = False) -> None:
 
         fragments = settings_merge.collect_domain_fragments(packages, catalog)
         fragment_count = len(fragments)
-        rebuild_claude_config(
-            manifest_path=manifest_path,
-            claude_dir=claude_dir,
-            catalog=catalog,
-            project_root=root,
-            backup_root=backup,
-            warn=ui.warn,
-        )
-        settings_written = (claude_dir / "settings.json").exists()
+
+    # Always regenerate settings + MCP, even on an empty manifest, so any
+    # stale state left by a crashed `add` / `remove` gets cleaned up.
+    rebuild_claude_config(
+        manifest_path=manifest_path,
+        claude_dir=claude_dir,
+        catalog=catalog,
+        project_root=root,
+        backup_root=backup,
+        warn=ui.warn,
+    )
+    settings_written = (claude_dir / "settings.json").exists()
 
     if prune:
         _report_pruned(claude_dir, paths.storage_root())

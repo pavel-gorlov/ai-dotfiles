@@ -451,3 +451,96 @@ def test_symlinks_never_include_mcp_fragment_json(
     for entry in claude_dir.rglob("*"):
         if entry.is_symlink():
             assert entry.name != "mcp.fragment.json"
+
+
+# ── crash recovery ──────────────────────────────────────────────────────────
+
+
+def test_recovery_when_mcp_write_fails_after_ownership_save(
+    runner: CliRunner,
+    catalog: Path,
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If `.mcp.json` write crashes after ownership was saved, the next
+    add should heal the state rather than lock the server out as
+    user-authored."""
+    _seed_mcp_domain(catalog)
+
+    # First attempt: sabotage write_mcp_json so it raises AFTER ownership
+    # has already been written. Ownership reflects the new server; the
+    # `.mcp.json` file never materialises.
+    from ai_dotfiles.core import mcp_apply
+
+    original_write = mcp_apply.write_mcp_json
+
+    def _boom(data: dict[str, object], target: Path) -> None:
+        raise OSError("simulated disk full")
+
+    monkeypatch.setattr(mcp_apply, "write_mcp_json", _boom)
+
+    crash_result = runner.invoke(add, ["@mcptest"])
+    # Click surfaces the OSError as a non-zero exit.
+    assert crash_result.exit_code != 0
+
+    # Ownership was saved before the crash; `.mcp.json` was not.
+    ownership = _read_json(project / ".claude" / OWNERSHIP_FILENAME)
+    assert ownership == {"mcptest-server": ["mcptest"]}
+    assert not (project / ".mcp.json").exists()
+
+    # Restore the real write and retry (emulates the user re-running
+    # `ai-dotfiles install` or `add` after the failure).
+    monkeypatch.setattr(mcp_apply, "write_mcp_json", original_write)
+
+    # @mcptest is already in the manifest from the first attempt, so we
+    # cannot add it again. Invoke install instead.
+    from ai_dotfiles.commands.install import install
+
+    recovery = runner.invoke(install, [])
+    assert recovery.exit_code == 0, recovery.output
+
+    mcp = _read_json(project / ".mcp.json")
+    assert "mcptest-server" in mcp["mcpServers"]
+    ownership_after = _read_json(project / ".claude" / OWNERSHIP_FILENAME)
+    assert ownership_after == {"mcptest-server": ["mcptest"]}
+
+
+def test_recovery_when_ownership_delete_fails_after_mcp_unlink(
+    runner: CliRunner,
+    catalog: Path,
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If ownership delete fails after `.mcp.json` was unlinked, the
+    next rebuild should clean up the dangling ownership entry."""
+    _seed_mcp_domain(catalog)
+
+    # Arrange: add succeeds normally.
+    assert runner.invoke(add, ["@mcptest"]).exit_code == 0
+
+    from ai_dotfiles.core import mcp_apply
+
+    original_delete = mcp_apply.delete_ownership
+
+    def _boom(claude_dir: Path) -> None:
+        raise OSError("simulated permission denied")
+
+    monkeypatch.setattr(mcp_apply, "delete_ownership", _boom)
+
+    crash_result = runner.invoke(remove, ["@mcptest"])
+    assert crash_result.exit_code != 0
+
+    # `.mcp.json` unlinked; ownership still present.
+    assert not (project / ".mcp.json").exists()
+    assert (project / ".claude" / OWNERSHIP_FILENAME).exists()
+
+    # Restore delete_ownership and rerun install. With @mcptest removed
+    # from the manifest already, install walks the (now empty) MCP
+    # fragment set and cleans up the stale ownership file.
+    monkeypatch.setattr(mcp_apply, "delete_ownership", original_delete)
+
+    from ai_dotfiles.commands.install import install
+
+    recovery = runner.invoke(install, [])
+    assert recovery.exit_code == 0, recovery.output
+    assert not (project / ".claude" / OWNERSHIP_FILENAME).exists()
