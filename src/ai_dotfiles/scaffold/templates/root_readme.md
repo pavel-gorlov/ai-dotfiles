@@ -15,7 +15,6 @@ Storage for `ai-dotfiles` — a package manager for Claude Code configuration.
 ├── global/          # files symlinked into ~/.claude/
 ├── global.json      # global package manifest
 ├── catalog/         # installable content (domains + standalone)
-├── stacks/          # preset .conf bundles
 └── README.md
 ```
 

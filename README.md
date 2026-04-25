@@ -38,9 +38,9 @@ re-run). Restart your shell or `source` the rc file to activate. Use
 `ai-dotfiles completion uninstall` to remove the block and cached script.
 
 Once installed, **argument values** tab-complete too — package specifiers
-for `add`/`remove`, stack names for `stack apply`, domain names for
-`domain list/remove`, and so on. The `-g` flag scopes `add`/`remove`
-completion to the global vs project manifest.
+for `add`/`remove`, domain names for `domain list/remove`, and so on. The
+`-g` flag scopes `add`/`remove` completion to the global vs project
+manifest.
 
 ## Quick Start
 
@@ -68,8 +68,7 @@ ai-dotfiles install
 
 - **Manifest** — `ai-dotfiles.json` lists the packages a project uses.
 - **Storage** — `~/.ai-dotfiles/` holds the shared `catalog/` (skills, agents,
-  rules, hooks, domains) plus `global/` (files linked into `~/.claude/`) and
-  `stacks/` (named groups of packages).
+  rules, hooks, domains) plus `global/` (files linked into `~/.claude/`).
 - **Symlinks** — `install` / `add` create symlinks from the project's
   `.claude/` into the catalog. The project tree stays tiny; everything lives
   in one place and is versioned once.
@@ -127,7 +126,7 @@ Run `ai-dotfiles <command> --help` for full options.
 | `install -g`                     | Recreate symlinks from the global manifest |
 | `list`                           | List installed packages (project) |
 | `list -g`                        | List installed packages (global) |
-| `list --available`               | List everything available in the catalog and stacks |
+| `list --available`               | List everything available in the catalog |
 | `status`                         | Show symlink health and merged settings summary |
 | `update`                         | Refresh CLI-managed files inside storage (today: the built-in `ai-dotfiles` skill) |
 | `completion install [--shell bash\|zsh] [--print]` | Install tab completion into `~/.bashrc` / `~/.zshrc` (auto-detects shell from `$SHELL`) |
@@ -150,16 +149,11 @@ Run `ai-dotfiles <command> --help` for full options.
 | `domain add NAME ELEMENT_TYPE ELEMENT_NAME`  | Scaffold an element inside a domain |
 | `domain remove NAME ELEMENT_TYPE NAME`       | Remove an element from a domain |
 
-### Stacks
-
-| Command | Description |
-|---------|-------------|
-| `stack create NAME`          | Create an empty `.conf` preset |
-| `stack delete NAME`          | Delete a preset |
-| `stack list NAME`            | Show items in a preset |
-| `stack add NAME ITEMS...`    | Append items (duplicates skipped) |
-| `stack remove NAME ITEMS...` | Remove items |
-| `stack apply NAME`           | Merge a preset into the current project's manifest |
+> Need an opinionated bundle of several elements? Create a meta-domain:
+> `ai-dotfiles domain create my-stack`, edit its `domain.json` to list
+> `depends: ["@python", "@gitflow", "skill:code-review"]`, then
+> `ai-dotfiles add @my-stack`. The transitive closure is pulled in for
+> you. There is no separate `stack` command.
 
 ### Vendoring
 
@@ -313,7 +307,6 @@ with the install URL. Vendors without a `search` capability (e.g.
 │   ├── agents/<name>.md    # standalone agents
 │   └── rules/<name>.md     # standalone rules
 ├── global/                 # files symlinked into ~/.claude/
-├── stacks/<name>.conf      # named package presets
 └── global.json             # manifest for ~/.claude/
 ```
 

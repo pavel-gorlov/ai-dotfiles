@@ -32,11 +32,6 @@ def catalog_dir() -> Path:
     return storage_root() / "catalog"
 
 
-def stacks_dir() -> Path:
-    """Preset ``.conf`` stack files."""
-    return storage_root() / "stacks"
-
-
 def completion_dir() -> Path:
     """Cached shell completion scripts (``~/.ai-dotfiles/completions``)."""
     return storage_root() / "completions"

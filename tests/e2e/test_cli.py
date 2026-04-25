@@ -19,7 +19,6 @@ TOP_LEVEL_COMMANDS = [
     "list",
     "pull",
     "remove",
-    "stack",
     "status",
     "update",
     "vendor",
@@ -27,7 +26,6 @@ TOP_LEVEL_COMMANDS = [
 
 COMPLETION_SUBCOMMANDS = ["install", "uninstall"]
 DOMAIN_SUBCOMMANDS = ["add", "create", "delete", "list", "remove"]
-STACK_SUBCOMMANDS = ["add", "apply", "create", "delete", "list", "remove"]
 VENDOR_SUBCOMMANDS = [
     "buildwithclaude",
     "github",
@@ -73,14 +71,6 @@ def test_help_domain() -> None:
     assert result.exit_code == 0
     for name in DOMAIN_SUBCOMMANDS:
         assert name in result.output, f"{name} missing from domain --help"
-
-
-def test_help_stack() -> None:
-    runner = CliRunner()
-    result = runner.invoke(cli, ["stack", "--help"])
-    assert result.exit_code == 0
-    for name in STACK_SUBCOMMANDS:
-        assert name in result.output, f"{name} missing from stack --help"
 
 
 def test_help_vendor() -> None:

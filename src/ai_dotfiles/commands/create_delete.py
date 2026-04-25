@@ -51,21 +51,6 @@ def _element_path(element_type: str, name: str, catalog: Path) -> Path:
     raise ElementError(f"Unknown element type: {element_type!r}")
 
 
-def _read_stack_entries(conf: Path) -> list[str]:
-    """Return non-comment, non-empty lines from a ``.conf`` stack file."""
-    try:
-        text = conf.read_text(encoding="utf-8")
-    except OSError:
-        return []
-    entries: list[str] = []
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        entries.append(line)
-    return entries
-
-
 def find_usage(
     element_raw: str,
     storage: Path,
@@ -73,9 +58,9 @@ def find_usage(
 ) -> list[str]:
     """Find where ``element_raw`` (e.g. ``skill:my-linter``) is referenced.
 
-    Scans the current project manifest (if any), the global manifest, and all
-    ``.conf`` files under ``<storage>/stacks/``. Returns a list of string
-    paths (relative to their natural base) in which the element appears.
+    Scans the current project manifest (if any) and the global manifest.
+    Returns a list of string paths (relative to their natural base) in
+    which the element appears.
     """
     usages: list[str] = []
 
@@ -97,12 +82,6 @@ def find_usage(
             packages = []
         if element_raw in packages:
             usages.append("global.json")
-
-    stacks = storage / "stacks"
-    if stacks.is_dir():
-        for conf in sorted(stacks.glob("*.conf")):
-            if element_raw in _read_stack_entries(conf):
-                usages.append(f"stacks/{conf.name}")
 
     return usages
 

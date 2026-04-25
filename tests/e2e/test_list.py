@@ -27,7 +27,6 @@ def storage(home: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     storage_dir.mkdir()
     monkeypatch.setenv("AI_DOTFILES_HOME", str(storage_dir))
     (storage_dir / "catalog").mkdir()
-    (storage_dir / "stacks").mkdir()
     return storage_dir
 
 
@@ -186,25 +185,6 @@ def test_list_available_standalone(storage: Path) -> None:
     assert "agent:researcher" in out
     assert "agent:reviewer" in out
     assert "rule:security" in out
-
-
-def test_list_available_stacks(storage: Path) -> None:
-    stacks = storage / "stacks"
-    (stacks / "backend.conf").write_text("@python\n")
-    (stacks / "frontend.conf").write_text("@typescript\n")
-    # Non-.conf files are ignored.
-    (stacks / "README.md").write_text("# stacks\n")
-
-    result = CliRunner().invoke(list_cmd, ["--available"])
-
-    assert result.exit_code == 0, result.output
-    out = result.output
-    assert "Stacks:" in out
-    assert "backend" in out
-    assert "frontend" in out
-    # README should not appear as a stack entry.
-    lines = [line.strip() for line in out.splitlines()]
-    assert "README" not in lines
 
 
 def test_list_available_skips_example(storage: Path) -> None:

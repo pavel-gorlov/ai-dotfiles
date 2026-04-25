@@ -197,40 +197,6 @@ def test_list_available_fresh_then_installed(catalog: Path, tmp_storage: Path) -
     assert result == ["skill:b", "skill:a"]
 
 
-# ── Stacks ───────────────────────────────────────────────────────────────────
-
-
-def test_list_stack_names(tmp_storage: Path) -> None:
-    stacks = tmp_storage / "stacks"
-    stacks.mkdir()
-    (stacks / "backend.conf").write_text("")
-    (stacks / "frontend.conf").write_text("")
-    (stacks / "README.md").write_text("")
-
-    assert completions.list_stack_names() == ["backend", "frontend"]
-
-
-def test_list_stack_names_empty(tmp_storage: Path) -> None:
-    assert completions.list_stack_names() == []
-
-
-def test_list_items_in_stack(tmp_storage: Path) -> None:
-    stacks = tmp_storage / "stacks"
-    stacks.mkdir()
-    (stacks / "backend.conf").write_text(
-        "# header\n\n@python-backend\nskill:fastapi-endpoint\n# comment\n"
-    )
-
-    assert completions.list_items_in_stack("backend") == [
-        "@python-backend",
-        "skill:fastapi-endpoint",
-    ]
-
-
-def test_list_items_in_missing_stack(tmp_storage: Path) -> None:
-    assert completions.list_items_in_stack("nope") == []
-
-
 # ── Completer wrapper ────────────────────────────────────────────────────────
 
 
@@ -298,14 +264,3 @@ def test_complete_standalone_elements_reads_element_type(catalog: Path) -> None:
     ctx.params = {"element_type": "agent"}
 
     assert completions.complete_standalone_elements(ctx) == ["writer"]
-
-
-def test_complete_stack_items_reads_name(tmp_storage: Path) -> None:
-    stacks = tmp_storage / "stacks"
-    stacks.mkdir()
-    (stacks / "backend.conf").write_text("skill:a\nskill:b\n")
-
-    ctx = click.Context(click.Command("remove"))
-    ctx.params = {"name": "backend"}
-
-    assert completions.complete_stack_items(ctx) == ["skill:a", "skill:b"]

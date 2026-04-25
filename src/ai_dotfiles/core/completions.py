@@ -1,7 +1,7 @@
 """Data providers for shell tab-completion.
 
-Each ``list_*`` helper scans the catalog / manifests / stacks dir and returns
-plain strings that are valid arguments for the corresponding CLI command.
+Each ``list_*`` helper scans the catalog or manifests and returns plain
+strings that are valid arguments for the corresponding CLI command.
 Functions in this module never raise — on any error they return ``[]``, so a
 broken catalog or missing manifest cannot take the user's shell down.
 
@@ -177,37 +177,6 @@ def list_available_specifiers(is_global: bool) -> list[str]:
     return fresh + already
 
 
-# ── Stacks ───────────────────────────────────────────────────────────────────
-
-
-def list_stack_names() -> list[str]:
-    """Stack names under ``<storage>/stacks/`` (``.conf`` basenames)."""
-    try:
-        stacks = paths.stacks_dir()
-        if not stacks.is_dir():
-            return []
-        return sorted(p.stem for p in stacks.glob("*.conf") if p.is_file())
-    except OSError:
-        return []
-
-
-def list_items_in_stack(stack_name: str) -> list[str]:
-    """Specifiers contained in ``stacks/<stack_name>.conf``."""
-    try:
-        path = paths.stacks_dir() / f"{stack_name}.conf"
-        if not path.is_file():
-            return []
-        items: list[str] = []
-        for raw_line in path.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-            items.append(line)
-        return items
-    except OSError:
-        return []
-
-
 # ── Click callback wiring ────────────────────────────────────────────────────
 
 
@@ -256,19 +225,6 @@ def complete_installed_specifiers(ctx: click.Context) -> list[str]:
 def complete_domain_names(ctx: click.Context) -> list[str]:
     """For ``domain <subcommand> <name>``: existing domain names."""
     return list_domain_names()
-
-
-def complete_stack_names(ctx: click.Context) -> list[str]:
-    """For ``stack apply|delete|list|add|remove <name>``: stack file basenames."""
-    return list_stack_names()
-
-
-def complete_stack_items(ctx: click.Context) -> list[str]:
-    """For ``stack remove <name> <items>``: current contents of the named stack."""
-    name = ctx.params.get("name")
-    if not isinstance(name, str):
-        return []
-    return list_items_in_stack(name)
 
 
 def complete_domain_elements(ctx: click.Context) -> list[str]:

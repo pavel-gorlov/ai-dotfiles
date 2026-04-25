@@ -3,13 +3,11 @@
 Both manifest types share the same shape::
 
     {
-        "packages": ["@python", "skill:code-review", ...],
-        "stack": "backend"   # optional
+        "packages": ["@python", "skill:code-review", ...]
     }
 
 The ``packages`` list preserves insertion order and disallows duplicates on
-add. Top-level metadata keys (e.g. ``stack``) can be written via
-``set_metadata``.
+add.
 """
 
 from __future__ import annotations
@@ -123,12 +121,3 @@ def remove_packages(path: Path, items: list[str]) -> list[str]:
         data["packages"] = existing
         write_manifest(path, data)
     return removed
-
-
-def set_metadata(path: Path, key: str, value: str) -> None:
-    """Set a top-level ``key`` on the manifest (e.g. ``stack``)."""
-    if key == "packages":
-        raise ConfigError("Use add_packages/remove_packages to modify 'packages'")
-    data = read_manifest(path)
-    data[key] = value
-    write_manifest(path, data)

@@ -13,7 +13,6 @@ from ai_dotfiles.core.manifest import (
     get_packages,
     read_manifest,
     remove_packages,
-    set_metadata,
     write_manifest,
 )
 
@@ -126,25 +125,3 @@ def test_remove_packages_mixed(tmp_path: Path) -> None:
     removed = remove_packages(path, ["@python", "skill:nope"])
     assert removed == ["@python"]
     assert get_packages(path) == ["skill:x"]
-
-
-def test_set_metadata(tmp_path: Path) -> None:
-    path = tmp_path / "m.json"
-    write_manifest(path, {"packages": ["@python"]})
-    set_metadata(path, "stack", "backend")
-    data = read_manifest(path)
-    assert data["stack"] == "backend"
-    assert data["packages"] == ["@python"]
-
-
-def test_set_metadata_on_missing_file(tmp_path: Path) -> None:
-    path = tmp_path / "m.json"
-    set_metadata(path, "stack", "backend")
-    data = read_manifest(path)
-    assert data == {"packages": [], "stack": "backend"}
-
-
-def test_set_metadata_rejects_packages(tmp_path: Path) -> None:
-    path = tmp_path / "m.json"
-    with pytest.raises(ConfigError):
-        set_metadata(path, "packages", "oops")

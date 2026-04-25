@@ -137,11 +137,6 @@ def generate_storage_scaffold(root: Path) -> None:
     for sub in ("skills", "agents", "rules"):
         (catalog_dir / sub).mkdir(parents=True, exist_ok=True)
 
-    # stacks/
-    stacks_dir = root / "stacks"
-    _write_template("stacks_readme.md", stacks_dir / "README.md")
-    _write_template("example_stack.conf", stacks_dir / "_example.conf")
-
     # root-level files
     _write_template("root_readme.md", root / "README.md")
     _write_template("gitignore", root / ".gitignore")

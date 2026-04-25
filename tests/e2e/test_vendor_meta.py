@@ -255,25 +255,6 @@ def test_vendor_remove_deletes_entry(runner: CliRunner, tmp_storage: Path) -> No
     assert "Removed" in result.output
 
 
-def test_vendor_remove_warns_when_referenced_in_stack(
-    runner: CliRunner, tmp_storage: Path
-) -> None:
-    """If the element is used by a stack, a warning is emitted before deletion."""
-    catalog = _catalog(tmp_storage)
-    target = catalog / "skills" / "foo"
-    _write_fake_source(target)
-
-    stacks = tmp_storage / "stacks"
-    stacks.mkdir(parents=True, exist_ok=True)
-    (stacks / "demo.conf").write_text("skill:foo\n", encoding="utf-8")
-
-    result = runner.invoke(vendor, ["remove", "foo", "--yes"])
-    assert result.exit_code == 0, result.output
-    assert "used in" in result.output
-    assert "stacks/demo.conf" in result.output
-    assert not target.exists()
-
-
 def test_vendor_remove_missing_raises_element_error(
     runner: CliRunner, tmp_storage: Path
 ) -> None:

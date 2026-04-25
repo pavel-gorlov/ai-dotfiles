@@ -4,7 +4,7 @@ These verify that:
 1. Each targeted command declares a ``shell_complete`` callback on the right
    argument.
 2. The callback returns the expected list of specifiers for a realistic
-   catalog / manifest / stacks layout.
+   catalog / manifest layout.
 3. The ``is_global`` flag from ``ctx.params`` is honored.
 
 Uses ``tmp_storage`` + ``tmp_project`` fixtures from ``conftest.py``.
@@ -30,13 +30,6 @@ from ai_dotfiles.commands.domain import (
     remove_element as domain_remove,
 )
 from ai_dotfiles.commands.remove import remove
-from ai_dotfiles.commands.stack import (
-    add_to_stack,
-    apply_stack,
-    delete_stack,
-    list_stack,
-    remove_from_stack,
-)
 from ai_dotfiles.commands.vendor import _meta_remove as vendor_remove
 
 pytestmark = pytest.mark.integration
@@ -147,76 +140,6 @@ def test_remove_prefix_filter(tmp_storage: Path) -> None:
 
     assert _complete(remove, "packages", ctx, "@") == ["@python-backend"]
     assert _complete(remove, "packages", ctx, "skill:") == ["skill:alpha"]
-
-
-# ── stack apply: shell_complete on `name` ────────────────────────────────────
-
-
-def test_stack_apply_completes_stack_names(tmp_storage: Path) -> None:
-    stacks = tmp_storage / "stacks"
-    stacks.mkdir()
-    (stacks / "backend.conf").write_text("")
-    (stacks / "frontend.conf").write_text("")
-
-    ctx = click.Context(apply_stack)
-    ctx.params = {}
-
-    result = _complete(apply_stack, "name", ctx, "")
-    assert sorted(result) == ["backend", "frontend"]
-
-    assert _complete(apply_stack, "name", ctx, "b") == ["backend"]
-
-
-def test_stack_apply_empty_when_no_stacks(tmp_storage: Path) -> None:
-    ctx = click.Context(apply_stack)
-    ctx.params = {}
-
-    assert _complete(apply_stack, "name", ctx, "") == []
-
-
-# ── stack delete / list: shell_complete on `name` ────────────────────────────
-
-
-def test_stack_delete_and_list_complete_names(tmp_storage: Path) -> None:
-    (tmp_storage / "stacks").mkdir()
-    (tmp_storage / "stacks" / "backend.conf").write_text("")
-
-    for cmd in (delete_stack, list_stack):
-        ctx = click.Context(cmd)
-        ctx.params = {}
-        assert _complete(cmd, "name", ctx, "") == ["backend"]
-
-
-# ── stack add: name → stacks, items → catalog specifiers ─────────────────────
-
-
-def test_stack_add_completes_name_then_catalog(tmp_storage: Path) -> None:
-    (tmp_storage / "stacks").mkdir()
-    (tmp_storage / "stacks" / "backend.conf").write_text("")
-    _seed_catalog(tmp_storage / "catalog")
-
-    ctx = click.Context(add_to_stack)
-    ctx.params = {"name": "backend"}  # simulating after first arg is parsed
-
-    assert _complete(add_to_stack, "name", ctx, "") == ["backend"]
-    items = _complete(add_to_stack, "items", ctx, "")
-    assert "@python-backend" in items
-    assert "skill:alpha" in items
-
-
-# ── stack remove: items → only what's in that stack ──────────────────────────
-
-
-def test_stack_remove_items_read_from_named_stack(tmp_storage: Path) -> None:
-    stacks = tmp_storage / "stacks"
-    stacks.mkdir()
-    (stacks / "backend.conf").write_text("@python-backend\nskill:alpha\n")
-
-    ctx = click.Context(remove_from_stack)
-    ctx.params = {"name": "backend"}
-
-    items = _complete(remove_from_stack, "items", ctx, "")
-    assert sorted(items) == ["@python-backend", "skill:alpha"]
 
 
 # ── domain delete / list: shell_complete on `name` ───────────────────────────

@@ -6,7 +6,7 @@ Three modes:
   project ``ai-dotfiles.json`` and global ``~/.ai-dotfiles/global.json``
 * ``ai-dotfiles list -g``            — only ``~/.ai-dotfiles/global.json``
 * ``ai-dotfiles list --available``   — everything present in ``catalog/``
-  and ``stacks/`` under the storage root
+  under the storage root
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ _RESERVED_CATALOG_DIRS: frozenset[str] = frozenset(
 @click.option(
     "--available",
     is_flag=True,
-    help="Show all items available in the catalog and stacks.",
+    help="Show all items available in the catalog.",
 )
 def list_cmd(is_global: bool, available: bool) -> None:
     """List installed packages, or everything available in the catalog."""
@@ -125,13 +125,11 @@ def _print_groups(grouped: dict[ElementType, list[str]]) -> None:
 
 def _list_available() -> None:
     catalog = paths.catalog_dir()
-    stacks = paths.stacks_dir()
 
     domains = _scan_domains(catalog)
     skills = _scan_standalone_dirs(catalog / "skills", prefix="skill:")
     agents = _scan_standalone_files(catalog / "agents", prefix="agent:")
     rules = _scan_standalone_files(catalog / "rules", prefix="rule:")
-    stack_names = _scan_stacks(stacks)
 
     ui.info("Available in catalog:")
     ui.info("")
@@ -152,12 +150,6 @@ def _list_available() -> None:
         ui.info(f"  {title}:")
         for item in items:
             ui.info(f"    {item}")
-
-    if stack_names:
-        ui.info("")
-        ui.info("Stacks:")
-        for name in stack_names:
-            ui.info(f"    {name}")
 
 
 def _scan_domains(catalog: Path) -> list[str]:
@@ -202,19 +194,4 @@ def _scan_standalone_files(root: Path, *, prefix: str) -> list[str]:
         if entry.name.startswith(".") or entry.name.startswith("_"):
             continue
         names.append(f"{prefix}{entry.stem}")
-    return names
-
-
-def _scan_stacks(stacks: Path) -> list[str]:
-    if not stacks.is_dir():
-        return []
-    names: list[str] = []
-    for entry in sorted(stacks.iterdir()):
-        if not entry.is_file():
-            continue
-        if entry.suffix != ".conf":
-            continue
-        if entry.name.startswith(".") or entry.name.startswith("_"):
-            continue
-        names.append(entry.stem)
     return names

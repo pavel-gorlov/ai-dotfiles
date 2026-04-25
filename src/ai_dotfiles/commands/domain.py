@@ -28,7 +28,6 @@ from ai_dotfiles.core.completions import (
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError, ElementError
 from ai_dotfiles.core.paths import (
     catalog_dir,
-    stacks_dir,
     storage_root,
 )
 from ai_dotfiles.scaffold.generator import generate_element_from_template
@@ -49,12 +48,10 @@ def _require_domain_exists(name: str) -> Path:
 
 
 def _find_usage(name: str) -> list[Path]:
-    """Return paths of manifests/stack files that reference ``@name``.
+    """Return paths of manifests that reference ``@name``.
 
-    Scans the project-independent surfaces we can see from storage:
-    ``global.json`` and any ``stacks/*.conf`` file. We cannot reliably
-    discover arbitrary project manifests from here, so this is a best-effort
-    warning only.
+    Scans ``global.json`` only. We cannot reliably discover arbitrary
+    project manifests from here, so this is a best-effort warning.
     """
     specifier = f"@{name}"
     hits: list[Path] = []
@@ -68,18 +65,6 @@ def _find_usage(name: str) -> list[Path]:
         if specifier in pkgs:
             hits.append(global_manifest)
 
-    stacks = stacks_dir()
-    if stacks.is_dir():
-        for conf in sorted(stacks.glob("*.conf")):
-            try:
-                text = conf.read_text(encoding="utf-8")
-            except OSError:
-                continue
-            for line in text.splitlines():
-                stripped = line.strip()
-                if stripped == specifier or stripped.startswith(specifier + " "):
-                    hits.append(conf)
-                    break
     return hits
 
 

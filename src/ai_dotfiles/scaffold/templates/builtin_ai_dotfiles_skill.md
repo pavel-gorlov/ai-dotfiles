@@ -1,12 +1,12 @@
 ---
 name: ai-dotfiles
-description: Manage Claude Code configuration via the ai-dotfiles CLI — install/add/remove skills, agents, rules, domains and stacks; scaffold new elements; vendor external sources from GitHub, paks or skills.sh; validate symlinks in ~/.claude/.
-when_to_use: Trigger when the user mentions "ai-dotfiles", "~/.ai-dotfiles/", "AI_DOTFILES_HOME", "ai-dotfiles.json" or "global.json"; adds/removes/installs/lists a skill, agent, rule, domain or stack for Claude Code; scaffolds a new element; vendors external content (GitHub, paks, npx skills CLI, buildwithclaude, tonsofskills); checks the health of Claude Code symlinks under ~/.claude/ or <project>/.claude/; reconciles ai-dotfiles.json or global.json with the filesystem.
+description: Manage Claude Code configuration via the ai-dotfiles CLI — install/add/remove skills, agents, rules and domains; scaffold new elements; vendor external sources from GitHub, paks or skills.sh; validate symlinks in ~/.claude/.
+when_to_use: Trigger when the user mentions "ai-dotfiles", "~/.ai-dotfiles/", "AI_DOTFILES_HOME", "ai-dotfiles.json" or "global.json"; adds/removes/installs/lists a skill, agent, rule or domain for Claude Code; scaffolds a new element; vendors external content (GitHub, paks, npx skills CLI, buildwithclaude, tonsofskills); checks the health of Claude Code symlinks under ~/.claude/ or <project>/.claude/; reconciles ai-dotfiles.json or global.json with the filesystem.
 ---
 
 # ai-dotfiles
 
-Use this skill when the user asks to install/add/remove Claude Code configuration elements, scaffold new skills/agents/rules, work with domains or stacks, or vendor external sources via the `ai-dotfiles` CLI.
+Use this skill when the user asks to install/add/remove Claude Code configuration elements, scaffold new skills/agents/rules, work with domains, or vendor external sources via the `ai-dotfiles` CLI.
 
 Prefer running the CLI over editing `~/.claude/` or manifests by hand — manifests and symlinks must stay in sync.
 
@@ -26,8 +26,6 @@ After installing completion, arguments themselves tab-complete too:
 
 - `add <TAB>` / `add -g <TAB>` — catalog specifiers, fresh-first (not yet installed), installed last; scope follows `-g`.
 - `remove <TAB>` / `remove -g <TAB>` — only specifiers already in the manifest for that scope.
-- `stack apply|delete|list <TAB>` — existing stack names (`.conf` basenames).
-- `stack add <name> <TAB>` — catalog specifiers; `stack remove <name> <TAB>` — items currently in that stack.
 - `domain delete|list <TAB>` — existing domain names; `domain remove <name> <type> <TAB>` — elements of that type in that domain.
 - `delete skill|agent|rule <TAB>` — existing standalone elements of the preceding type.
 - `vendor remove <TAB>` — names with `.source` sidecars in the catalog.
@@ -43,7 +41,7 @@ After installing completion, arguments themselves tab-complete too:
 - `ai-dotfiles remove <spec>...` — remove from project manifest and unlink. Refuses if other manifest entries declare a dependency on the target; pass `--force` to break the dependency anyway, or remove the dependents in the same call.
 - `ai-dotfiles remove -g <spec>...` — remove from global manifest and unlink.
 - `ai-dotfiles list` / `list -g` — show installed packages (project / global).
-- `ai-dotfiles list --available` — list everything present in the catalog and stacks.
+- `ai-dotfiles list --available` — list everything present in the catalog.
 - `ai-dotfiles status` — report symlink health and a settings summary.
 
 ### Elements
@@ -52,7 +50,8 @@ After installing completion, arguments themselves tab-complete too:
 - `ai-dotfiles delete skill|agent|rule <name>` — remove an element from the catalog.
 - `ai-dotfiles domain create|delete|list <name>` — manage domains (a folder under `catalog/`).
 - `ai-dotfiles domain add|remove <domain> <type> <name>` — manage elements inside a domain.
-- `ai-dotfiles stack create|delete|apply <name>` — manage stack presets (`.conf` files merged into the project manifest).
+
+> Need an opinionated bundle? Create a meta-domain with `depends: [...]` in `domain.json` and `add @your-bundle` — see `### Dependencies between elements` below. The legacy `stack` command is gone.
 
 ### Vendors
 
@@ -200,11 +199,13 @@ ai-dotfiles status                             # verify symlinks are healthy
 
 Use `ai-dotfiles vendor installed` to audit what vendors contributed, and `ai-dotfiles vendor remove <name>` to drop a vendored entry.
 
-### 3. Apply a stack preset
+### 3. Bundle several elements as a meta-domain
 
 ```bash
-ai-dotfiles stack apply <name>         # merge preset into project manifest
-ai-dotfiles install
+ai-dotfiles domain create my-stack         # scaffolds catalog/my-stack/
+# Edit catalog/my-stack/domain.json to add:
+#   "depends": ["@python", "@gitflow", "skill:code-review"]
+ai-dotfiles add @my-stack                  # pulls every dep transitively
 ```
 
 ### 4. Reconcile after a rename or a pull (`--prune`)

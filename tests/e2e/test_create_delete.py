@@ -13,11 +13,10 @@ from ai_dotfiles.commands.create_delete import create, delete, find_usage
 
 @pytest.fixture
 def seeded_storage(tmp_storage: Path) -> Path:
-    """Seed a minimal storage tree: catalog subdirs, empty global.json, stacks/."""
+    """Seed a minimal storage tree: catalog subdirs, empty global.json."""
     (tmp_storage / "catalog" / "skills").mkdir(parents=True)
     (tmp_storage / "catalog" / "agents").mkdir(parents=True)
     (tmp_storage / "catalog" / "rules").mkdir(parents=True)
-    (tmp_storage / "stacks").mkdir(parents=True)
     (tmp_storage / "global.json").write_text(
         json.dumps({"packages": []}, indent=2) + "\n", encoding="utf-8"
     )
@@ -148,13 +147,6 @@ def test_find_usage_in_manifest(seeded_storage: Path, tmp_project: Path) -> None
     )
     usages = find_usage("skill:my-thing", seeded_storage, tmp_project)
     assert "ai-dotfiles.json" in usages
-
-
-def test_find_usage_in_stack(seeded_storage: Path) -> None:
-    conf = seeded_storage / "stacks" / "backend.conf"
-    conf.write_text("# comment\nskill:my-thing\nagent:other\n", encoding="utf-8")
-    usages = find_usage("skill:my-thing", seeded_storage, None)
-    assert "stacks/backend.conf" in usages
 
 
 def test_find_usage_nowhere(seeded_storage: Path) -> None:
