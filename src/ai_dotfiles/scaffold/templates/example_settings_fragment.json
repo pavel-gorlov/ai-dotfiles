@@ -1,6 +1,4 @@
 {
-  "_domain": "_example",
-  "_description": "Example domain hooks — edit or remove",
   "hooks": {
     "PostToolUse": [{
       "matcher": "Edit|Write",

@@ -17,8 +17,9 @@ Merge rules:
     declarative set are dropped; first-time name collisions keep the
     user version.
 
-Meta keys stripped from fragments before merging: ``_domain``,
-``_description``, ``_requires``.
+Fragments contain pure MCP server config — domain metadata (name,
+description, host package requirements) lives in
+``catalog/<domain>/domain.json``.
 """
 
 from __future__ import annotations
@@ -31,10 +32,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ai_dotfiles.core.domain_meta import read_domain_meta
 from ai_dotfiles.core.elements import ElementType, parse_element
 from ai_dotfiles.core.errors import ConfigError
-
-_META_KEYS: tuple[str, ...] = ("_domain", "_description", "_requires")
 
 # Claude Code env-var syntax: ${VAR} or ${VAR:-default}. NOT ${env:VAR}.
 _ENV_TOKEN_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
@@ -61,18 +61,28 @@ def load_mcp_fragment(path: Path) -> dict[str, Any]:
 
 
 def strip_mcp_meta(fragment: dict[str, Any]) -> dict[str, Any]:
-    """Return a copy of ``fragment`` without the meta keys."""
-    return {k: v for k, v in fragment.items() if k not in _META_KEYS}
+    """Return a shallow copy of ``fragment``.
+
+    Historically this stripped underscored meta keys (``_domain``,
+    ``_description``, ``_requires``) that lived inside the MCP fragment.
+    Those keys have moved to ``domain.json``; this function is kept as
+    a no-op so callers still get a defensive copy.
+    """
+    return dict(fragment)
 
 
 def collect_mcp_fragments(packages: list[str], catalog: Path) -> list[tuple[str, Path]]:
     """Collect ``(domain_name, fragment_path)`` pairs from domain packages.
 
-    Preserves ``packages`` order. Only ``@domain`` specifiers contribute;
-    standalones are skipped. Missing fragment files are silently skipped —
-    a domain without MCP servers is valid.
+    Domains are topologically sorted (deps first) so layered domains'
+    MCP fragments merge with the base layer applied first. Only
+    ``@domain`` specifiers contribute; standalones are skipped. Missing
+    fragment files are silently skipped — a domain without MCP servers
+    is valid.
     """
-    fragments: list[tuple[str, Path]] = []
+    from ai_dotfiles.core.dependencies import topological_sort
+
+    domain_elements = []
     for spec in packages:
         try:
             element = parse_element(spec)
@@ -80,6 +90,12 @@ def collect_mcp_fragments(packages: list[str], catalog: Path) -> list[tuple[str,
             continue
         if element.type is not ElementType.DOMAIN:
             continue
+        domain_elements.append(element)
+
+    ordered = topological_sort(catalog, domain_elements)
+
+    fragments: list[tuple[str, Path]] = []
+    for element in ordered:
         fragment_path = catalog / element.name / "mcp.fragment.json"
         if fragment_path.exists():
             fragments.append((element.name, fragment_path))
@@ -193,6 +209,24 @@ def merge_with_existing_mcp(
     for name, cfg in new_servers.items():
         if name in collisions:
             continue
+        # For repeat-owned servers, preserve user-added env keys.
+        # The structural fields (command, args, type, url, headers, …)
+        # always come from the domain — that's the source of truth — but
+        # the user is allowed to layer extra environment variables that
+        # the domain never declared. Domain-declared env keys still win
+        # on overlap.
+        existing_cfg = existing_servers.get(name)
+        if (
+            isinstance(existing_cfg, dict)
+            and name in previous_ownership
+            and isinstance(existing_cfg.get("env"), dict)
+            and isinstance(cfg.get("env"), dict)
+        ):
+            merged_env: dict[str, Any] = dict(cfg["env"])
+            for env_key, env_val in existing_cfg["env"].items():
+                if env_key not in merged_env:
+                    merged_env[env_key] = env_val
+            cfg = {**cfg, "env": merged_env}
         merged_servers[name] = cfg
 
     result["mcpServers"] = merged_servers
@@ -281,12 +315,13 @@ def warn_unset_env_vars(
 
 
 def warn_missing_npm_requires(
-    fragments: list[tuple[str, Path]],
+    domain_names: Iterable[str],
+    catalog: Path,
     project_root: Path,
     warn: Callable[[str], None],
 ) -> None:
-    """For each fragment's ``_requires.npm`` list, warn on packages that
-    are missing from ``<project_root>/package.json``.
+    """For each domain's ``requires.npm`` (in ``domain.json``), warn on
+    packages missing from ``<project_root>/package.json``.
 
     Silent if ``package.json`` is absent or unreadable (not every project
     is a Node project).
@@ -307,17 +342,10 @@ def warn_missing_npm_requires(
         if isinstance(section, dict):
             known.update(section.keys())
 
-    for domain_name, path in fragments:
-        raw = load_mcp_fragment(path)
-        requires = raw.get("_requires")
-        if not isinstance(requires, dict):
-            continue
-        npm_list = requires.get("npm")
-        if not isinstance(npm_list, list):
-            continue
+    for domain_name in domain_names:
+        meta = read_domain_meta(catalog, domain_name)
+        npm_list = meta.requires.get("npm", [])
         for package in npm_list:
-            if not isinstance(package, str):
-                continue
             if package in known:
                 continue
             warn(

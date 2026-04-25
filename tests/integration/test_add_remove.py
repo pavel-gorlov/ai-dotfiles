@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from click.testing import CliRunner
@@ -45,10 +46,10 @@ def catalog(storage: Path) -> Path:
     (domain / "skills" / "test-skill" / "SKILL.md").write_text("test skill\n")
     (domain / "agents").mkdir()
     (domain / "agents" / "test-agent.md").write_text("# agent\n")
+    (domain / "domain.json").write_text(json.dumps({"name": "testdomain"}))
     (domain / "settings.fragment.json").write_text(
         json.dumps(
             {
-                "_domain": "testdomain",
                 "hooks": {"PostToolUse": [{"matcher": "Write", "hooks": []}]},
                 "permissions": {"allow": ["Read"]},
             }
@@ -144,7 +145,6 @@ def test_add_project_rebuilds_settings(
     settings_path = project / ".claude" / "settings.json"
     assert settings_path.is_file()
     data = json.loads(settings_path.read_text())
-    assert "_domain" not in data  # meta stripped
     assert "permissions" in data
     assert "hooks" in data
 
@@ -275,3 +275,231 @@ def test_add_then_remove_roundtrip(
     assert not (claude / "skills" / "test-standalone").exists()
     assert not (claude / "agents" / "test-agent.md").exists()
     assert not (claude / "settings.json").exists()
+
+
+# ── settings.json: user-edit preservation (regression for planch case) ────
+
+
+def _seed_user_settings(claude: Path, payload: dict[str, Any]) -> None:
+    claude.mkdir(parents=True, exist_ok=True)
+    (claude / "settings.json").write_text(
+        json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def test_add_preserves_user_authored_permissions_allow(
+    runner: CliRunner, catalog: Path, project: Path
+) -> None:
+    user_perms: dict[str, Any] = {
+        "permissions": {
+            "allow": ["Bash(git status)", "Read(/tmp/**)", "WebSearch"],
+            "deny": ["Edit(package.json)"],
+        },
+        "model": "opus",
+    }
+    _seed_user_settings(project / ".claude", user_perms)
+
+    result = runner.invoke(add, ["@testdomain"])
+    assert result.exit_code == 0, result.output
+
+    settings = json.loads((project / ".claude" / "settings.json").read_text())
+    for entry in user_perms["permissions"]["allow"]:
+        assert entry in settings["permissions"]["allow"]
+    assert "Edit(package.json)" in settings["permissions"]["deny"]
+    assert settings["model"] == "opus"
+    # Domain entry merged in alongside.
+    assert "Read" in settings["permissions"]["allow"]
+
+
+def test_remove_restores_user_only_settings(
+    runner: CliRunner, catalog: Path, project: Path
+) -> None:
+    user_perms: dict[str, Any] = {
+        "permissions": {
+            "allow": ["Bash(git status)", "WebSearch"],
+            "deny": ["Edit(package.json)"],
+        },
+        "model": "opus",
+    }
+    _seed_user_settings(project / ".claude", user_perms)
+
+    runner.invoke(add, ["@testdomain"])
+    runner.invoke(remove, ["@testdomain"])
+
+    settings_path = project / ".claude" / "settings.json"
+    assert settings_path.exists()
+    settings = json.loads(settings_path.read_text())
+    assert sorted(settings["permissions"]["allow"]) == sorted(
+        ["Bash(git status)", "WebSearch"]
+    )
+    assert settings["permissions"]["deny"] == ["Edit(package.json)"]
+    assert settings["model"] == "opus"
+    assert "Read" not in settings["permissions"]["allow"]
+
+
+def test_add_dedups_when_user_already_has_domain_entry(
+    runner: CliRunner, catalog: Path, project: Path
+) -> None:
+    _seed_user_settings(
+        project / ".claude",
+        {"permissions": {"allow": ["Read", "Bash(git status)"]}},
+    )
+
+    result = runner.invoke(add, ["@testdomain"])
+    assert result.exit_code == 0, result.output
+
+    settings = json.loads((project / ".claude" / "settings.json").read_text())
+    assert settings["permissions"]["allow"].count("Read") == 1
+
+
+def test_idempotent_add_does_not_grow_permissions(
+    runner: CliRunner, catalog: Path, project: Path
+) -> None:
+    _seed_user_settings(
+        project / ".claude",
+        {"permissions": {"allow": ["WebSearch"]}},
+    )
+
+    runner.invoke(add, ["@testdomain"])
+    settings1 = (project / ".claude" / "settings.json").read_text()
+    runner.invoke(add, ["@testdomain"])
+    settings2 = (project / ".claude" / "settings.json").read_text()
+    assert settings1 == settings2
+
+
+def test_install_preserves_user_authored_keys(
+    runner: CliRunner, catalog: Path, project: Path
+) -> None:
+    from ai_dotfiles.commands.install import install
+
+    runner.invoke(add, ["@testdomain"])
+    # User now appends a permission directly to the regenerated file.
+    settings_path = project / ".claude" / "settings.json"
+    current = json.loads(settings_path.read_text())
+    current.setdefault("permissions", {}).setdefault("allow", []).append(
+        "Bash(my-secret-script:*)"
+    )
+    settings_path.write_text(json.dumps(current, indent=2) + "\n")
+
+    result = runner.invoke(install, [])
+    assert result.exit_code == 0, result.output
+
+    settings = json.loads(settings_path.read_text())
+    assert "Bash(my-secret-script:*)" in settings["permissions"]["allow"]
+    assert "Read" in settings["permissions"]["allow"]
+
+
+def test_remove_drops_settings_ownership_file(
+    runner: CliRunner, catalog: Path, project: Path
+) -> None:
+    runner.invoke(add, ["@testdomain"])
+    ownership_file = project / ".claude" / ".ai-dotfiles-settings-ownership.json"
+    assert ownership_file.exists()
+
+    runner.invoke(remove, ["@testdomain"])
+    assert not ownership_file.exists()
+
+
+# ── domain dependencies (_depends) ───────────────────────────────────────
+
+
+@pytest.fixture
+def deps_catalog(catalog: Path) -> Path:
+    """Catalog with two domains where @child depends on @base."""
+    base = catalog / "base"
+    (base / "skills" / "base-skill").mkdir(parents=True)
+    (base / "skills" / "base-skill" / "SKILL.md").write_text("base\n")
+    (base / "domain.json").write_text(json.dumps({"name": "base"}))
+    (base / "settings.fragment.json").write_text(
+        json.dumps({"permissions": {"allow": ["BaseAllow"]}})
+    )
+
+    child = catalog / "child"
+    (child / "skills" / "child-skill").mkdir(parents=True)
+    (child / "skills" / "child-skill" / "SKILL.md").write_text("child\n")
+    (child / "domain.json").write_text(
+        json.dumps({"name": "child", "depends": ["@base"]})
+    )
+    (child / "settings.fragment.json").write_text(
+        json.dumps({"permissions": {"allow": ["ChildAllow"]}})
+    )
+    return catalog
+
+
+def test_add_pulls_in_dependency(
+    runner: CliRunner, deps_catalog: Path, project: Path
+) -> None:
+    result = runner.invoke(add, ["@child"])
+    assert result.exit_code == 0, result.output
+
+    pkgs = manifest.get_packages(project / "ai-dotfiles.json")
+    # Dependency listed BEFORE its dependent.
+    assert pkgs == ["@base", "@child"]
+
+    # Both domains' symlinks present.
+    claude = project / ".claude"
+    assert (claude / "skills" / "base-skill").is_symlink()
+    assert (claude / "skills" / "child-skill").is_symlink()
+
+    # User-visible message announces the pull-in.
+    assert "pulled in as a dependency" in result.output
+
+
+def test_add_dep_idempotent(
+    runner: CliRunner, deps_catalog: Path, project: Path
+) -> None:
+    runner.invoke(add, ["@base"])
+    result = runner.invoke(add, ["@child"])
+    assert result.exit_code == 0, result.output
+    pkgs = manifest.get_packages(project / "ai-dotfiles.json")
+    assert pkgs == ["@base", "@child"]
+
+
+def test_remove_blocked_by_reverse_dep(
+    runner: CliRunner, deps_catalog: Path, project: Path
+) -> None:
+    runner.invoke(add, ["@child"])
+
+    result = runner.invoke(remove, ["@base"])
+    assert result.exit_code != 0
+    out = result.output.lower()
+    assert "depend" in out and "@child" in out
+
+    # Manifest unchanged; symlinks intact.
+    pkgs = manifest.get_packages(project / "ai-dotfiles.json")
+    assert "@base" in pkgs
+    assert (project / ".claude" / "skills" / "base-skill").is_symlink()
+
+
+def test_remove_force_breaks_dependency(
+    runner: CliRunner, deps_catalog: Path, project: Path
+) -> None:
+    runner.invoke(add, ["@child"])
+    result = runner.invoke(remove, ["--force", "@base"])
+    assert result.exit_code == 0, result.output
+
+    pkgs = manifest.get_packages(project / "ai-dotfiles.json")
+    assert pkgs == ["@child"]
+    assert not (project / ".claude" / "skills" / "base-skill").exists()
+    # Child still installed.
+    assert (project / ".claude" / "skills" / "child-skill").is_symlink()
+
+
+def test_remove_both_dep_and_dependent_together(
+    runner: CliRunner, deps_catalog: Path, project: Path
+) -> None:
+    runner.invoke(add, ["@child"])
+    # Removing both in one call is fine — no orphan dependent left behind.
+    result = runner.invoke(remove, ["@base", "@child"])
+    assert result.exit_code == 0, result.output
+    assert manifest.get_packages(project / "ai-dotfiles.json") == []
+
+
+def test_settings_layered_in_topo_order(
+    runner: CliRunner, deps_catalog: Path, project: Path
+) -> None:
+    runner.invoke(add, ["@child"])
+    settings = json.loads((project / ".claude" / "settings.json").read_text())
+    allow = settings["permissions"]["allow"]
+    # Base merges first → BaseAllow before ChildAllow in the final list.
+    assert allow.index("BaseAllow") < allow.index("ChildAllow")

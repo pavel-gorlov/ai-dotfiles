@@ -62,7 +62,7 @@ def _seed_mcp_domain(
     servers: dict[str, dict[str, Any]] | None = None,
     requires_npm: list[str] | None = None,
 ) -> Path:
-    """Create ``catalog/<name>/`` with an ``mcp.fragment.json``."""
+    """Create ``catalog/<name>/`` with ``domain.json`` + ``mcp.fragment.json``."""
     domain = catalog / name
     domain.mkdir(parents=True)
     if servers is None:
@@ -72,15 +72,17 @@ def _seed_mcp_domain(
                 "args": ["hi"],
             }
         }
-    fragment: dict[str, Any] = {
-        "_domain": name,
-        "_description": f"{name} domain",
-        "mcpServers": servers,
-    }
+
+    meta: dict[str, Any] = {"name": name, "description": f"{name} domain"}
     if requires_npm is not None:
-        fragment["_requires"] = {"npm": requires_npm}
+        meta["requires"] = {"npm": requires_npm}
+    (domain / "domain.json").write_text(
+        json.dumps(meta, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
     (domain / "mcp.fragment.json").write_text(
-        json.dumps(fragment, indent=2) + "\n",
+        json.dumps({"mcpServers": servers}, indent=2) + "\n",
         encoding="utf-8",
     )
     return domain

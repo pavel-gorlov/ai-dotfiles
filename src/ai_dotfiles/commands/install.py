@@ -18,10 +18,19 @@ import click
 
 from ai_dotfiles import ui
 from ai_dotfiles.core import elements, manifest, paths, settings_merge, symlinks
+from ai_dotfiles.core.dependencies import resolve_transitive
 from ai_dotfiles.core.elements import Element, ElementType
-from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
+from ai_dotfiles.core.errors import AiDotfilesError, ConfigError, MissingDependencyError
 from ai_dotfiles.core.gitignore import collect_managed_paths, sync_gitignore
 from ai_dotfiles.core.mcp_apply import rebuild_claude_config
+from ai_dotfiles.core.settings_ownership import (
+    delete_settings_ownership,
+    load_settings_ownership,
+    save_settings_ownership,
+)
+from ai_dotfiles.core.settings_ownership import (
+    is_empty as settings_ownership_is_empty,
+)
 
 
 @click.command("install")
@@ -47,25 +56,89 @@ from ai_dotfiles.core.mcp_apply import rebuild_claude_config
     help="Do not touch .gitignore even if the project manages vendored "
     "symlink paths.",
 )
-def install(is_global: bool, prune: bool, no_gitignore: bool) -> None:
+@click.option(
+    "--strict-deps",
+    is_flag=True,
+    help=(
+        "Refuse to install if the manifest is missing any transitive "
+        "dependencies. Without this flag, missing deps are auto-added "
+        "to the manifest and a warning is printed."
+    ),
+)
+def install(
+    is_global: bool, prune: bool, no_gitignore: bool, strict_deps: bool
+) -> None:
     """Install packages from the manifest (project by default, or global)."""
     try:
         if is_global:
-            _install_global(prune=prune)
+            _install_global(prune=prune, strict_deps=strict_deps)
         else:
-            _install_project(prune=prune, no_gitignore=no_gitignore)
+            _install_project(
+                prune=prune, no_gitignore=no_gitignore, strict_deps=strict_deps
+            )
     except AiDotfilesError as exc:
         ui.error(str(exc))
         raise SystemExit(exc.exit_code) from exc
 
 
-def _install_project(*, prune: bool = False, no_gitignore: bool = False) -> None:
+def _expand_manifest_deps(
+    manifest_path: Path,
+    catalog: Path,
+    *,
+    strict_deps: bool,
+) -> list[str]:
+    """Verify (and optionally repair) transitive deps of the manifest.
+
+    Reads the current manifest, expands transitive deps, and:
+      * raises :class:`MissingDependencyError` if ``strict_deps`` is set
+        and the closure contains entries not in the manifest;
+      * otherwise, appends missing entries to the manifest and warns
+        once per pulled-in element.
+
+    Returns the post-expansion list of packages.
+    """
+    packages = manifest.get_packages(manifest_path)
+    if not packages:
+        return packages
+
+    parsed = elements.parse_elements(packages)
+    for element in parsed:
+        elements.validate_element_exists(element, catalog)
+
+    expanded = resolve_transitive(catalog, parsed)
+    existing_set = set(packages)
+    missing = [el for el in expanded if el.raw not in existing_set]
+    if not missing:
+        return packages
+
+    if strict_deps:
+        names = ", ".join(el.raw for el in missing)
+        raise MissingDependencyError(
+            f"Manifest is missing transitive dependencies: {names}. "
+            "Add them with 'ai-dotfiles add', or rerun without --strict-deps "
+            "to auto-add them."
+        )
+
+    for el in missing:
+        ui.warn(
+            f"Pulling in {el.raw} (required by an entry already in the "
+            "manifest); adding it to the manifest."
+        )
+    manifest.add_packages(manifest_path, [el.raw for el in missing])
+    return manifest.get_packages(manifest_path)
+
+
+def _install_project(
+    *,
+    prune: bool = False,
+    no_gitignore: bool = False,
+    strict_deps: bool = False,
+) -> None:
     root = paths.find_project_root()
     if root is None or not paths.project_manifest_path(root).is_file():
         raise ConfigError("ai-dotfiles.json not found. Run 'ai-dotfiles init' first.")
 
     manifest_path = paths.project_manifest_path(root)
-    packages = manifest.get_packages(manifest_path)
 
     ui.info(f"Installing from {manifest_path.name}...")
 
@@ -73,6 +146,8 @@ def _install_project(*, prune: bool = False, no_gitignore: bool = False) -> None
     backup = paths.backup_dir()
     claude_dir = paths.project_claude_dir(root)
     claude_dir.mkdir(parents=True, exist_ok=True)
+
+    packages = _expand_manifest_deps(manifest_path, catalog, strict_deps=strict_deps)
 
     parsed: list[Element] = []
     linked_items: list[str] = []
@@ -119,7 +194,7 @@ def _install_project(*, prune: bool = False, no_gitignore: bool = False) -> None
     _print_summary(parsed, linked_items, settings_written, fragment_count)
 
 
-def _install_global(*, prune: bool = False) -> None:
+def _install_global(*, prune: bool = False, strict_deps: bool = False) -> None:
     storage = paths.storage_root()
     if not storage.is_dir():
         raise ConfigError(
@@ -140,7 +215,9 @@ def _install_global(*, prune: bool = False) -> None:
             ui.success(msg)
 
     manifest_path = paths.global_manifest_path()
-    packages = manifest.get_packages(manifest_path)
+    packages = _expand_manifest_deps(
+        manifest_path, paths.catalog_dir(), strict_deps=strict_deps
+    )
 
     linked_items: list[str] = []
     parsed: list[Element] = []
@@ -158,20 +235,28 @@ def _install_global(*, prune: bool = False) -> None:
 
         fragments = settings_merge.collect_domain_fragments(packages, catalog)
         fragment_count = len(fragments)
-        if fragments:
-            # Merge into existing global settings.json if present to avoid
-            # clobbering settings linked in from global/.
-            settings_path = claude_dir / "settings.json"
-            base = None
-            if settings_path.is_file() and not settings_path.is_symlink():
-                base = settings_merge.load_fragment(settings_path)
-            assembled = settings_merge.assemble_settings(fragments, base=base)
-            if assembled:
-                # Remove a symlinked settings.json so we don't write through.
-                if settings_path.is_symlink():
-                    settings_path.unlink()
-                settings_merge.write_settings(assembled, settings_path)
-                settings_written = True
+        # Always rebuild settings.json with ownership-aware merge so
+        # stale entries from prior installs get cleaned up and user
+        # edits are preserved.
+        settings_path = claude_dir / "settings.json"
+        existing: dict[str, object] = {}
+        if settings_path.is_file() and not settings_path.is_symlink():
+            existing = settings_merge.load_fragment(settings_path)
+        prev_ownership = load_settings_ownership(claude_dir)
+        user_base = settings_merge.strip_owned(existing, prev_ownership)
+        assembled = settings_merge.assemble_settings(fragments, base=user_base)
+        new_ownership = settings_merge.collect_fragment_contributions(fragments)
+        if assembled:
+            if settings_path.is_symlink():
+                settings_path.unlink()
+            settings_merge.write_settings(assembled, settings_path)
+            settings_written = True
+        elif settings_path.exists() or settings_path.is_symlink():
+            settings_path.unlink()
+        if settings_ownership_is_empty(new_ownership):
+            delete_settings_ownership(claude_dir)
+        else:
+            save_settings_ownership(claude_dir, new_ownership)
 
     if prune:
         _report_pruned(claude_dir, storage)

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from ai_dotfiles.core import manifest
 from ai_dotfiles.core.mcp_merge import (
@@ -42,8 +43,18 @@ from ai_dotfiles.core.mcp_ownership import (
 from ai_dotfiles.core.settings_merge import (
     assemble_settings,
     collect_domain_fragments,
+    collect_fragment_contributions,
     load_fragment,
+    strip_owned,
     write_settings,
+)
+from ai_dotfiles.core.settings_ownership import (
+    delete_settings_ownership,
+    load_settings_ownership,
+    save_settings_ownership,
+)
+from ai_dotfiles.core.settings_ownership import (
+    is_empty as ownership_is_empty,
 )
 
 
@@ -65,7 +76,19 @@ def rebuild_claude_config(
     packages = manifest.get_packages(manifest_path)
 
     settings_fragments = collect_domain_fragments(packages, catalog)
-    settings = assemble_settings(settings_fragments)
+    # Load existing settings.json so user-authored keys survive across
+    # add/remove/install. Skip if it's a symlink — we drop the symlink
+    # before writing below to avoid writing through into storage.
+    settings_path_for_base = claude_dir / "settings.json"
+    existing_settings: dict[str, Any] = {}
+    if settings_path_for_base.is_file() and not settings_path_for_base.is_symlink():
+        existing_settings = load_fragment(settings_path_for_base)
+
+    # Strip whatever WE wrote last time so stale domain entries fall
+    # away. What survives is the user-authored portion of the file.
+    prev_settings_ownership = load_settings_ownership(claude_dir)
+    user_base = strip_owned(existing_settings, prev_settings_ownership)
+    settings = assemble_settings(settings_fragments, base=user_base)
 
     mcp_fragments = collect_mcp_fragments(packages, catalog)
     new_servers, new_ownership = assemble_mcp_servers(mcp_fragments)
@@ -90,22 +113,25 @@ def rebuild_claude_config(
     settings_path = claude_dir / "settings.json"
     prior_owned_names = set(previous_ownership.keys())
     user_allowlist: list[str] = []
-    if settings_path.exists():
-        existing_settings = load_fragment(settings_path)
-        prior_list = existing_settings.get("enabledMcpjsonServers")
-        if isinstance(prior_list, list):
-            user_allowlist = [
-                n
-                for n in prior_list
-                if isinstance(n, str) and n not in prior_owned_names
-            ]
+    prior_list = existing_settings.get("enabledMcpjsonServers")
+    if isinstance(prior_list, list):
+        user_allowlist = [
+            n for n in prior_list if isinstance(n, str) and n not in prior_owned_names
+        ]
+
+    # Compute what THIS rebuild is contributing to settings.json so we
+    # can record it in the ownership file for the next strip cycle.
+    new_settings_ownership = collect_fragment_contributions(settings_fragments)
 
     domain_owned = [name for name in effective_servers if name in new_ownership]
+    mcp_perm_strings: list[str] = []
     if domain_owned:
         perms = settings.setdefault("permissions", {}).setdefault("allow", [])
         for perm in derive_mcp_permissions(domain_owned):
             if perm not in perms:
                 perms.append(perm)
+            if perm not in mcp_perm_strings:
+                mcp_perm_strings.append(perm)
         combined = list(user_allowlist)
         for name in domain_owned:
             if name not in combined:
@@ -114,12 +140,31 @@ def rebuild_claude_config(
     elif user_allowlist:
         # Nothing domain-owned left, but user-authored entries survive.
         settings["enabledMcpjsonServers"] = user_allowlist
+    else:
+        # All previous entries were ours and nothing replaces them; drop
+        # the key entirely so a `remove` actually clears its trace.
+        settings.pop("enabledMcpjsonServers", None)
+
+    # Record the MCP-injected permissions as ours too so they get
+    # stripped on a future remove.
+    for perm in mcp_perm_strings:
+        if perm not in new_settings_ownership["permissions_allow"]:
+            new_settings_ownership["permissions_allow"].append(perm)
 
     if settings:
+        # Drop a symlinked settings.json so we don't write through into storage.
+        if settings_path.is_symlink():
+            settings_path.unlink()
         write_settings(settings, settings_path)
     elif settings_path.exists() or settings_path.is_symlink():
-        # No fragments at all -> drop generated settings.json.
+        # No fragments and no user content -> drop generated settings.json.
         settings_path.unlink()
+
+    # Persist or clear settings ownership symmetric to .mcp.json handling.
+    if ownership_is_empty(new_settings_ownership):
+        delete_settings_ownership(claude_dir)
+    else:
+        save_settings_ownership(claude_dir, new_settings_ownership)
 
     # Write order matters for crash recovery. Two files (.mcp.json and the
     # ownership map) are updated together but cannot be made atomic across
@@ -139,7 +184,9 @@ def rebuild_claude_config(
             backup_mcp_json(mcp_path, backup_root, project_root.name)
         write_mcp_json(merged, mcp_path)
         warn_unset_env_vars(effective_servers, warn)
-        warn_missing_npm_requires(mcp_fragments, project_root, warn)
+        warn_missing_npm_requires(
+            [name for name, _ in mcp_fragments], catalog, project_root, warn
+        )
         mcp_changed = True
     else:
         if mcp_path.exists():

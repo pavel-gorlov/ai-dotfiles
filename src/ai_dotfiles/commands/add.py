@@ -21,11 +21,11 @@ from ai_dotfiles.core.completions import (
     complete_available_specifiers,
     make_completer,
 )
+from ai_dotfiles.core.dependencies import resolve_transitive
 from ai_dotfiles.core.elements import (
     Element,
     ElementType,
     parse_elements,
-    resolve_source_path,
     resolve_target_paths,
     validate_element_exists,
 )
@@ -45,7 +45,18 @@ from ai_dotfiles.core.paths import (
 from ai_dotfiles.core.settings_merge import (
     assemble_settings,
     collect_domain_fragments,
+    collect_fragment_contributions,
+    load_fragment,
+    strip_owned,
     write_settings,
+)
+from ai_dotfiles.core.settings_ownership import (
+    delete_settings_ownership,
+    load_settings_ownership,
+    save_settings_ownership,
+)
+from ai_dotfiles.core.settings_ownership import (
+    is_empty as settings_ownership_is_empty,
 )
 
 
@@ -73,14 +84,37 @@ def _link_element(element: Element, claude_dir: Path, catalog: Path) -> None:
 
 
 def _rebuild_settings(manifest_path: Path, claude_dir: Path, catalog: Path) -> None:
-    """Reassemble ``settings.json`` from all domain fragments in the manifest.
+    """Reassemble ``settings.json`` from fragments while preserving user edits.
 
-    Used for the global scope, where MCP is not (yet) wired up.
+    Used for the global scope (no MCP wiring). Strips entries that the
+    previous rebuild owned (per ownership file), then merges current
+    fragments into the user-only base, then records new ownership.
     """
     packages = manifest.get_packages(manifest_path)
     fragments = collect_domain_fragments(packages, catalog)
-    settings = assemble_settings(fragments)
-    write_settings(settings, claude_dir / "settings.json")
+    settings_path = claude_dir / "settings.json"
+
+    existing = (
+        load_fragment(settings_path)
+        if settings_path.is_file() and not settings_path.is_symlink()
+        else {}
+    )
+    prev_ownership = load_settings_ownership(claude_dir)
+    user_base = strip_owned(existing, prev_ownership)
+    settings = assemble_settings(fragments, base=user_base)
+    new_ownership = collect_fragment_contributions(fragments)
+
+    if settings:
+        if settings_path.is_symlink():
+            settings_path.unlink()
+        write_settings(settings, settings_path)
+    elif settings_path.exists() or settings_path.is_symlink():
+        settings_path.unlink()
+
+    if settings_ownership_is_empty(new_ownership):
+        delete_settings_ownership(claude_dir)
+    else:
+        save_settings_ownership(claude_dir, new_ownership)
 
 
 def _maybe_sync_gitignore(
@@ -125,16 +159,23 @@ def _maybe_sync_gitignore(
 def add(packages: tuple[str, ...], is_global: bool, no_gitignore: bool) -> None:
     """Add PACKAGES to the manifest and link them into the Claude dir."""
     try:
-        elements = parse_elements(list(packages))
+        user_elements = parse_elements(list(packages))
 
         catalog = catalog_dir()
-        for element in elements:
+        for element in user_elements:
             validate_element_exists(element, catalog)
 
         manifest_path, claude_dir, project_root = _resolve_scope(is_global)
         claude_dir.mkdir(parents=True, exist_ok=True)
 
-        raw_items = [element.raw for element in elements]
+        # Expand each user-supplied element to include its transitive deps,
+        # in topological order (deps appear first). The user's explicit
+        # ones come at the end of each subtree so the manifest reads
+        # naturally — base layer first, leaf last.
+        expanded = resolve_transitive(catalog, user_elements)
+        explicit_set = {el.raw for el in user_elements}
+
+        raw_items = [element.raw for element in expanded]
         added = manifest.add_packages(manifest_path, raw_items)
         added_set = set(added)
 
@@ -145,16 +186,16 @@ def add(packages: tuple[str, ...], is_global: bool, no_gitignore: bool) -> None:
             return
 
         ui.info(f"Added to {manifest_name}:")
-        for element in elements:
-            if element.raw in added_set:
-                source = resolve_source_path(element, catalog)
-                _ = source  # source already validated above
-                _link_element(element, claude_dir, catalog)
+        for element in expanded:
+            if element.raw not in added_set:
+                continue
+            _link_element(element, claude_dir, catalog)
+            if element.raw in explicit_set:
                 ui.success(element.raw)
             else:
-                ui.info(f"  ~ {element.raw} (already installed)")
+                ui.success(f"{element.raw} (pulled in as a dependency)")
 
-        has_domain = any(el.type is ElementType.DOMAIN for el in elements)
+        has_domain = any(el.type is ElementType.DOMAIN for el in expanded)
         if project_root is not None:
             rebuild_claude_config(
                 manifest_path=manifest_path,

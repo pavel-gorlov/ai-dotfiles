@@ -73,9 +73,20 @@ ai-dotfiles install
 - **Symlinks** — `install` / `add` create symlinks from the project's
   `.claude/` into the catalog. The project tree stays tiny; everything lives
   in one place and is versioned once.
-- **Settings merge** — each domain may ship a `settings.fragment.json`;
-  `ai-dotfiles` deep-merges active fragments into `.claude/settings.json` on
-  every `add` / `remove` / `install`.
+- **Domain manifest** — each domain has a `domain.json` declaring its
+  metadata: `name`, `description`, `depends` (other elements it requires)
+  and `requires` (host packages, e.g. npm). `ai-dotfiles add @x` resolves
+  the `depends` closure transitively and writes everything to the manifest
+  in topological order; `remove` blocks if other entries still depend on
+  the target (override with `--force`).
+- **Settings merge** — each domain may ship a `settings.fragment.json`
+  (pure Claude Code config — no metadata); `ai-dotfiles` deep-merges
+  active fragments into `.claude/settings.json` on every `add` / `remove`
+  / `install`, in topological order so layered domains compose correctly.
+  User-authored keys are preserved (`permissions.allow/deny/ask` are
+  concat-deduped with domain entries; hooks concat per event); ownership
+  of what ai-dotfiles wrote is tracked so `remove` cleans up only its
+  own additions.
 - **MCP servers** — domains may also ship `mcp.fragment.json` to declare
   MCP servers; they are merged into `<project>/.mcp.json` on `ai-dotfiles
   add` with `mcp__<server>__*` permissions auto-wired into `settings.json`.
@@ -291,11 +302,13 @@ with the install URL. Vendors without a `search` capability (e.g.
 ~/.ai-dotfiles/
 ├── catalog/
 │   ├── <domain>/           # e.g. python/, frontend/
+│   │   ├── domain.json              # name, description, depends, requires
+│   │   ├── settings.fragment.json   # Claude Code config (optional)
+│   │   ├── mcp.fragment.json        # MCP servers (optional)
 │   │   ├── skills/
 │   │   ├── agents/
 │   │   ├── rules/
-│   │   ├── hooks/
-│   │   └── settings.fragment.json
+│   │   └── hooks/
 │   ├── skills/<name>/      # standalone skills
 │   ├── agents/<name>.md    # standalone agents
 │   └── rules/<name>.md     # standalone rules

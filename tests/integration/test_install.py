@@ -195,7 +195,6 @@ def test_install_project_mixed(project: Path, catalog: Path) -> None:
 
 def test_install_project_settings_merge(project: Path, catalog: Path) -> None:
     fragment = {
-        "_domain": "python",
         "hooks": {"PostToolUse": [{"matcher": "Write", "hooks": [{"command": "fmt"}]}]},
     }
     _make_domain(catalog, "python", skills=["s1"], fragment=fragment)
@@ -207,7 +206,6 @@ def test_install_project_settings_merge(project: Path, catalog: Path) -> None:
     settings_path = project / ".claude" / "settings.json"
     assert settings_path.is_file()
     data = json.loads(settings_path.read_text())
-    assert "_domain" not in data
     assert "hooks" in data
     assert "PostToolUse" in data["hooks"]
     assert "merged 1 domain fragment" in out

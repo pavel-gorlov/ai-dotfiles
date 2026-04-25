@@ -127,6 +127,10 @@ def generate_storage_scaffold(root: Path) -> None:
         "example_settings_fragment.json",
         example_dir / "settings.fragment.json",
     )
+    _write_template(
+        "example_domain_meta.json",
+        example_dir / "domain.json",
+    )
 
     sync_builtin_skill(root)
 

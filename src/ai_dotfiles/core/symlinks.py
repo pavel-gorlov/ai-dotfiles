@@ -15,7 +15,7 @@ from ai_dotfiles.core.errors import LinkError
 
 # Names that must never be linked from a catalog into ~/.claude/.
 _SKIP_NAMES: frozenset[str] = frozenset(
-    {"README.md", "settings.fragment.json", "mcp.fragment.json"}
+    {"README.md", "domain.json", "settings.fragment.json", "mcp.fragment.json"}
 )
 
 # Domain subdirectories that are candidates for linking.

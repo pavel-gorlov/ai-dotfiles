@@ -122,12 +122,12 @@ def create(name: str) -> None:
         for sub in _DOMAIN_SUBDIRS:
             (path / sub).mkdir(parents=True, exist_ok=True)
 
-        fragment = {
-            "_domain": name,
-            "_description": f"{name} domain — edit or remove",
+        meta = {
+            "name": name,
+            "description": f"{name} domain — edit or remove",
         }
-        (path / "settings.fragment.json").write_text(
-            json.dumps(fragment, indent=2) + "\n", encoding="utf-8"
+        (path / "domain.json").write_text(
+            json.dumps(meta, indent=2) + "\n", encoding="utf-8"
         )
 
         ui.success(f"Created domain @{name} at catalog/{name}/")
@@ -201,6 +201,8 @@ def list_domain(name: str) -> None:
                 for item in entries:
                     ui.info(f"    {item}")
 
+        meta = path / "domain.json"
+        ui.info(f"  domain.json: {'yes' if meta.is_file() else 'no'}")
         fragment = path / "settings.fragment.json"
         ui.info(f"  settings.fragment.json: {'yes' if fragment.is_file() else 'no'}")
     except AiDotfilesError as exc:

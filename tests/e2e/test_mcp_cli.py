@@ -35,11 +35,14 @@ def catalog(storage: Path) -> Path:
     cat.mkdir()
     domain = cat / "mcptest"
     domain.mkdir()
+    (domain / "domain.json").write_text(
+        json.dumps({"name": "mcptest", "description": "End-to-end MCP test"}, indent=2)
+        + "\n",
+        encoding="utf-8",
+    )
     (domain / "mcp.fragment.json").write_text(
         json.dumps(
             {
-                "_domain": "mcptest",
-                "_description": "End-to-end MCP test",
                 "mcpServers": {
                     "mcptest-server": {
                         "command": "echo",

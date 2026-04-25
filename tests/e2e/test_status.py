@@ -148,7 +148,6 @@ def test_status_missing_symlink(project: Path, catalog: Path) -> None:
 
 def test_status_settings_summary(project: Path, catalog: Path) -> None:
     fragment = {
-        "_domain": "python",
         "hooks": {
             "PostToolUse": [
                 {"matcher": "Write", "hooks": [{"command": "fmt"}]},

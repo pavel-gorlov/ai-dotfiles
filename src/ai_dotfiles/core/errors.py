@@ -27,3 +27,11 @@ class LinkError(AiDotfilesError):
 
 class ExternalError(AiDotfilesError):
     """External process failure (git clone, etc.)."""
+
+
+class DependencyCycleError(ConfigError):
+    """A cycle was detected in the ``_depends`` graph."""
+
+
+class MissingDependencyError(ElementError):
+    """An element listed in ``_depends`` does not exist in the catalog."""

@@ -47,8 +47,9 @@ def catalog(storage: Path) -> Path:
     (domain / "skills" / "py-skill" / "SKILL.md").write_text("py skill\n")
     (domain / "agents").mkdir()
     (domain / "agents" / "py-agent.md").write_text("# py agent\n")
+    (domain / "domain.json").write_text(json.dumps({"name": "python"}))
     (domain / "settings.fragment.json").write_text(
-        json.dumps({"_domain": "python", "permissions": {"allow": ["Read"]}})
+        json.dumps({"permissions": {"allow": ["Read"]}})
     )
 
     # Standalone skill / agent / rule.

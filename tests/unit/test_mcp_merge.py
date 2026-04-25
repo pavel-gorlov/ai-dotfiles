@@ -30,11 +30,16 @@ def _write_json(path: Path, data: dict[str, Any]) -> None:
 
 
 def _fragment(domain: str, servers: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    return {
-        "_domain": domain,
-        "_description": f"{domain} domain",
-        "mcpServers": servers,
-    }
+    """An mcp.fragment.json — pure config, no metadata."""
+    return {"mcpServers": servers}
+
+
+def _write_domain_meta(catalog: Path, name: str, **fields: Any) -> None:
+    """Write catalog/<name>/domain.json with the given fields."""
+    path = catalog / name / "domain.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload: dict[str, Any] = {"name": name, **fields}
+    path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -67,18 +72,13 @@ def test_load_mcp_fragment_not_object_raises(tmp_path: Path) -> None:
         load_mcp_fragment(path)
 
 
-def test_strip_mcp_meta_removes_underscored_keys() -> None:
-    fragment = {
-        "_domain": "x",
-        "_description": "desc",
-        "_requires": {"npm": ["pkg"]},
-        "mcpServers": {"s": {"command": "echo"}},
-    }
+def test_strip_mcp_meta_returns_copy() -> None:
+    # `strip_mcp_meta` is a no-op now (meta lives in domain.json), but it
+    # still returns a defensive copy so callers can mutate freely.
+    fragment = {"mcpServers": {"s": {"command": "echo"}}}
     result = strip_mcp_meta(fragment)
-    assert "_domain" not in result
-    assert "_description" not in result
-    assert "_requires" not in result
-    assert result["mcpServers"] == {"s": {"command": "echo"}}
+    assert result == fragment
+    assert result is not fragment
 
 
 # ---------------------------------------------------------------------------
@@ -392,21 +392,25 @@ def test_warn_unset_env_vars_ignores_non_matching_tokens() -> None:
 
 def test_warn_missing_npm_requires_no_package_json_silent(tmp_path: Path) -> None:
     warnings: list[str] = []
-    frag = tmp_path / "f.json"
-    _write_json(frag, {"_domain": "x", "_requires": {"npm": ["foo"]}})
-    warn_missing_npm_requires([("x", frag)], tmp_path, warnings.append)
+    catalog = tmp_path / "catalog"
+    project = tmp_path / "project"
+    project.mkdir()
+    _write_domain_meta(catalog, "x", requires={"npm": ["foo"]})
+    warn_missing_npm_requires(["x"], catalog, project, warnings.append)
     assert warnings == []
 
 
 def test_warn_missing_npm_requires_flags_missing_dep(tmp_path: Path) -> None:
     warnings: list[str] = []
-    frag = tmp_path / "f.json"
-    _write_json(frag, {"_domain": "x", "_requires": {"npm": ["@foo/bar"]}})
+    catalog = tmp_path / "catalog"
+    project = tmp_path / "project"
+    project.mkdir()
+    _write_domain_meta(catalog, "x", requires={"npm": ["@foo/bar"]})
     _write_json(
-        tmp_path / "package.json",
+        project / "package.json",
         {"devDependencies": {"@other/thing": "1.0.0"}},
     )
-    warn_missing_npm_requires([("x", frag)], tmp_path, warnings.append)
+    warn_missing_npm_requires(["x"], catalog, project, warnings.append)
     assert len(warnings) == 1
     assert "@foo/bar" in warnings[0]
     assert "npm install -D @foo/bar" in warnings[0]
@@ -414,34 +418,32 @@ def test_warn_missing_npm_requires_flags_missing_dep(tmp_path: Path) -> None:
 
 def test_warn_missing_npm_requires_present_silent(tmp_path: Path) -> None:
     warnings: list[str] = []
-    frag = tmp_path / "f.json"
-    _write_json(frag, {"_domain": "x", "_requires": {"npm": ["@foo/bar"]}})
+    catalog = tmp_path / "catalog"
+    project = tmp_path / "project"
+    project.mkdir()
+    _write_domain_meta(catalog, "x", requires={"npm": ["@foo/bar"]})
     _write_json(
-        tmp_path / "package.json",
+        project / "package.json",
         {"devDependencies": {"@foo/bar": "1.0.0"}},
     )
-    warn_missing_npm_requires([("x", frag)], tmp_path, warnings.append)
+    warn_missing_npm_requires(["x"], catalog, project, warnings.append)
     assert warnings == []
 
 
 def test_warn_missing_npm_requires_reads_deps_and_peer(tmp_path: Path) -> None:
     warnings: list[str] = []
-    frag = tmp_path / "f.json"
+    catalog = tmp_path / "catalog"
+    project = tmp_path / "project"
+    project.mkdir()
+    _write_domain_meta(catalog, "x", requires={"npm": ["dep1", "peer1"]})
     _write_json(
-        frag,
-        {
-            "_domain": "x",
-            "_requires": {"npm": ["dep1", "peer1"]},
-        },
-    )
-    _write_json(
-        tmp_path / "package.json",
+        project / "package.json",
         {
             "dependencies": {"dep1": "1.0.0"},
             "peerDependencies": {"peer1": "2.0.0"},
         },
     )
-    warn_missing_npm_requires([("x", frag)], tmp_path, warnings.append)
+    warn_missing_npm_requires(["x"], catalog, project, warnings.append)
     assert warnings == []
 
 
@@ -449,9 +451,11 @@ def test_warn_missing_npm_requires_silent_on_bad_package_json(
     tmp_path: Path,
 ) -> None:
     warnings: list[str] = []
-    frag = tmp_path / "f.json"
-    _write_json(frag, {"_domain": "x", "_requires": {"npm": ["x"]}})
-    (tmp_path / "package.json").write_text("{not json", encoding="utf-8")
-    warn_missing_npm_requires([("x", frag)], tmp_path, warnings.append)
+    catalog = tmp_path / "catalog"
+    project = tmp_path / "project"
+    project.mkdir()
+    _write_domain_meta(catalog, "x", requires={"npm": ["x"]})
+    (project / "package.json").write_text("{not json", encoding="utf-8")
+    warn_missing_npm_requires(["x"], catalog, project, warnings.append)
     # Malformed package.json → silent skip, not a hard error.
     assert warnings == []

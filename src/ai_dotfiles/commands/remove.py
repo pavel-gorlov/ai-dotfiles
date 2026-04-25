@@ -13,9 +13,11 @@ from ai_dotfiles.core.completions import (
     complete_installed_specifiers,
     make_completer,
 )
+from ai_dotfiles.core.dependencies import find_reverse_deps
 from ai_dotfiles.core.elements import (
     Element,
     ElementType,
+    parse_element,
     parse_elements,
     resolve_source_path,
     resolve_target_paths,
@@ -36,8 +38,58 @@ from ai_dotfiles.core.paths import (
 from ai_dotfiles.core.settings_merge import (
     assemble_settings,
     collect_domain_fragments,
+    collect_fragment_contributions,
+    load_fragment,
+    strip_owned,
     write_settings,
 )
+from ai_dotfiles.core.settings_ownership import (
+    delete_settings_ownership,
+    load_settings_ownership,
+    save_settings_ownership,
+)
+from ai_dotfiles.core.settings_ownership import (
+    is_empty as settings_ownership_is_empty,
+)
+
+
+def _check_reverse_deps(
+    manifest_path: Path,
+    catalog: Path,
+    targets: list[Element],
+) -> None:
+    """Refuse to remove ``targets`` if other manifest entries depend on them.
+
+    A target is exempt from the check when it is itself one of the
+    other targets in the same call (removing the dependent and the dep
+    together is fine).
+    """
+    raw_packages = manifest.get_packages(manifest_path)
+    if not raw_packages:
+        return
+    target_set = {el.raw for el in targets}
+    parsed_packages: list[Element] = []
+    for spec in raw_packages:
+        try:
+            parsed_packages.append(parse_element(spec))
+        except Exception:  # noqa: BLE001 - skip malformed manifest entries
+            continue
+    blockers: dict[str, list[str]] = {}
+    for target in targets:
+        dependents = find_reverse_deps(catalog, parsed_packages, target)
+        # An entry that the user is also removing in the same call doesn't
+        # block — they're tearing down the whole subtree intentionally.
+        outstanding = [d for d in dependents if d.raw not in target_set]
+        if outstanding:
+            blockers[target.raw] = [d.raw for d in outstanding]
+    if not blockers:
+        return
+    lines = ["Cannot remove the following entries — other packages depend on them:"]
+    for target_raw, dependents_raw in blockers.items():
+        joined = ", ".join(dependents_raw)
+        lines.append(f"  {target_raw}  <-  required by {joined}")
+    lines.append("Remove the dependents too, or pass --force to override.")
+    raise ConfigError("\n".join(lines))
 
 
 def _resolve_scope(is_global: bool) -> tuple[Path, Path, Path | None]:
@@ -73,19 +125,37 @@ def _unlink_element(element: Element, claude_dir: Path, catalog: Path) -> None:
 
 
 def _rebuild_settings(manifest_path: Path, claude_dir: Path, catalog: Path) -> None:
-    """Reassemble ``settings.json`` from remaining domain fragments."""
+    """Reassemble ``settings.json`` while preserving user edits.
+
+    Strips previously-owned entries from existing settings, then merges
+    remaining fragments into the user-only base, and records new
+    ownership (delete if empty).
+    """
     packages = manifest.get_packages(manifest_path)
     fragments = collect_domain_fragments(packages, catalog)
     settings_path = claude_dir / "settings.json"
 
-    if not fragments:
-        # No fragments left; remove any previously-generated file.
-        if settings_path.exists() or settings_path.is_symlink():
-            settings_path.unlink()
-        return
+    existing = (
+        load_fragment(settings_path)
+        if settings_path.is_file() and not settings_path.is_symlink()
+        else {}
+    )
+    prev_ownership = load_settings_ownership(claude_dir)
+    user_base = strip_owned(existing, prev_ownership)
+    settings = assemble_settings(fragments, base=user_base)
+    new_ownership = collect_fragment_contributions(fragments)
 
-    settings = assemble_settings(fragments)
-    write_settings(settings, settings_path)
+    if settings:
+        if settings_path.is_symlink():
+            settings_path.unlink()
+        write_settings(settings, settings_path)
+    elif settings_path.exists() or settings_path.is_symlink():
+        settings_path.unlink()
+
+    if settings_ownership_is_empty(new_ownership):
+        delete_settings_ownership(claude_dir)
+    else:
+        save_settings_ownership(claude_dir, new_ownership)
 
 
 def _maybe_sync_gitignore(
@@ -122,13 +192,30 @@ def _maybe_sync_gitignore(
     help="Do not touch .gitignore even if the project manages vendored "
     "symlink paths.",
 )
-def remove(packages: tuple[str, ...], is_global: bool, no_gitignore: bool) -> None:
+@click.option(
+    "--force",
+    is_flag=True,
+    help=(
+        "Remove even if other manifest entries declare a dependency on "
+        "the target. The dependents stay installed but their declared "
+        "dependency will become missing."
+    ),
+)
+def remove(
+    packages: tuple[str, ...],
+    is_global: bool,
+    no_gitignore: bool,
+    force: bool,
+) -> None:
     """Remove PACKAGES from the manifest and unlink their elements."""
     try:
         elements = parse_elements(list(packages))
 
         catalog = catalog_dir()
         manifest_path, claude_dir, project_root = _resolve_scope(is_global)
+
+        if not force:
+            _check_reverse_deps(manifest_path, catalog, elements)
 
         raw_items = [element.raw for element in elements]
         removed = manifest.remove_packages(manifest_path, raw_items)

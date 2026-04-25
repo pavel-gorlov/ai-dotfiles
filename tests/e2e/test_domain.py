@@ -49,7 +49,7 @@ def test_domain_create(runner: CliRunner, storage: Path) -> None:
     assert domain_dir.is_dir()
     for sub in ("skills", "agents", "rules", "hooks"):
         assert (domain_dir / sub).is_dir()
-    assert (domain_dir / "settings.fragment.json").is_file()
+    assert (domain_dir / "domain.json").is_file()
     assert "Created domain @python" in result.output
 
 
@@ -60,13 +60,14 @@ def test_domain_create_already_exists(runner: CliRunner, storage: Path) -> None:
     assert "already exists" in result.output
 
 
-def test_domain_create_settings_fragment(runner: CliRunner, storage: Path) -> None:
+def test_domain_create_writes_domain_json(runner: CliRunner, storage: Path) -> None:
     result = runner.invoke(domain, ["create", "rust"])
     assert result.exit_code == 0, result.output
 
-    fragment = _catalog(storage) / "rust" / "settings.fragment.json"
-    data = json.loads(fragment.read_text())
-    assert data["_domain"] == "rust"
+    meta_path = _catalog(storage) / "rust" / "domain.json"
+    data = json.loads(meta_path.read_text())
+    assert data["name"] == "rust"
+    assert "description" in data
 
 
 # ── delete ───────────────────────────────────────────────────────────────
