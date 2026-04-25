@@ -311,7 +311,7 @@ def test_search_parses_real_upstream_output(
     assert results[0].name == "gitops-workflow"
     assert results[0].installs == "1"
     assert "GitOps" in results[0].description
-    assert results[0].url == ("https://paks.stakpak.dev/wshpbson/gitops-workflow")
+    assert results[0].url == ("https://paks.stakpak.dev/pak/wshpbson/gitops-workflow")
     assert results[1].name == "k8s-manifest-generator"
     assert results[2].source == "stakpak"
     assert results[2].name == "confighub-usage-guide"

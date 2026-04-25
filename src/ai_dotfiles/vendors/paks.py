@@ -192,7 +192,7 @@ def _parse_search_text(stdout: str) -> list[SearchResult]:
                 source=owner,
                 name=skill,
                 description=description,
-                url=f"https://paks.stakpak.dev/{owner}/{skill}",
+                url=f"https://paks.stakpak.dev/pak/{owner}/{skill}",
                 installs=installs,
             )
         )
