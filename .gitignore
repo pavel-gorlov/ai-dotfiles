@@ -18,7 +18,9 @@ coverage.xml
 /.claude/hooks/route-to-agent.sh
 /.claude/rules/gitflow.md
 /.claude/skills/commit
+/.claude/skills/commitizen-config
 /.claude/skills/git-worktree
+/.claude/skills/husky-lintstaged
 /.claude/skills/pr-authoring
 /.claude/skills/pr-reflection
 /.claude/skills/rebase

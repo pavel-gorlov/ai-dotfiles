@@ -144,6 +144,21 @@ def test_status_missing_symlink(project: Path, catalog: Path) -> None:
     assert code == 1
     assert "NOT LINKED" in out
     assert "Issues:" in out
+    # Project scope: hint must be the bare ``install``, not ``install -g``.
+    assert "run 'ai-dotfiles install' to fix" in out
+
+
+def test_status_global_hint_uses_g_flag(home: Path, catalog: Path) -> None:
+    """Global-scope status suggests ``install -g`` rather than plain install."""
+    _make_domain(catalog, "python", skills=["py-lint"])
+    storage = home / ".ai-dotfiles"
+    _write_manifest(storage / "global.json", ["@python"])
+
+    runner = CliRunner()
+    result = runner.invoke(status, ["-g"])
+    assert result.exit_code == 1
+    assert "NOT LINKED" in result.output
+    assert "run 'ai-dotfiles install -g' to fix" in result.output
 
 
 def test_status_settings_summary(project: Path, catalog: Path) -> None:

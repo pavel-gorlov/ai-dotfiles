@@ -49,7 +49,7 @@ After installing completion, arguments themselves tab-complete too:
 - `ai-dotfiles create skill|agent|rule <name>` — scaffold an element in the catalog.
 - `ai-dotfiles delete skill|agent|rule <name>` — remove an element from the catalog.
 - `ai-dotfiles domain create|delete|list <name>` — manage domains (a folder under `catalog/`).
-- `ai-dotfiles domain add|remove <domain> <type> <name>` — manage elements inside a domain.
+- `ai-dotfiles domain add|remove <domain> <type> <name>` — manage elements inside a domain. If `@<domain>` is referenced by `~/.ai-dotfiles/global.json` or by the current project's `ai-dotfiles.json`, the new element is auto-linked into the matching `.claude/` (and unlinked on `remove`) — no follow-up `install` needed for that scope.
 
 > Need an opinionated bundle? Create a meta-domain with `depends: [...]` in `domain.json` and `add @your-bundle` — see `### Dependencies between elements` below. The legacy `stack` command is gone.
 

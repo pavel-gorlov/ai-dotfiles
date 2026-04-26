@@ -234,3 +234,84 @@ def test_domain_remove_not_found(runner: CliRunner, storage: Path) -> None:
     result = runner.invoke(domain, ["remove", "python", "skill", "ghost"])
     assert result.exit_code != 0
     assert "not found" in result.output
+
+
+# ── auto-link / auto-unlink against installed manifests ──────────────────
+
+
+def test_domain_add_links_into_global_when_installed(
+    runner: CliRunner, storage: Path, home: Path
+) -> None:
+    """``domain add`` symlinks into ``~/.claude/`` when @domain is global."""
+    (_catalog(storage) / "python").mkdir()
+    (storage / "global.json").write_text(
+        json.dumps({"packages": ["@python"]}), encoding="utf-8"
+    )
+
+    result = runner.invoke(domain, ["add", "python", "skill", "py-lint"])
+    assert result.exit_code == 0, result.output
+    assert "Linked skills/py-lint into global/.claude/" in result.output
+
+    link = home / ".claude" / "skills" / "py-lint"
+    assert link.is_symlink()
+    assert link.resolve() == (
+        _catalog(storage) / "python" / "skills" / "py-lint"
+    ).resolve()
+
+
+def test_domain_add_links_into_project_when_installed(
+    runner: CliRunner,
+    storage: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``domain add`` from inside a project symlinks into ``<proj>/.claude/``."""
+    (_catalog(storage) / "python").mkdir()
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "ai-dotfiles.json").write_text(
+        json.dumps({"packages": ["@python"]}), encoding="utf-8"
+    )
+    monkeypatch.chdir(proj)
+
+    result = runner.invoke(domain, ["add", "python", "agent", "py-debug"])
+    assert result.exit_code == 0, result.output
+    assert "Linked agents/py-debug.md into proj/.claude/" in result.output
+
+    link = proj / ".claude" / "agents" / "py-debug.md"
+    assert link.is_symlink()
+
+
+def test_domain_add_skips_link_when_not_installed(
+    runner: CliRunner, storage: Path, home: Path
+) -> None:
+    """No auto-link when @domain isn't referenced anywhere."""
+    (_catalog(storage) / "python").mkdir()
+
+    result = runner.invoke(domain, ["add", "python", "skill", "py-lint"])
+    assert result.exit_code == 0, result.output
+    assert "Linked" not in result.output
+    assert not (home / ".claude" / "skills" / "py-lint").exists()
+
+
+def test_domain_remove_unlinks_from_installed_scope(
+    runner: CliRunner, storage: Path, home: Path
+) -> None:
+    """``domain remove`` cleans up the symlink before deleting the catalog item."""
+    skill_dir = _catalog(storage) / "python" / "skills" / "py-lint"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("x")
+    (storage / "global.json").write_text(
+        json.dumps({"packages": ["@python"]}), encoding="utf-8"
+    )
+    target = home / ".claude" / "skills" / "py-lint"
+    target.parent.mkdir(parents=True)
+    target.symlink_to(skill_dir)
+
+    result = runner.invoke(domain, ["remove", "python", "skill", "py-lint"])
+    assert result.exit_code == 0, result.output
+    assert "Unlinked skills/py-lint from global/.claude/" in result.output
+    assert not target.exists()
+    assert not target.is_symlink()
+    assert not skill_dir.exists()

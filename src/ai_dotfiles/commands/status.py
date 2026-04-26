@@ -236,7 +236,8 @@ def status(is_global: bool) -> None:
     ui.info("")
     if total_issues:
         noun = "issue" if total_issues == 1 else "issues"
-        ui.info(f"Issues: {total_issues} {noun} (run 'ai-dotfiles install' to fix)")
+        cmd = "ai-dotfiles install -g" if is_global else "ai-dotfiles install"
+        ui.info(f"Issues: {total_issues} {noun} (run '{cmd}' to fix)")
         raise SystemExit(1)
     ui.info("All OK.")
     raise SystemExit(0)
