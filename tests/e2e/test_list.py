@@ -206,3 +206,119 @@ def test_list_available_skips_example(storage: Path) -> None:
     assert "@skills" not in out
     assert "@agents" not in out
     assert "@rules" not in out
+
+
+# ── install/dep markers ───────────────────────────────────────────────────
+
+
+def _make_domain(catalog: Path, name: str, *, depends: list[str] | None = None) -> None:
+    root = catalog / name
+    root.mkdir(parents=True, exist_ok=True)
+    meta: dict[str, object] = {"name": name}
+    if depends is not None:
+        meta["depends"] = depends
+    (root / "domain.json").write_text(json.dumps(meta), encoding="utf-8")
+
+
+def test_list_available_marks_global_with_g_suffix(
+    storage: Path, project: Path
+) -> None:
+    catalog = storage / "catalog"
+    _make_domain(catalog, "python")
+    _write_manifest(storage / "global.json", ["@python"])
+
+    result = CliRunner().invoke(list_cmd, ["--available"], color=True)
+
+    assert result.exit_code == 0, result.output
+    assert "@python (g)" in result.output
+    # Green ANSI prefix (32) precedes the marker line.
+    assert "\x1b[32m    @python (g)" in result.output
+
+
+def test_list_available_marks_dependency_yellow_with_parents(
+    storage: Path, project: Path
+) -> None:
+    """A package pulled in transitively shows yellow + (parent) annotation."""
+    catalog = storage / "catalog"
+    _make_domain(catalog, "python")
+    _make_domain(catalog, "python-backend", depends=["@python"])
+    _write_manifest(storage / "global.json", ["@python", "@python-backend"])
+
+    result = CliRunner().invoke(list_cmd, ["--available"], color=True)
+
+    assert result.exit_code == 0, result.output
+    out = result.output
+    # @python is a dep of @python-backend → yellow with the parent shown.
+    assert "@python (g) (@python-backend)" in out
+    assert "\x1b[33m    @python (g) (@python-backend)" in out
+    # The parent itself is direct → green, no annotation.
+    assert "\x1b[32m    @python-backend (g)" in out
+
+
+def test_list_available_walks_transitive_chain(
+    storage: Path, project: Path
+) -> None:
+    """A → B → C: C must show both B and A as dependents (multi-level walk)."""
+    catalog = storage / "catalog"
+    _make_domain(catalog, "c")
+    _make_domain(catalog, "b", depends=["@c"])
+    _make_domain(catalog, "a", depends=["@b"])
+    _write_manifest(storage / "global.json", ["@a", "@b", "@c"])
+
+    result = CliRunner().invoke(list_cmd, ["--available"], color=True)
+
+    assert result.exit_code == 0, result.output
+    out = result.output
+    # @c is a transitive dep of both @a and @b.
+    assert "@c (g) (@a @b)" in out or "@c (g) (@b @a)" in out
+    assert "\x1b[33m    @c (g)" in out
+
+
+def test_list_available_uninstalled_no_marker(storage: Path, project: Path) -> None:
+    catalog = storage / "catalog"
+    _make_domain(catalog, "python")
+
+    # No color flag — assert plain text, no fg color escape codes.
+    result = CliRunner().invoke(list_cmd, ["--available"])
+
+    assert result.exit_code == 0, result.output
+    assert "    @python\n" in result.output
+    assert "(g)" not in result.output
+    assert "\x1b[" not in result.output
+
+
+def test_list_project_block_cross_references_global(
+    storage: Path, project: Path
+) -> None:
+    """In `list`, the project block flags entries that are also in global."""
+    catalog = storage / "catalog"
+    _make_domain(catalog, "python")
+    _make_domain(catalog, "ruby")
+    _write_manifest(project / "ai-dotfiles.json", ["@python", "@ruby"])
+    _write_manifest(storage / "global.json", ["@python"])
+
+    result = CliRunner().invoke(list_cmd, [])
+
+    assert result.exit_code == 0, result.output
+    out = result.output
+    # Project entry that is also global gets the (g) suffix.
+    assert "    @python (g)" in out
+    # Project entry not in global has no suffix on its own line.
+    project_block, _, global_block = out.partition("Global (global.json):")
+    assert "    @ruby\n" in project_block
+    # Global block lists @python without a redundant (g).
+    assert "    @python\n" in global_block
+    assert "@python (g)" not in global_block
+
+
+def test_list_global_no_g_suffix_inside_global_block(storage: Path) -> None:
+    """`list -g` lines never carry (g) — every entry is global already."""
+    catalog = storage / "catalog"
+    _make_domain(catalog, "python")
+    _write_manifest(storage / "global.json", ["@python"])
+
+    result = CliRunner().invoke(list_cmd, ["-g"], color=True)
+
+    assert result.exit_code == 0, result.output
+    assert "@python" in result.output
+    assert "(g)" not in result.output

@@ -18,6 +18,7 @@ import click
 
 from ai_dotfiles import ui
 from ai_dotfiles.core import manifest, paths
+from ai_dotfiles.core.dependencies import find_reverse_deps
 from ai_dotfiles.core.elements import Element, ElementType, parse_element
 from ai_dotfiles.core.errors import AiDotfilesError
 
@@ -46,7 +47,9 @@ def list_cmd(is_global: bool, available: bool) -> None:
         if available:
             _list_available()
         elif is_global:
-            _list_scope_block("Global", paths.global_manifest_path())
+            _list_scope_block(
+                "Global", paths.global_manifest_path(), global_set=set()
+            )
         else:
             _list_both_scopes()
     except AiDotfilesError as exc:
@@ -61,12 +64,18 @@ def _list_both_scopes() -> None:
     """Show project + global packages in two labelled groups."""
     root = paths.find_project_root()
     project_manifest = paths.project_manifest_path(root) if root is not None else None
-    _list_scope_block("Project", project_manifest)
+    global_manifest = paths.global_manifest_path()
+    global_set = _safe_packages_set(global_manifest)
+    # Cross-reference suffix is only useful in the project block — every
+    # entry in the global section is global by definition.
+    _list_scope_block("Project", project_manifest, global_set=global_set)
     ui.info("")
-    _list_scope_block("Global", paths.global_manifest_path())
+    _list_scope_block("Global", global_manifest, global_set=set())
 
 
-def _list_scope_block(label: str, manifest_path: Path | None) -> None:
+def _list_scope_block(
+    label: str, manifest_path: Path | None, *, global_set: set[str]
+) -> None:
     """Print a single scope section — header, blank line, body or a note."""
     if manifest_path is None or not manifest_path.is_file():
         ui.info(f"{label}:")
@@ -85,7 +94,17 @@ def _list_scope_block(label: str, manifest_path: Path | None) -> None:
         return
 
     grouped = _group_packages(packages)
-    _print_groups(grouped)
+    parsed = [parse_element(raw) for raw in packages]
+    _print_groups(grouped, parsed=parsed, global_set=global_set)
+
+
+def _safe_packages_set(path: Path) -> set[str]:
+    if not path.is_file():
+        return set()
+    try:
+        return set(manifest.get_packages(path))
+    except AiDotfilesError:
+        return set()
 
 
 def _group_packages(packages: list[str]) -> dict[ElementType, list[str]]:
@@ -101,7 +120,13 @@ def _group_packages(packages: list[str]) -> dict[ElementType, list[str]]:
     return grouped
 
 
-def _print_groups(grouped: dict[ElementType, list[str]]) -> None:
+def _print_groups(
+    grouped: dict[ElementType, list[str]],
+    *,
+    parsed: list[Element],
+    global_set: set[str],
+) -> None:
+    catalog = paths.catalog_dir()
     sections: list[tuple[str, list[str]]] = [
         ("Domains", grouped[ElementType.DOMAIN]),
         ("Skills", grouped[ElementType.SKILL]),
@@ -117,7 +142,52 @@ def _print_groups(grouped: dict[ElementType, list[str]]) -> None:
         first = False
         ui.info(f"  {title}:")
         for item in items:
-            ui.info(f"    {item}")
+            text, color = _format_marker_line(
+                item,
+                catalog=catalog,
+                current_elements=parsed,
+                in_current=True,
+                in_global=item in global_set,
+            )
+            click.secho(f"    {text}", fg=color)
+
+
+def _format_marker_line(
+    raw: str,
+    *,
+    catalog: Path,
+    current_elements: list[Element],
+    in_current: bool,
+    in_global: bool,
+) -> tuple[str, str | None]:
+    """Render the suffix and pick a color for one entry.
+
+    ``in_current`` says whether the entry is installed in the scope being
+    listed (project for the project block, global for the global block,
+    union for ``--available``). ``in_global`` toggles the ``(g)`` suffix
+    independently — pass ``False`` to suppress it (e.g. inside the Global
+    section where every line is global by definition).
+    """
+    parts = [raw]
+    if in_global:
+        parts.append("(g)")
+
+    if not in_current:
+        return " ".join(parts), None
+
+    try:
+        target = parse_element(raw)
+        dependents = find_reverse_deps(catalog, current_elements, target)
+    except AiDotfilesError:
+        dependents = []
+
+    color = "green"
+    if dependents:
+        color = "yellow"
+        names = " ".join(d.raw for d in dependents)
+        parts.append(f"({names})")
+
+    return " ".join(parts), color
 
 
 # ── Available listing ────────────────────────────────────────────────────
@@ -130,6 +200,8 @@ def _list_available() -> None:
     skills = _scan_standalone_dirs(catalog / "skills", prefix="skill:")
     agents = _scan_standalone_files(catalog / "agents", prefix="agent:")
     rules = _scan_standalone_files(catalog / "rules", prefix="rule:")
+
+    project_set, global_set, installed_elements = _load_install_state()
 
     ui.info("Available in catalog:")
     ui.info("")
@@ -149,7 +221,48 @@ def _list_available() -> None:
         first = False
         ui.info(f"  {title}:")
         for item in items:
-            ui.info(f"    {item}")
+            text, color = _format_marker_line(
+                item,
+                catalog=catalog,
+                current_elements=installed_elements,
+                in_current=item in project_set or item in global_set,
+                in_global=item in global_set,
+            )
+            click.secho(f"    {text}", fg=color)
+
+
+def _load_install_state() -> tuple[set[str], set[str], list[Element]]:
+    """Read both manifests and return ``(project, global, parsed_union)``."""
+    project_pkgs: list[str] = []
+    root = paths.find_project_root()
+    if root is not None:
+        proj_path = paths.project_manifest_path(root)
+        if proj_path.is_file():
+            try:
+                project_pkgs = manifest.get_packages(proj_path)
+            except AiDotfilesError:
+                project_pkgs = []
+
+    global_pkgs: list[str] = []
+    global_path = paths.global_manifest_path()
+    if global_path.is_file():
+        try:
+            global_pkgs = manifest.get_packages(global_path)
+        except AiDotfilesError:
+            global_pkgs = []
+
+    union: list[Element] = []
+    seen: set[str] = set()
+    for raw in [*project_pkgs, *global_pkgs]:
+        if raw in seen:
+            continue
+        seen.add(raw)
+        try:
+            union.append(parse_element(raw))
+        except AiDotfilesError:
+            continue
+
+    return set(project_pkgs), set(global_pkgs), union
 
 
 def _scan_domains(catalog: Path) -> list[str]:

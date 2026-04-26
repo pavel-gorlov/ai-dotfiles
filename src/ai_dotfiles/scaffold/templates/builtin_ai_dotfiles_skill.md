@@ -40,8 +40,8 @@ After installing completion, arguments themselves tab-complete too:
 - `ai-dotfiles add -g <spec>...` — add specifiers to the **global** manifest (`~/.ai-dotfiles/global.json`) and symlink into `~/.claude/`.
 - `ai-dotfiles remove <spec>...` — remove from project manifest and unlink. Refuses if other manifest entries declare a dependency on the target; pass `--force` to break the dependency anyway, or remove the dependents in the same call.
 - `ai-dotfiles remove -g <spec>...` — remove from global manifest and unlink.
-- `ai-dotfiles list` / `list -g` — show installed packages (project / global).
-- `ai-dotfiles list --available` — list everything present in the catalog.
+- `ai-dotfiles list` / `list -g` — show installed packages (project / global). Each entry is colour-coded: **green** for direct installs, **yellow** for entries pulled in transitively (the parent specifiers are appended in parens, space-separated). The project block additionally tags entries that also live in `global.json` with a trailing `(g)` suffix; the global block omits the suffix because every line is global by definition.
+- `ai-dotfiles list --available` — list everything present in the catalog. Same colour scheme; `(g)` is shown on every globally-installed entry.
 - `ai-dotfiles status` — report symlink health and a settings summary.
 
 ### Elements

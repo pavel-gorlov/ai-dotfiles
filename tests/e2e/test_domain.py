@@ -16,6 +16,9 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home_dir = tmp_path / "home"
     home_dir.mkdir()
     monkeypatch.setenv("HOME", str(home_dir))
+    # Keep cwd inside the sandbox so ``find_project_root`` doesn't walk up
+    # into the actual repo (which has its own ai-dotfiles.json).
+    monkeypatch.chdir(home_dir)
     return home_dir
 
 

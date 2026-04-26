@@ -14,15 +14,29 @@ coverage.xml
 .DS_Store
 # >>> ai-dotfiles managed — do not edit manually <<<
 /.claude/agents/git-workflow-assistant.md
+/.claude/agents/python-developer.md
 /.claude/agents/tech-docs-writer.md
 /.claude/hooks/route-to-agent.sh
 /.claude/rules/gitflow.md
+/.claude/rules/python.md
+/.claude/skills/aiohttp-client
 /.claude/skills/commit
 /.claude/skills/commitizen-config
+/.claude/skills/factory-boy-fixtures
 /.claude/skills/git-worktree
 /.claude/skills/husky-lintstaged
+/.claude/skills/mkdocs-setup
+/.claude/skills/mypy-strict-migration
+/.claude/skills/pandas-pipeline
 /.claude/skills/pr-authoring
 /.claude/skills/pr-reflection
+/.claude/skills/pre-commit-config
+/.claude/skills/pydantic-modeling
+/.claude/skills/pytest-asyncio
+/.claude/skills/pytest-setup
+/.claude/skills/python-cli-typer
+/.claude/skills/python-performance-profile
+/.claude/skills/python-project-init
 /.claude/skills/rebase
 /.claude/skills/revert-merged-pr
 # >>> end ai-dotfiles managed <<<
