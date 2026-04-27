@@ -257,9 +257,10 @@ def test_domain_add_links_into_global_when_installed(
 
     link = home / ".claude" / "skills" / "py-lint"
     assert link.is_symlink()
-    assert link.resolve() == (
-        _catalog(storage) / "python" / "skills" / "py-lint"
-    ).resolve()
+    assert (
+        link.resolve()
+        == (_catalog(storage) / "python" / "skills" / "py-lint").resolve()
+    )
 
 
 def test_domain_add_links_into_project_when_installed(

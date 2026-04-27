@@ -255,9 +255,7 @@ def test_list_available_marks_dependency_yellow_with_parents(
     assert "\x1b[32m    @python-backend (g)" in out
 
 
-def test_list_available_walks_transitive_chain(
-    storage: Path, project: Path
-) -> None:
+def test_list_available_walks_transitive_chain(storage: Path, project: Path) -> None:
     """A → B → C: C must show both B and A as dependents (multi-level walk)."""
     catalog = storage / "catalog"
     _make_domain(catalog, "c")

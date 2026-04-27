@@ -47,9 +47,7 @@ def list_cmd(is_global: bool, available: bool) -> None:
         if available:
             _list_available()
         elif is_global:
-            _list_scope_block(
-                "Global", paths.global_manifest_path(), global_set=set()
-            )
+            _list_scope_block("Global", paths.global_manifest_path(), global_set=set())
         else:
             _list_both_scopes()
     except AiDotfilesError as exc:
