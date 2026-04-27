@@ -9,6 +9,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from ai_dotfiles.core.errors import ConfigError
+
 
 def storage_root() -> Path:
     """Return the root storage directory.
@@ -52,6 +54,37 @@ def backup_dir() -> Path:
     return Path.home() / ".dotfiles-backup"
 
 
+def current_dir() -> Path:
+    """Return the current working directory.
+
+    ``Path.cwd()`` (i.e. ``os.getcwd``) raises ``FileNotFoundError`` when the
+    process's CWD has been deleted or is otherwise unreadable — a real edge
+    case under WSL with Windows-mount symlinks. Fall back to the shell-
+    maintained ``PWD`` environment variable, and surface a clean
+    :class:`ConfigError` if both fail rather than letting a raw traceback
+    escape to the user.
+    """
+    try:
+        return Path.cwd()
+    except (FileNotFoundError, OSError):
+        pass
+
+    pwd = os.environ.get("PWD")
+    if pwd:
+        candidate = Path(pwd)
+        try:
+            if candidate.is_dir():
+                return candidate
+        except OSError:
+            pass
+
+    raise ConfigError(
+        "Cannot determine the current working directory "
+        "(it may have been deleted or become unreadable). "
+        "cd to a valid directory and retry."
+    )
+
+
 def find_project_root(start: Path | None = None) -> Path | None:
     """Walk upward looking for a project root.
 
@@ -60,7 +93,7 @@ def find_project_root(start: Path | None = None) -> Path | None:
     If none is found, a second pass looks for a ``.git`` directory.
     Returns ``None`` if neither marker is found before the filesystem root.
     """
-    origin = (start if start is not None else Path.cwd()).resolve()
+    origin = (start if start is not None else current_dir()).resolve()
 
     # First pass: prefer ai-dotfiles.json (closer wins).
     current = origin

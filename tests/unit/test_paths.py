@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from ai_dotfiles.core import paths
+from ai_dotfiles.core.errors import ConfigError
 
 
 def test_storage_root_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -100,6 +101,36 @@ def test_find_project_root_none(tmp_path: Path) -> None:
         assert result != isolated.resolve()
     else:
         assert result is None
+
+
+def test_current_dir_returns_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert paths.current_dir() == Path.cwd()
+
+
+def test_current_dir_falls_back_to_pwd_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _boom() -> Path:
+        raise FileNotFoundError(2, "No such file or directory")
+
+    monkeypatch.setattr(paths.Path, "cwd", staticmethod(_boom))
+    monkeypatch.setenv("PWD", str(tmp_path))
+    assert paths.current_dir() == tmp_path
+
+
+def test_current_dir_raises_when_cwd_and_pwd_unusable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _boom() -> Path:
+        raise FileNotFoundError(2, "No such file or directory")
+
+    monkeypatch.setattr(paths.Path, "cwd", staticmethod(_boom))
+    monkeypatch.setenv("PWD", str(tmp_path / "does-not-exist"))
+    with pytest.raises(ConfigError, match="current working directory"):
+        paths.current_dir()
 
 
 def test_project_manifest_path(tmp_path: Path) -> None:

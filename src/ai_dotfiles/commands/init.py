@@ -14,7 +14,6 @@ Three modes:
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 import click
 
@@ -29,7 +28,7 @@ from ai_dotfiles.scaffold.generator import (
 
 def _run_init_project() -> None:
     """Initialize a project manifest in the current project root."""
-    root = paths.find_project_root() or Path.cwd()
+    root = paths.find_project_root() or paths.current_dir()
     manifest = paths.project_manifest_path(root)
     if manifest.exists():
         ui.warn(f"ai-dotfiles.json already exists at {manifest}")
