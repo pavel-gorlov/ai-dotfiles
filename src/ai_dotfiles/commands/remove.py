@@ -35,6 +35,7 @@ from ai_dotfiles.core.paths import (
     project_manifest_path,
     storage_root,
 )
+from ai_dotfiles.core.runtime import tear_down_domain_runtime
 from ai_dotfiles.core.settings_merge import (
     assemble_settings,
     collect_domain_fragments,
@@ -158,6 +159,37 @@ def _rebuild_settings(manifest_path: Path, claude_dir: Path, catalog: Path) -> N
         save_settings_ownership(claude_dir, new_ownership)
 
 
+def _domain_still_installed_globally(domain_name: str) -> bool:
+    """True if ``@<domain_name>`` is still listed in the global manifest."""
+    spec = f"@{domain_name}"
+    try:
+        return spec in manifest.get_packages(global_manifest_path())
+    except AiDotfilesError:
+        return False
+    except OSError:
+        return False
+
+
+def _maybe_tear_down_runtimes(
+    elements: list[Element], removed_set: set[str], catalog: Path
+) -> None:
+    """Drop venv + shims for domains that are no longer installed anywhere.
+
+    A project-scope remove keeps the runtime around when the domain still
+    appears in the global manifest (a parallel global install would
+    rely on it). A global-scope remove always tears down — local projects
+    will re-provision on their next ``install``.
+    """
+    for el in elements:
+        if el.type is not ElementType.DOMAIN or el.raw not in removed_set:
+            continue
+        if _domain_still_installed_globally(el.name):
+            continue
+        removed = tear_down_domain_runtime(catalog, el.name)
+        for name in removed:
+            ui.info(f"  - bin/{name} (shim removed)")
+
+
 def _maybe_sync_gitignore(
     *,
     project_root: Path | None,
@@ -251,6 +283,7 @@ def remove(
         )
         if had_domain:
             ui.info(f"Settings: rebuilt {claude_dir.name}/settings.json")
+            _maybe_tear_down_runtimes(elements, removed_set, catalog)
 
         _maybe_sync_gitignore(
             project_root=project_root,

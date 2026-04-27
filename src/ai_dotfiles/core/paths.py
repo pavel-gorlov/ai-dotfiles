@@ -39,6 +39,26 @@ def completion_dir() -> Path:
     return storage_root() / "completions"
 
 
+def bin_dir() -> Path:
+    """Aggregated PATH directory for shims of domain ``bin/`` entries.
+
+    Each installed domain that ships a ``bin/`` directory gets one shim
+    per executable here, so users only have to add this single directory
+    to ``PATH`` once.
+    """
+    return storage_root() / "bin"
+
+
+def venvs_dir() -> Path:
+    """Per-domain Python venvs (``~/.ai-dotfiles/venvs``).
+
+    A domain that lists ``requires.python`` packages in ``domain.json``
+    gets an isolated virtualenv at ``<venvs_dir>/<domain>``; the shim
+    for its ``bin/<name>`` script invokes that venv's Python.
+    """
+    return storage_root() / "venvs"
+
+
 def global_manifest_path() -> Path:
     """Manifest of globally installed packages."""
     return storage_root() / "global.json"

@@ -23,6 +23,11 @@ from ai_dotfiles.core.elements import Element, ElementType
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError, MissingDependencyError
 from ai_dotfiles.core.gitignore import collect_managed_paths, sync_gitignore
 from ai_dotfiles.core.mcp_apply import rebuild_claude_config
+from ai_dotfiles.core.runtime import (
+    ProvisionResult,
+    bin_dir_on_path,
+    provision_domain_runtime,
+)
 from ai_dotfiles.core.settings_ownership import (
     delete_settings_ownership,
     load_settings_ownership,
@@ -154,6 +159,7 @@ def _install_project(
     fragment_count = 0
     settings_written = False
 
+    any_shim = False
     if packages:
         parsed = elements.parse_elements(packages)
         for element in parsed:
@@ -161,6 +167,8 @@ def _install_project(
 
         for element in parsed:
             linked_items.extend(_link_element(element, claude_dir, catalog, backup))
+
+        any_shim = _provision_runtimes(parsed, catalog)
 
         fragments = settings_merge.collect_domain_fragments(packages, catalog)
         fragment_count = len(fragments)
@@ -192,6 +200,7 @@ def _install_project(
         return
 
     _print_summary(parsed, linked_items, settings_written, fragment_count)
+    _maybe_print_path_hint(any_shim)
 
 
 def _install_global(*, prune: bool = False, strict_deps: bool = False) -> None:
@@ -224,6 +233,7 @@ def _install_global(*, prune: bool = False, strict_deps: bool = False) -> None:
     settings_written = False
     fragment_count = 0
 
+    any_shim = False
     if packages:
         catalog = paths.catalog_dir()
         parsed = elements.parse_elements(packages)
@@ -232,6 +242,8 @@ def _install_global(*, prune: bool = False, strict_deps: bool = False) -> None:
 
         for element in parsed:
             linked_items.extend(_link_element(element, claude_dir, catalog, backup))
+
+        any_shim = _provision_runtimes(parsed, catalog)
 
         fragments = settings_merge.collect_domain_fragments(packages, catalog)
         fragment_count = len(fragments)
@@ -268,6 +280,7 @@ def _install_global(*, prune: bool = False, strict_deps: bool = False) -> None:
         fragment_count,
         extra_global=len(global_messages),
     )
+    _maybe_print_path_hint(any_shim)
 
 
 def _maybe_sync_gitignore(
@@ -324,6 +337,59 @@ def _link_element(
     ui.success(element.raw)
     entries.append(element.raw)
     return entries
+
+
+def _provision_runtimes(parsed: list[Element], catalog: Path) -> bool:
+    """Provision venv + shims for every domain in ``parsed``.
+
+    Returns True if any shim was created/updated, so the caller knows to
+    print the PATH hint once.
+    """
+    any_shim = False
+    for element in parsed:
+        if element.type is not ElementType.DOMAIN:
+            continue
+        try:
+            result = provision_domain_runtime(catalog, element.name)
+        except AiDotfilesError as exc:
+            ui.warn(f"@{element.name}: runtime provisioning failed — {exc}")
+            continue
+        _report_provision_result(element.name, result)
+        if result.shims_created or result.shims_updated:
+            any_shim = True
+    return any_shim
+
+
+def _report_provision_result(domain_name: str, result: ProvisionResult) -> None:
+    if result.python_packages and result.venv_path is not None:
+        pkg_count = len(result.python_packages)
+        noun = "package" if pkg_count == 1 else "packages"
+        ui.info(
+            f"  @{domain_name}: venv {result.venv_path.name} ready "
+            f"({pkg_count} {noun})"
+        )
+    for name in result.shims_created:
+        ui.info(f"  @{domain_name}: bin/{name} -> {paths.bin_dir() / name}")
+    for name in result.shims_updated:
+        ui.info(f"  @{domain_name}: bin/{name} updated")
+    for name, reason in result.shims_skipped:
+        ui.warn(f"  @{domain_name}: bin/{name} skipped — {reason}")
+    for tool in result.missing_cli:
+        ui.warn(
+            f"  @{domain_name}: CLI tool '{tool}' is required but not on PATH — "
+            "install it via your system package manager."
+        )
+
+
+def _maybe_print_path_hint(any_shim: bool) -> None:
+    if not any_shim or bin_dir_on_path():
+        return
+    bin_path = paths.bin_dir()
+    ui.warn(
+        f"{bin_path} is not on PATH. Add this to your shell rc to use the "
+        f"installed commands:\n"
+        f'  export PATH="{bin_path}:$PATH"'
+    )
 
 
 def _print_summary(

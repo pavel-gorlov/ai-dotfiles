@@ -132,7 +132,9 @@ Every domain has a `catalog/<domain>/domain.json` that declares its metadata:
   "description": "FastAPI + async SQLAlchemy backend domain",
   "depends": ["@python"],
   "requires": {
-    "npm": ["@playwright/mcp"]
+    "npm": ["@playwright/mcp"],
+    "python": ["click>=8", "pyyaml>=6"],
+    "cli": ["gh"]
   }
 }
 ```
@@ -159,7 +161,24 @@ When you `remove @python` while `@python-backend` is still in the manifest, the 
 
 ### `requires` — host-tool packages
 
-`requires` declares packages that must be installed *outside* the catalog (host tooling). Currently only `npm` is recognised: on `add` / `install`, the CLI warns when a package listed in `requires.npm` is missing from the project's `package.json`. Install with `npm install -D <pkg>`.
+`requires` declares packages that must be installed *outside* the catalog (host tooling). Three ecosystems are recognised:
+
+| Ecosystem | What the CLI does on `add` / `install` |
+|-----------|----------------------------------------|
+| `npm`     | Warns when a listed package is missing from the project's `package.json`. Install with `npm install -D <pkg>`. |
+| `python`  | Creates a per-domain venv at `~/.ai-dotfiles/venvs/<domain>/` (via `uv venv` when available, fallback to `python -m venv`) and installs the listed packages into it. The venv is wired up to the domain's `bin/` shims (see below). |
+| `cli`     | Probes each name with `which`. Prints a warning when a tool is not on `PATH` — install via your system package manager. |
+
+### `bin/` — domain entry points
+
+A domain may ship executables under `catalog/<domain>/bin/`. On install, the CLI generates one shim per file under `~/.ai-dotfiles/bin/<name>`:
+
+* If `requires.python` is non-empty, the shim execs the per-domain venv's Python on the catalog entry point — so the script's `import click` etc. resolves against the venv, not the system Python.
+* Otherwise the shim execs the file directly.
+* User-owned files at the shim path are left untouched and a warning is printed.
+* Add `~/.ai-dotfiles/bin` to `PATH` once (the CLI prints the export line on first install). After that every domain you install lights up its commands automatically.
+
+`remove`-ing the domain (from the global manifest, or from a project when the domain is not also in `global.json`) drops the shim and the venv.
 
 ## Typical workflows
 

@@ -29,6 +29,16 @@ def test_global_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     assert paths.global_dir() == tmp_path / "global"
 
 
+def test_bin_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AI_DOTFILES_HOME", str(tmp_path))
+    assert paths.bin_dir() == tmp_path / "bin"
+
+
+def test_venvs_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AI_DOTFILES_HOME", str(tmp_path))
+    assert paths.venvs_dir() == tmp_path / "venvs"
+
+
 def test_catalog_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("AI_DOTFILES_HOME", str(tmp_path))
     assert paths.catalog_dir() == tmp_path / "catalog"
