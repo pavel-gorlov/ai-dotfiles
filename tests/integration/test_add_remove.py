@@ -251,6 +251,34 @@ def test_remove_global(
     assert not (claude_home / "agents" / "test-agent.md").exists()
 
 
+def test_remove_global_warns_when_shim_dropped(
+    runner: CliRunner, catalog: Path, storage: Path
+) -> None:
+    """remove -g must surface a recovery hint when a CLI shim disappears."""
+    from ai_dotfiles.core import runtime
+
+    domain = catalog / "clidomain"
+    (domain / "bin").mkdir(parents=True)
+    entry = domain / "bin" / "clitool"
+    entry.write_text("#!/bin/sh\necho ok\n")
+    entry.chmod(0o755)
+    (domain / "domain.json").write_text(json.dumps({"name": "clidomain"}))
+
+    runner.invoke(add, ["-g", "@clidomain"])
+    runtime.provision_domain_runtime(catalog, "clidomain")
+    shim = storage / "bin" / "clitool"
+    assert shim.is_file()
+
+    result = runner.invoke(remove, ["-g", "@clidomain"])
+    assert result.exit_code == 0, result.output
+    assert not shim.exists()
+
+    combined = result.output + (result.stderr or "")
+    assert "removed shim(s) clitool" in combined
+    assert "another project still uses" in combined
+    assert str(domain / "bin") in combined
+
+
 # ── roundtrip ─────────────────────────────────────────────────────────────
 
 
