@@ -27,6 +27,7 @@ from ai_dotfiles.core.gitignore import collect_managed_paths, sync_gitignore
 from ai_dotfiles.core.mcp_apply import rebuild_claude_config
 from ai_dotfiles.core.paths import (
     backup_dir,
+    bin_dir,
     catalog_dir,
     claude_global_dir,
     find_project_root,
@@ -186,8 +187,18 @@ def _maybe_tear_down_runtimes(
         if _domain_still_installed_globally(el.name):
             continue
         removed = tear_down_domain_runtime(catalog, el.name)
+        if not removed:
+            continue
         for name in removed:
             ui.info(f"  - bin/{name} (shim removed)")
+        joined = ", ".join(removed)
+        catalog_bin = catalog / el.name / "bin"
+        ui.warn(
+            f"@{el.name}: removed shim(s) {joined} from {bin_dir()}. "
+            f"If another project still uses this CLI, either re-add @{el.name} "
+            f"globally, or add the catalog bin dir to PATH:\n"
+            f'    export PATH="{catalog_bin}:$PATH"'
+        )
 
 
 def _maybe_sync_gitignore(
