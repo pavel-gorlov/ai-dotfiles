@@ -1,0 +1,7 @@
+{
+  "packages": [
+    "agent:tech-docs-writer",
+    "@gitflow",
+    "@python"
+  ]
+}
