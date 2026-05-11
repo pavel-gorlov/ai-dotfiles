@@ -13,6 +13,7 @@ from typing import cast
 from ai_dotfiles.vendors.base import Vendor
 from ai_dotfiles.vendors.buildwithclaude import BUILDWITHCLAUDE
 from ai_dotfiles.vendors.github import GITHUB
+from ai_dotfiles.vendors.mattpocock import MATTPOCOCK
 from ai_dotfiles.vendors.paks import PAKS
 from ai_dotfiles.vendors.skills_sh import SKILLS_SH
 from ai_dotfiles.vendors.tonsofskills import TONSOFSKILLS
@@ -29,11 +30,13 @@ REGISTRY: dict[str, Vendor] = {
     "paks": cast(Vendor, PAKS),
     "buildwithclaude": cast(Vendor, BUILDWITHCLAUDE),
     "tonsofskills": cast(Vendor, TONSOFSKILLS),
+    "mattpocock": cast(Vendor, MATTPOCOCK),
 }
 
 __all__ = [
     "BUILDWITHCLAUDE",
     "GITHUB",
+    "MATTPOCOCK",
     "PAKS",
     "REGISTRY",
     "SKILLS_SH",

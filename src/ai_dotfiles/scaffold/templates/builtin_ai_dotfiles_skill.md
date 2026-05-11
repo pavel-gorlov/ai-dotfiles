@@ -1,7 +1,7 @@
 ---
 name: ai-dotfiles
 description: Manage Claude Code configuration via the ai-dotfiles CLI — install/add/remove skills, agents, rules and domains; scaffold new elements; vendor external sources from GitHub, paks or skills.sh; validate symlinks in ~/.claude/.
-when_to_use: Trigger when the user mentions "ai-dotfiles", "~/.ai-dotfiles/", "AI_DOTFILES_HOME", "ai-dotfiles.json" or "global.json"; adds/removes/installs/lists a skill, agent, rule or domain for Claude Code; scaffolds a new element; vendors external content (GitHub, paks, npx skills CLI, buildwithclaude, tonsofskills); checks the health of Claude Code symlinks under ~/.claude/ or <project>/.claude/; reconciles ai-dotfiles.json or global.json with the filesystem.
+when_to_use: Trigger when the user mentions "ai-dotfiles", "~/.ai-dotfiles/", "AI_DOTFILES_HOME", "ai-dotfiles.json" or "global.json"; adds/removes/installs/lists a skill, agent, rule or domain for Claude Code; scaffolds a new element; vendors external content (GitHub, paks, npx skills CLI, buildwithclaude, tonsofskills, mattpocock); checks the health of Claude Code symlinks under ~/.claude/ or <project>/.claude/; reconciles ai-dotfiles.json or global.json with the filesystem.
 ---
 
 # ai-dotfiles
@@ -73,6 +73,7 @@ Per-vendor subcommands follow the same shape — `install / list / search / deps
 | `paks`            | `<skill-name>` (one source = one skill) | `search` | `paks` binary (`brew tap stakpak/stakpak && brew install paks`) |
 | `buildwithclaude` | `<skill-name>` from cached catalog | `search`, `refresh` (24h TTL) | `git` |
 | `tonsofskills`    | `<skill-name>` from cached catalog | `search`, `refresh` (24h TTL, slow first fetch — 20k files) | `git` |
+| `mattpocock`      | `<skill-name>` from cached catalog (mattpocock/skills) | `search`, `refresh` (24h TTL) | `git` |
 
 All `install` commands accept `-f/--force` (overwrite existing catalog entry). `skills_sh` additionally accepts `--select a,b,c` to install a subset.
 
@@ -107,6 +108,12 @@ ai-dotfiles vendor tonsofskills refresh
 ai-dotfiles vendor tonsofskills search kubernetes
 ai-dotfiles vendor tonsofskills install generating-database-seed-data
 ai-dotfiles add skill:generating-database-seed-data
+
+# mattpocock (cached marketplace; Matt Pocock's personal .claude/skills)
+ai-dotfiles vendor mattpocock refresh
+ai-dotfiles vendor mattpocock search tdd
+ai-dotfiles vendor mattpocock install tdd
+ai-dotfiles add skill:tdd
 ```
 
 Cache path for `refresh`-capable vendors: `~/.ai-dotfiles/.vendor-cache/`. `search` / `install` auto-refresh when the cache is older than 24h; pass `--force` to skip the TTL check.
