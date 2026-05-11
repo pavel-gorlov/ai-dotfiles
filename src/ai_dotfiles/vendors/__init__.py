@@ -15,6 +15,7 @@ from ai_dotfiles.vendors.buildwithclaude import BUILDWITHCLAUDE
 from ai_dotfiles.vendors.github import GITHUB
 from ai_dotfiles.vendors.mattpocock import MATTPOCOCK
 from ai_dotfiles.vendors.paks import PAKS
+from ai_dotfiles.vendors.printingpress import PRINTINGPRESS
 from ai_dotfiles.vendors.skills_sh import SKILLS_SH
 from ai_dotfiles.vendors.tonsofskills import TONSOFSKILLS
 
@@ -31,6 +32,7 @@ REGISTRY: dict[str, Vendor] = {
     "buildwithclaude": cast(Vendor, BUILDWITHCLAUDE),
     "tonsofskills": cast(Vendor, TONSOFSKILLS),
     "mattpocock": cast(Vendor, MATTPOCOCK),
+    "printingpress": cast(Vendor, PRINTINGPRESS),
 }
 
 __all__ = [
@@ -38,6 +40,7 @@ __all__ = [
     "GITHUB",
     "MATTPOCOCK",
     "PAKS",
+    "PRINTINGPRESS",
     "REGISTRY",
     "SKILLS_SH",
     "TONSOFSKILLS",
