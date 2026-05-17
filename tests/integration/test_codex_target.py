@@ -5,7 +5,7 @@ modules against a ``tmp_path`` catalog and project — asserting the
 on-disk shapes that ADR ai-1-1…ai-1-4 promise:
 
 * a Codex skill materialises as a real ``.agents/skills/<name>/``
-  directory with a generated ``SKILL.md`` plus symlinked support files;
+  directory with a generated ``SKILL.md`` plus copied support files;
 * a Codex agent materialises as a generated ``.codex/agents/<name>.toml``
   carrying the two-line managed header;
 * drift detection flips ``status`` to STALE when the catalog source of
@@ -172,7 +172,7 @@ def _run(command: object, project: Path, *args: str) -> tuple[int, str, str]:
     return result.exit_code, result.stdout, result.stderr
 
 
-# ── Skill render + symlink ────────────────────────────────────────────────
+# ── Skill render + support-file copy ──────────────────────────────────────
 
 
 def test_codex_skill_is_real_dir_with_generated_skill_md(
@@ -202,22 +202,29 @@ def test_codex_skill_is_real_dir_with_generated_skill_md(
     assert 'description: "First sentence here."' in body
 
 
-def test_codex_skill_support_files_are_symlinked_into_catalog(
+def test_codex_skill_support_files_are_copied_not_symlinked(
     project: Path, catalog: Path
 ) -> None:
-    """Support files/dirs of a Codex skill are symlinks into the catalog."""
-    source = _make_skill(catalog, "commit", support=True)
+    """Support files/dirs of a Codex skill are real copies, never symlinks (ai-20).
+
+    The Codex target is self-contained — copying rather than symlinking
+    means a Windows project never carries a symlink into the WSL catalog.
+    """
+    _make_skill(catalog, "commit", support=True)
     _write_manifest(project / "ai-dotfiles.json", ["skill:commit"], targets=["codex"])
 
     code, _, _ = _run(install, project)
     assert code == 0
 
     skill_dir = project / ".agents" / "skills" / "commit"
-    assert (skill_dir / "scripts").is_symlink()
-    assert (skill_dir / "references").is_symlink()
-    assert (skill_dir / "scripts").resolve() == (source / "scripts").resolve()
-    # The symlink resolves to live catalog content.
+    assert (skill_dir / "scripts").is_dir()
+    assert (skill_dir / "references").is_dir()
+    # Copied content is readable without resolving back into the catalog.
     assert (skill_dir / "scripts" / "run.sh").read_text() == "echo hi\n"
+    assert (skill_dir / "references" / "notes.md").read_text() == "notes\n"
+    # No symlink anywhere under .agents/skills/ — every artefact is real.
+    skills_root = project / ".agents" / "skills"
+    assert [p for p in skills_root.rglob("*") if p.is_symlink()] == []
 
 
 # ── Agent render ──────────────────────────────────────────────────────────

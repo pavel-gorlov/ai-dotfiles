@@ -160,7 +160,7 @@ Absent `targets` field → `["claude"]`. Every existing manifest keeps working u
 
 | Element | Output path | Format |
 |---------|------------|--------|
-| `skill:name` or domain skill | `.agents/skills/<name>/` | Real directory with a generated `SKILL.md` (first-sentence `description`) + symlinked support files (`scripts/`, `references/`, `assets/`, …) |
+| `skill:name` or domain skill | `.agents/skills/<name>/` | Real directory with a generated `SKILL.md` (first-sentence `description`) + copied support files (`scripts/`, `references/`, `assets/`, …) — the Codex target is fully self-contained, no symlinks into the catalog |
 | `agent:name` or domain agent | `.codex/agents/<name>.toml` | Generated TOML (`name`, `description`, `developer_instructions`, optional `model`) — a committed project artefact |
 | `rule:name` or domain `rules/` member | See rule classes below | Dispatched by rule frontmatter — three possible outputs |
 | Domain `hooks/` members | — | Skipped; the command prints an explicit `! ... skipped for the Codex target` message (Codex has no hook harness) |
@@ -370,7 +370,7 @@ ai-dotfiles install
 # Claude:  <project>/.claude/skills/commit/        (symlink)
 #          <project>/.claude/settings.json          (merged from settings.fragment.json)
 #          <project>/.mcp.json                      (merged from mcp.fragment.json)
-# Codex:   <project>/.agents/skills/commit/        (generated SKILL.md + symlinked support)
+# Codex:   <project>/.agents/skills/commit/        (generated SKILL.md + copied support)
 #          <project>/.codex/agents/...toml          (generated from any agent in @gitflow)
 #          <project>/.codex/config.toml             (permissions/sandbox from settings.fragment.json;
 #                                                    [mcp_servers] from mcp.fragment.json)

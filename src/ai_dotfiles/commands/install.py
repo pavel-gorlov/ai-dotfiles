@@ -189,7 +189,7 @@ def _install_project(
                 linked_items.extend(_link_element(element, claude_dir, catalog, backup))
 
         if "codex" in targets:
-            _install_codex_target(parsed, packages, root, catalog, backup, prune=prune)
+            _install_codex_target(parsed, packages, root, catalog, prune=prune)
 
         any_shim = _provision_runtimes(parsed, catalog)
 
@@ -368,14 +368,13 @@ def _install_codex_target(
     packages: list[str],
     project_root: Path,
     catalog: Path,
-    backup: Path,
     *,
     prune: bool,
 ) -> None:
     """Render and write Codex artefacts for every element in ``parsed``.
 
     Skills become ``.agents/skills/<name>/`` (generated ``SKILL.md`` +
-    symlinked support files); agents become ``.codex/agents/<name>.toml``.
+    copied support files); agents become ``.codex/agents/<name>.toml``.
     Rules dispatch by ``RuleClass`` (ADR ai-1-2): always-on / path-scoped
     rules write managed blocks into one or more ``AGENTS.md`` files;
     description-only rules render as synthetic ``rule-<name>`` skills.
@@ -398,9 +397,7 @@ def _install_codex_target(
             )
         for pair in iter_codex_pairs(element, project_root, catalog):
             if pair.element_type is ElementType.SKILL:
-                status = codex_install.install_codex_skill(
-                    pair.source, pair.target, backup
-                )
+                status = codex_install.install_codex_skill(pair.source, pair.target)
                 wanted_skills.add(pair.target)
                 ui.success(f"skills/{pair.target.name} ({status})")
             elif pair.element_type is ElementType.RULE:

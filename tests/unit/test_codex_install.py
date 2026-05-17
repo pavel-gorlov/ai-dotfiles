@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
+import stat
 from pathlib import Path
 
 import pytest
@@ -87,7 +90,7 @@ def test_install_agent_propagates_render_error(tmp_path: Path) -> None:
 # ── install_codex_skill ────────────────────────────────────────────
 
 
-def test_install_skill_generates_skill_md_and_symlinks_support(
+def test_install_skill_generates_skill_md_and_copies_support(
     tmp_path: Path,
 ) -> None:
     skill_src = tmp_path / "catalog" / "skills" / "commit"
@@ -96,7 +99,7 @@ def test_install_skill_generates_skill_md_and_symlinks_support(
     _write(skill_src / "references" / "notes.md", "notes\n")
 
     target = tmp_path / ".agents" / "skills" / "commit"
-    status = install_codex_skill(skill_src, target, tmp_path / "backup")
+    status = install_codex_skill(skill_src, target)
 
     assert status == "created"
     # The directory is real, SKILL.md is a generated file (not a symlink).
@@ -121,10 +124,66 @@ def test_install_skill_generates_skill_md_and_symlinks_support(
             (skill_src / "SKILL.md").read_text(encoding="utf-8").encode("utf-8")
         ).hexdigest()
     )
-    # Support files/dirs are symlinks back into the catalog.
-    assert (target / "scripts").is_symlink()
-    assert (target / "references").is_symlink()
-    assert (target / "scripts").resolve() == (skill_src / "scripts").resolve()
+    # ai-20: support files/dirs are real copies, not symlinks into the
+    # catalog — the Codex target is self-contained.
+    assert (target / "scripts").is_dir() and not (target / "scripts").is_symlink()
+    assert (target / "references").is_dir() and not (target / "references").is_symlink()
+    assert not (target / "scripts" / "run.sh").is_symlink()
+    assert (target / "scripts" / "run.sh").read_text() == "echo hi\n"
+    assert (target / "references" / "notes.md").read_text() == "notes\n"
+
+
+def test_install_skill_leaves_no_symlinks_under_target(tmp_path: Path) -> None:
+    """No symlink anywhere under the installed Codex skill directory (ai-20)."""
+    skill_src = tmp_path / "catalog" / "skills" / "commit"
+    _write(skill_src / "SKILL.md", _SKILL_MD)
+    _write(skill_src / "scripts" / "run.sh", "echo hi\n")
+    _write(skill_src / "references" / "notes.md", "notes\n")
+    _write(skill_src / "assets" / "logo.txt", "logo\n")
+
+    target = tmp_path / ".agents" / "skills" / "commit"
+    install_codex_skill(skill_src, target)
+
+    symlinks = [p for p in target.rglob("*") if p.is_symlink()]
+    assert symlinks == []
+
+
+def test_install_skill_preserves_executable_bit_on_scripts(tmp_path: Path) -> None:
+    """Executable bits on copied scripts/* survive the copy (ai-20)."""
+    skill_src = tmp_path / "catalog" / "skills" / "commit"
+    _write(skill_src / "SKILL.md", _SKILL_MD)
+    script = _write(skill_src / "scripts" / "run.sh", "echo hi\n")
+    script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    target = tmp_path / ".agents" / "skills" / "commit"
+    install_codex_skill(skill_src, target)
+
+    copied = target / "scripts" / "run.sh"
+    assert os.access(copied, os.X_OK)
+    assert copied.stat().st_mode & stat.S_IXUSR
+
+
+def test_reinstall_refreshes_copied_support_files(tmp_path: Path) -> None:
+    """Re-install drops a support file the catalog has since removed (ai-20)."""
+    skill_src = tmp_path / "catalog" / "skills" / "commit"
+    _write(skill_src / "SKILL.md", _SKILL_MD)
+    _write(skill_src / "scripts" / "run.sh", "echo hi\n")
+    stale = _write(skill_src / "references" / "old.md", "old\n")
+
+    target = tmp_path / ".agents" / "skills" / "commit"
+    install_codex_skill(skill_src, target)
+    assert (target / "references" / "old.md").is_file()
+
+    # The catalog renames a file and drops a whole support dir.
+    stale.unlink()
+    _write(skill_src / "references" / "new.md", "new\n")
+    shutil.rmtree(skill_src / "scripts")
+
+    install_codex_skill(skill_src, target)
+
+    assert (target / "references" / "new.md").read_text() == "new\n"
+    assert not (target / "references" / "old.md").exists()
+    assert not (target / "scripts").exists()
 
 
 def test_install_skill_reports_updated_on_second_install(tmp_path: Path) -> None:
@@ -132,8 +191,8 @@ def test_install_skill_reports_updated_on_second_install(tmp_path: Path) -> None
     _write(skill_src / "SKILL.md", _SKILL_MD)
     target = tmp_path / "out" / "commit"
 
-    assert install_codex_skill(skill_src, target, tmp_path / "b") == "created"
-    assert install_codex_skill(skill_src, target, tmp_path / "b") == "updated"
+    assert install_codex_skill(skill_src, target) == "created"
+    assert install_codex_skill(skill_src, target) == "updated"
 
 
 def test_reinstall_overwrites_legacy_broken_skill_md(tmp_path: Path) -> None:
@@ -148,7 +207,7 @@ def test_reinstall_overwrites_legacy_broken_skill_md(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    install_codex_skill(skill_src, target, tmp_path / "b")
+    install_codex_skill(skill_src, target)
 
     text = (target / "SKILL.md").read_text(encoding="utf-8")
     assert text.splitlines()[0] == "---"
@@ -182,7 +241,7 @@ def test_is_managed_skill_true_for_generated_skill(tmp_path: Path) -> None:
     skill_src = tmp_path / "skills" / "commit"
     _write(skill_src / "SKILL.md", _SKILL_MD)
     target = tmp_path / "out" / "commit"
-    install_codex_skill(skill_src, target, tmp_path / "b")
+    install_codex_skill(skill_src, target)
     assert is_managed_skill(target) is True
 
 
@@ -250,7 +309,7 @@ def test_is_stale_recognizes_skill_md_drift(tmp_path: Path) -> None:
     skill_src = tmp_path / "skills" / "commit"
     _write(skill_src / "SKILL.md", _SKILL_MD)
     target = tmp_path / "out" / "commit"
-    install_codex_skill(skill_src, target, tmp_path / "b")
+    install_codex_skill(skill_src, target)
 
     generated = target / "SKILL.md"
     source = skill_src / "SKILL.md"
@@ -298,11 +357,12 @@ def test_remove_skill_deletes_managed_directory(tmp_path: Path) -> None:
     _write(skill_src / "SKILL.md", _SKILL_MD)
     _write(skill_src / "scripts" / "run.sh", "echo\n")
     target = tmp_path / "out" / "commit"
-    install_codex_skill(skill_src, target, tmp_path / "b")
+    install_codex_skill(skill_src, target)
 
     assert remove_codex_skill(target) is True
     assert not target.exists()
-    # Catalog source is untouched — only the symlink was dropped.
+    # Removing the dir drops the copied support files with it (ai-20);
+    # the catalog source is a separate tree and stays untouched.
     assert (skill_src / "scripts" / "run.sh").is_file()
 
 

@@ -109,7 +109,7 @@ def _link_codex_element(element: Element, project_root: Path, catalog: Path) -> 
         )
     for pair in iter_codex_pairs(element, project_root, catalog):
         if pair.element_type is ElementType.SKILL:
-            codex_install.install_codex_skill(pair.source, pair.target, backup_dir())
+            codex_install.install_codex_skill(pair.source, pair.target)
         elif pair.element_type is ElementType.RULE:
             codex_install.install_codex_rule_skill(pair.source, pair.target)
         else:
