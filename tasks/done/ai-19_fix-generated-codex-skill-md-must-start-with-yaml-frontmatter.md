@@ -1,7 +1,7 @@
 ---
 id: ai-19
 kind: task
-status: wip
+status: done
 created_at: '2026-05-17T18:52:21+00:00'
 parent: ai-1
 dependencies: []
@@ -59,7 +59,7 @@ A generated `SKILL.md` must start with `---` (valid frontmatter, line 1).
 - [x] Agent `.toml` rendering is unchanged (header still present, valid TOML).
 - [x] A test asserts the generated `SKILL.md` first line is `---` and the frontmatter is parseable — the test that would have caught this.
 - [x] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green (959 passed; mypy 59 files; ruff + black clean).
-- [ ] PR opened against `main`.
+- [x] PR opened against `main` — [#10](https://github.com/pavel-gorlov/ai-dotfiles/pull/10), merged.
 
 ## Anti-patterns
 
