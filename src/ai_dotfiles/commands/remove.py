@@ -9,7 +9,7 @@ import click
 
 from ai_dotfiles import ui
 from ai_dotfiles.core import codex_install, manifest, symlinks
-from ai_dotfiles.core.codex_targets import iter_codex_pairs
+from ai_dotfiles.core.codex_targets import iter_codex_pairs, iter_codex_rule_plans
 from ai_dotfiles.core.completions import (
     complete_installed_specifiers,
     make_completer,
@@ -130,16 +130,24 @@ def _unlink_element(element: Element, claude_dir: Path, catalog: Path) -> None:
 def _unlink_codex_element(element: Element, project_root: Path, catalog: Path) -> None:
     """Remove managed Codex artefacts created for ``element``.
 
-    Only files carrying the ``# managed-by: ai-dotfiles`` header are
-    deleted — a user-authored skill/agent of the same name is left
-    untouched. Element types with no Phase-1 Codex surface (rules) and
-    domain ``rules/``/``hooks/`` members simply yield nothing to remove.
+    Only ai-dotfiles-managed content is removed — a user-authored
+    skill/agent of the same name and user-authored ``AGENTS.md`` text are
+    left untouched. Skills/agents drop their generated file; a rule's
+    managed ``AGENTS.md`` block is stripped (and a now-empty ``AGENTS.md``
+    deleted); a description-only rule's synthetic ``rule-<name>`` skill
+    is removed. Domain ``hooks/`` members yield nothing to remove.
     """
+    from ai_dotfiles.core.agents_md import rule_name_of
+
     for pair in iter_codex_pairs(element, project_root, catalog):
-        if pair.element_type is ElementType.SKILL:
-            codex_install.remove_codex_skill(pair.target)
-        else:
+        if pair.element_type is ElementType.AGENT:
             codex_install.remove_codex_agent(pair.target)
+        else:  # SKILL or synthetic RULE skill
+            codex_install.remove_codex_skill(pair.target)
+    for plan in iter_codex_rule_plans(element, project_root, catalog):
+        name = rule_name_of(plan.source)
+        for agents_md_path in plan.agents_md_paths:
+            codex_install.remove_codex_rule_blocks(agents_md_path, name)
 
 
 def _rebuild_settings(manifest_path: Path, claude_dir: Path, catalog: Path) -> None:

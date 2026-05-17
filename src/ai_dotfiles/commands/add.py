@@ -20,6 +20,7 @@ from ai_dotfiles.core import codex_install, manifest, symlinks
 from ai_dotfiles.core.codex_targets import (
     codex_skipped_domain_subdirs,
     iter_codex_pairs,
+    iter_codex_rule_plans,
 )
 from ai_dotfiles.core.completions import (
     complete_available_specifiers,
@@ -92,26 +93,25 @@ def _link_codex_element(element: Element, project_root: Path, catalog: Path) -> 
 
     Skills become ``.agents/skills/<name>/`` (generated ``SKILL.md`` +
     symlinked support files); agents become ``.codex/agents/<name>.toml``.
-    Domain ``rules/``/``hooks/`` and standalone rules have no Phase-1
-    Codex surface — the skip is reported explicitly.
+    Rules dispatch by ``RuleClass`` (ADR ai-1-2): always-on / path-scoped
+    rules write managed blocks into one or more ``AGENTS.md`` files,
+    description-only rules render as synthetic ``rule-<name>`` skills.
+    Domain ``hooks/`` has no Codex surface — the skip is reported.
     """
     for sub in codex_skipped_domain_subdirs(element, catalog):
         ui.warn(
             f"@{element.name}: {sub}/ skipped for the Codex target "
-            f"(no Phase-1 Codex surface)."
+            f"(Codex has no hook harness)."
         )
-    pairs = iter_codex_pairs(element, project_root, catalog)
-    if not pairs and element.type is ElementType.RULE:
-        ui.warn(
-            f"{element.raw} skipped for the Codex target "
-            f"(rules have no Phase-1 Codex surface)."
-        )
-        return
-    for pair in pairs:
+    for pair in iter_codex_pairs(element, project_root, catalog):
         if pair.element_type is ElementType.SKILL:
             codex_install.install_codex_skill(pair.source, pair.target, backup_dir())
+        elif pair.element_type is ElementType.RULE:
+            codex_install.install_codex_rule_skill(pair.source, pair.target)
         else:
             codex_install.install_codex_agent(pair.source, pair.target)
+    for plan in iter_codex_rule_plans(element, project_root, catalog):
+        codex_install.apply_codex_rule_blocks(plan.source, plan.agents_md_paths)
 
 
 def _rebuild_settings(manifest_path: Path, claude_dir: Path, catalog: Path) -> None:

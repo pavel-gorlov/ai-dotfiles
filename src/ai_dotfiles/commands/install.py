@@ -26,8 +26,10 @@ from ai_dotfiles.core import (
     symlinks,
 )
 from ai_dotfiles.core.codex_targets import (
+    CodexRulePlan,
     codex_skipped_domain_subdirs,
     iter_codex_pairs,
+    iter_codex_rule_plans,
 )
 from ai_dotfiles.core.dependencies import resolve_transitive
 from ai_dotfiles.core.elements import Element, ElementType
@@ -369,31 +371,34 @@ def _install_codex_target(
 
     Skills become ``.agents/skills/<name>/`` (generated ``SKILL.md`` +
     symlinked support files); agents become ``.codex/agents/<name>.toml``.
-    Domain ``rules/``/``hooks/`` have no Phase-1 Codex surface — the skip
-    is reported, not silent. With ``prune``, managed Codex files no
-    longer backed by the manifest are removed.
+    Rules dispatch by ``RuleClass`` (ADR ai-1-2): always-on / path-scoped
+    rules write managed blocks into one or more ``AGENTS.md`` files;
+    description-only rules render as synthetic ``rule-<name>`` skills.
+    Domain ``hooks/`` has no Codex surface — the skip is reported, not
+    silent. With ``prune``, managed Codex files no longer backed by the
+    manifest are removed.
     """
     ui.info("Codex target:")
     wanted_skills: set[Path] = set()
     wanted_agents: set[Path] = set()
+    wanted_rule_blocks: dict[Path, set[str]] = {}
 
     for element in parsed:
         for sub in codex_skipped_domain_subdirs(element, catalog):
             ui.warn(
                 f"@{element.name}: {sub}/ skipped for the Codex target "
-                f"(no Phase-1 Codex surface)."
+                f"(Codex has no hook harness)."
             )
-        pairs = iter_codex_pairs(element, project_root, catalog)
-        if not pairs and element.type is ElementType.RULE:
-            ui.warn(
-                f"{element.raw} skipped for the Codex target "
-                f"(rules have no Phase-1 Codex surface)."
-            )
-            continue
-        for pair in pairs:
+        for pair in iter_codex_pairs(element, project_root, catalog):
             if pair.element_type is ElementType.SKILL:
                 status = codex_install.install_codex_skill(
                     pair.source, pair.target, backup
+                )
+                wanted_skills.add(pair.target)
+                ui.success(f"skills/{pair.target.name} ({status})")
+            elif pair.element_type is ElementType.RULE:
+                status = codex_install.install_codex_rule_skill(
+                    pair.source, pair.target
                 )
                 wanted_skills.add(pair.target)
                 ui.success(f"skills/{pair.target.name} ({status})")
@@ -401,9 +406,35 @@ def _install_codex_target(
                 status = codex_install.install_codex_agent(pair.source, pair.target)
                 wanted_agents.add(pair.target)
                 ui.success(f"agents/{pair.target.name} ({status})")
+        for plan in iter_codex_rule_plans(element, project_root, catalog):
+            _apply_codex_rule_plan(plan, project_root, wanted_rule_blocks)
 
     if prune:
         _prune_codex_target(project_root, wanted_skills, wanted_agents)
+        _prune_codex_rule_blocks(project_root, wanted_rule_blocks)
+
+
+def _apply_codex_rule_plan(
+    plan: CodexRulePlan,
+    project_root: Path,
+    wanted_rule_blocks: dict[Path, set[str]],
+) -> None:
+    """Apply one rule's ``AGENTS.md`` block plan and record ownership."""
+    from ai_dotfiles.core.agents_md import rule_name_of
+
+    name = rule_name_of(plan.source)
+    codex_install.apply_codex_rule_blocks(plan.source, plan.agents_md_paths)
+    for agents_md_path in plan.agents_md_paths:
+        wanted_rule_blocks.setdefault(agents_md_path, set()).add(name)
+        ui.success(f"rules/{name} -> {_codex_label(agents_md_path, project_root)}")
+
+
+def _codex_label(path: Path, project_root: Path) -> str:
+    """Return a short, project-relative label for an ``AGENTS.md`` path."""
+    try:
+        return str(path.relative_to(project_root))
+    except ValueError:
+        return path.name
 
 
 def _prune_codex_target(
@@ -415,6 +446,8 @@ def _prune_codex_target(
 
     Only files carrying the ``# managed-by: ai-dotfiles`` header are
     touched — user-authored skills/agents in the same directories stay.
+    Synthetic ``rule-<name>`` skills carry the header too, so an orphaned
+    description-only rule's skill is pruned here like any other.
     """
     skills_dir = paths.project_codex_skills_dir(project_root)
     agents_dir = paths.project_codex_agents_dir(project_root)
@@ -439,6 +472,35 @@ def _prune_codex_target(
 
     for label in removed:
         ui.info(f"  - pruned Codex {label}")
+
+
+def _prune_codex_rule_blocks(
+    project_root: Path, wanted_rule_blocks: dict[Path, set[str]]
+) -> None:
+    """Strip managed ``AGENTS.md`` blocks no longer backed by the manifest.
+
+    Walks every ``AGENTS.md`` under the project that holds an ai-dotfiles
+    managed block; any block whose rule is no longer wanted (for that
+    file) is stripped. An ``AGENTS.md`` left whitespace-only is deleted.
+    User-authored text is preserved.
+    """
+    from ai_dotfiles.core.agents_md import AGENTS_FILENAME, iter_rule_block_names
+
+    removed: list[str] = []
+    for agents_md_path in sorted(project_root.rglob(AGENTS_FILENAME)):
+        if not agents_md_path.is_file():
+            continue
+        wanted = wanted_rule_blocks.get(agents_md_path, set())
+        for name in iter_rule_block_names(agents_md_path.read_text(encoding="utf-8")):
+            if name in wanted:
+                continue
+            if codex_install.remove_codex_rule_blocks(agents_md_path, name):
+                removed.append(
+                    f"{name} from {_codex_label(agents_md_path, project_root)}"
+                )
+
+    for label in removed:
+        ui.info(f"  - pruned Codex rule block {label}")
 
 
 def _provision_runtimes(parsed: list[Element], catalog: Path) -> bool:

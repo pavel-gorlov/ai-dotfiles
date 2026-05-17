@@ -29,7 +29,12 @@ import tomli_w
 from ai_dotfiles.core.errors import ElementError
 from ai_dotfiles.core.frontmatter import parse_frontmatter
 
-__all__ = ["render_agent_toml", "render_skill_md"]
+__all__ = [
+    "render_agent_toml",
+    "render_rule_skill_md",
+    "render_skill_md",
+    "split_body",
+]
 
 # Same leading ``---\n ... \n---\n`` block matched by the frontmatter
 # parser; reused here to split the body from the frontmatter.
@@ -52,8 +57,14 @@ def _header(source_text: str) -> str:
     return f"{_MANAGED_BY}\n# source-sha256: {_source_sha256(source_text)}\n"
 
 
-def _split_body(text: str) -> str:
-    """Return the markdown body of ``text`` (everything after frontmatter)."""
+def split_body(text: str) -> str:
+    """Return the markdown body of ``text`` (everything after frontmatter).
+
+    A catalog element is ``---\\n<yaml>\\n---\\n<body>``; this strips the
+    leading frontmatter block and returns the trimmed body. Text with no
+    frontmatter is returned trimmed unchanged. Shared by the Codex apply
+    layer (ai-11) so the body-extraction rule has a single home.
+    """
     match = _FRONTMATTER_RE.match(text)
     if match is None:
         return text.strip()
@@ -99,7 +110,7 @@ def render_agent_toml(md_path: Path) -> str:
     table: dict[str, Any] = {
         "name": name,
         "description": description,
-        "developer_instructions": _split_body(source_text),
+        "developer_instructions": split_body(source_text),
     }
     model = frontmatter.get("model")
     if isinstance(model, str) and model:
@@ -135,6 +146,49 @@ def render_skill_md(md_path: Path) -> str:
     body = source_text[match.end() :]
 
     return f"{_header(source_text)}---\n{trimmed}\n---\n{body}"
+
+
+def _rule_skill_description(rule_md: Path, body: str) -> str:
+    """Derive a one-sentence ``description`` for a synthetic rule skill.
+
+    A catalog rule rarely carries a ``description`` frontmatter field, so
+    the description is taken (in priority order) from an explicit
+    frontmatter ``description``, then the first non-heading sentence of
+    the rule body, and finally a generic fallback naming the rule.
+    """
+    explicit = parse_frontmatter(rule_md.read_text(encoding="utf-8")).get("description")
+    if isinstance(explicit, str) and explicit.strip():
+        return _first_sentence(explicit)
+
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            return _first_sentence(stripped)
+
+    return f"Project rule: {rule_md.stem}."
+
+
+def render_rule_skill_md(rule_md: Path) -> str:
+    """Render a description-only catalog rule as a Codex-only skill.
+
+    ADR ai-1-2: a rule that is neither always-on nor path-scoped maps
+    onto a synthetic Codex skill named ``rule-<stem>``. Catalog rules
+    have no ``SKILL.md`` shape (often no frontmatter at all), so this
+    synthesises ``name`` / ``description`` frontmatter — the description
+    trimmed to one sentence (ADR ai-1-4) — and keeps the rule body. The
+    managed-by + source-sha256 header (ADR ai-1-1) keys off the rule's
+    own content so drift detection works exactly as for a real skill.
+    """
+    source_text = rule_md.read_text(encoding="utf-8")
+    body = split_body(source_text)
+    description = _rule_skill_description(rule_md, body)
+    escaped = description.replace("\\", "\\\\").replace('"', '\\"')
+    name = f"rule-{rule_md.stem}"
+
+    return (
+        f"{_header(source_text)}"
+        f'---\nname: {name}\ndescription: "{escaped}"\n---\n\n{body}\n'
+    )
 
 
 def _trim_description_line(frontmatter_block: str, description: str) -> str:

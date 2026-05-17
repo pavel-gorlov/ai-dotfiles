@@ -27,18 +27,27 @@ import hashlib
 import shutil
 from pathlib import Path
 
-from ai_dotfiles.core.codex_render import render_agent_toml, render_skill_md
+from ai_dotfiles.core import agents_md
+from ai_dotfiles.core.codex_render import (
+    render_agent_toml,
+    render_rule_skill_md,
+    render_skill_md,
+    split_body,
+)
 from ai_dotfiles.core.errors import LinkError
 from ai_dotfiles.core.symlinks import safe_symlink
 
 __all__ = [
     "MANAGED_BY_HEADER",
-    "install_codex_skill",
+    "apply_codex_rule_blocks",
     "install_codex_agent",
+    "install_codex_rule_skill",
+    "install_codex_skill",
     "is_managed",
     "is_stale",
-    "remove_codex_skill",
     "remove_codex_agent",
+    "remove_codex_rule_blocks",
+    "remove_codex_skill",
 ]
 
 # The marker line every generated Codex file starts with. Mirrors
@@ -197,4 +206,98 @@ def remove_codex_skill(target_dir: Path) -> bool:
         shutil.rmtree(target_dir)
     except OSError as exc:
         raise LinkError(f"Failed to remove Codex skill {target_dir}: {exc}") from exc
+    return True
+
+
+# ── Rules: AGENTS.md blocks + synthetic rule-<name> skills ─────────────
+#
+# Phase 2 (epic ai-1, ADR ai-1-2). A catalog rule has no single Codex
+# artefact — it dispatches by :class:`~ai_dotfiles.core.rule_classify.RuleClass`:
+#
+# * ``ALWAYS_ON`` / ``PATH_SCOPED`` -> managed blocks in one or more
+#   ``AGENTS.md`` files (assembled by :mod:`ai_dotfiles.core.agents_md`);
+# * ``DESCRIPTION_ONLY`` -> a synthetic Codex-only skill ``rule-<name>``.
+#
+# These wrap the pure :mod:`agents_md` helpers with the side-effecting
+# write/delete the command layer needs.
+
+
+def install_codex_rule_skill(rule_md: Path, target_dir: Path) -> str:
+    """Render a description-only rule into a synthetic Codex skill.
+
+    ``target_dir`` (``.agents/skills/rule-<name>/``) is created as a real
+    directory holding a single generated ``SKILL.md`` — the rule body
+    wrapped in synthesised ``name`` / ``description`` frontmatter (ADR
+    ai-1-2). Unlike a catalog skill it has no support files to symlink.
+    The generated ``SKILL.md`` carries the managed-by + source-sha256
+    header so :func:`remove_codex_skill` and drift detection key off it.
+
+    Returns ``"created"`` or ``"updated"``.
+
+    Raises:
+        LinkError: if the skill directory cannot be materialised.
+    """
+    rendered = render_rule_skill_md(rule_md)
+    existed = target_dir.exists()
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / _SKILL_FILE).write_text(rendered, encoding="utf-8")
+    except OSError as exc:
+        raise LinkError(
+            f"Failed to write Codex rule skill {target_dir / _SKILL_FILE}: {exc}"
+        ) from exc
+    return "updated" if existed else "created"
+
+
+def apply_codex_rule_blocks(rule_md: Path, agents_md_paths: list[Path]) -> list[Path]:
+    """Upsert a rule's managed block into each ``AGENTS.md`` in the list.
+
+    The rule body (frontmatter stripped via
+    :func:`~ai_dotfiles.core.codex_render.split_body`) is written as an
+    ai-dotfiles managed block — idempotently — into every path in
+    ``agents_md_paths`` (the project-root ``AGENTS.md`` for an always-on
+    rule, one nested ``<dir>/AGENTS.md`` per ``paths:`` entry for a
+    path-scoped rule). User-authored text in those files is preserved.
+
+    Returns the subset of ``agents_md_paths`` that were actually written
+    (a no-op on an unchanged block is excluded).
+    """
+    name = agents_md.rule_name_of(rule_md)
+    body = split_body(rule_md.read_text(encoding="utf-8"))
+    written: list[Path] = []
+    for path in agents_md_paths:
+        try:
+            if agents_md.upsert_rule_block(path, name, body):
+                written.append(path)
+        except OSError as exc:
+            raise LinkError(f"Failed to write rule block to {path}: {exc}") from exc
+    return written
+
+
+def remove_codex_rule_blocks(agents_md_path: Path, rule_name: str) -> bool:
+    """Strip rule ``rule_name``'s managed block from one ``AGENTS.md``.
+
+    Only the block delimited by the rule's ai-dotfiles markers is
+    removed; surrounding user-authored text is preserved. An
+    ``AGENTS.md`` left whitespace-only after the strip is deleted — it
+    held nothing but ai-dotfiles content. Returns ``True`` if the file
+    was rewritten or deleted, ``False`` if there was nothing to strip.
+    """
+    if not agents_md_path.is_file():
+        return False
+    text = agents_md_path.read_text(encoding="utf-8")
+    if rule_name not in agents_md.iter_rule_block_names(text):
+        return False
+
+    stripped = agents_md.strip_rule_blocks(text, {rule_name})
+    try:
+        if stripped.strip():
+            agents_md_path.write_text(stripped, encoding="utf-8")
+        else:
+            agents_md_path.unlink()
+    except OSError as exc:
+        raise LinkError(
+            f"Failed to update {agents_md_path} while removing rule "
+            f"{rule_name!r}: {exc}"
+        ) from exc
     return True

@@ -100,6 +100,20 @@ def _make_agent(catalog: Path, name: str) -> Path:
     return path
 
 
+# Rule fixtures, one per RuleClass (epic ai-1 Phase 2 / ADR ai-1-2).
+_RULE_ALWAYS_ON = "---\nalways_on: true\n---\n\n# Principles\n\nAlways-loaded.\n"
+_RULE_PATH_SCOPED = (
+    "---\npaths:\n  - src/api\n---\n\n# API rule\n\nScoped to the API.\n"
+)
+_RULE_DESC_ONLY = "# Commit style\n\nUse Conventional Commits for every commit.\n"
+
+
+def _make_rule(catalog: Path, name: str, text: str) -> Path:
+    path = catalog / "rules" / f"{name}.md"
+    _write(path, text)
+    return path
+
+
 def _write_manifest(
     path: Path, packages: list[str], *, targets: list[str] | None = None
 ) -> None:
@@ -323,3 +337,101 @@ def test_remove_touches_only_that_elements_codex_artefact(
     # The removed agent is gone; the untouched skill remains.
     assert not (project / ".codex" / "agents" / "researcher.toml").exists()
     assert (project / ".agents" / "skills" / "commit" / "SKILL.md").is_file()
+
+
+# ── Rules through the full CLI (Phase 2, ADR ai-1-2) ──────────────────────
+
+
+def test_cli_install_always_on_rule_writes_root_agents_md(
+    project: Path, catalog: Path
+) -> None:
+    """``ai-dotfiles install`` lands an always-on rule in the root AGENTS.md."""
+    _make_rule(catalog, "principles", _RULE_ALWAYS_ON)
+    _write_manifest(
+        project / "ai-dotfiles.json", ["rule:principles"], targets=["codex"]
+    )
+
+    code, out, _ = _run(project, "install")
+    assert code == 0, out
+    assert "<!-- ai-dotfiles:rule:principles START -->" in (
+        project / "AGENTS.md"
+    ).read_text(encoding="utf-8")
+
+
+def test_cli_install_path_scoped_rule_writes_nested_agents_md(
+    project: Path, catalog: Path
+) -> None:
+    """A path-scoped rule lands in <dir>/AGENTS.md, not the project root."""
+    _make_rule(catalog, "api", _RULE_PATH_SCOPED)
+    _write_manifest(project / "ai-dotfiles.json", ["rule:api"], targets=["codex"])
+
+    code, out, _ = _run(project, "install")
+    assert code == 0, out
+    assert (project / "src" / "api" / "AGENTS.md").is_file()
+    assert not (project / "AGENTS.md").exists()
+
+
+def test_cli_install_description_only_rule_is_codex_only_skill(
+    project: Path, catalog: Path
+) -> None:
+    """A description-only rule renders as a Codex-only ``rule-<name>`` skill."""
+    _make_rule(catalog, "commit-style", _RULE_DESC_ONLY)
+    _write_manifest(
+        project / "ai-dotfiles.json",
+        ["rule:commit-style"],
+        targets=["claude", "codex"],
+    )
+
+    code, out, _ = _run(project, "install")
+    assert code == 0, out
+    assert (project / ".agents" / "skills" / "rule-commit-style" / "SKILL.md").is_file()
+    # ADR ai-1-2: never installed for the Claude target.
+    assert not (project / ".claude" / "skills" / "rule-commit-style").exists()
+
+
+def test_cli_install_no_rule_skip_message(project: Path, catalog: Path) -> None:
+    """The Phase-1 'rules skipped for the Codex target' message is gone."""
+    _make_rule(catalog, "principles", _RULE_ALWAYS_ON)
+    _write_manifest(
+        project / "ai-dotfiles.json", ["rule:principles"], targets=["codex"]
+    )
+
+    code, out, _ = _run(project, "install")
+    assert code == 0
+    assert "rules have no" not in out
+    assert "skipped for the Codex target" not in out
+
+
+def test_cli_add_then_remove_rule_round_trips(project: Path, catalog: Path) -> None:
+    """``add`` writes a rule's AGENTS.md block; ``remove`` strips it again."""
+    _make_rule(catalog, "principles", _RULE_ALWAYS_ON)
+    _write_manifest(project / "ai-dotfiles.json", [], targets=["codex"])
+
+    assert _run(project, "add", "rule:principles")[0] == 0
+    assert "ai-dotfiles:rule:principles" in (project / "AGENTS.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert _run(project, "remove", "rule:principles")[0] == 0
+    # The AGENTS.md held only the managed block — it is removed entirely.
+    assert not (project / "AGENTS.md").exists()
+
+
+def test_cli_status_reports_rule_classes(project: Path, catalog: Path) -> None:
+    """``status`` shows always-on / path-scoped / description-only rules OK."""
+    _make_rule(catalog, "principles", _RULE_ALWAYS_ON)
+    _make_rule(catalog, "api", _RULE_PATH_SCOPED)
+    _make_rule(catalog, "commit-style", _RULE_DESC_ONLY)
+    _write_manifest(
+        project / "ai-dotfiles.json",
+        ["rule:principles", "rule:api", "rule:commit-style"],
+        targets=["codex"],
+    )
+    assert _run(project, "install")[0] == 0
+
+    code, out, _ = _run(project, "status")
+    assert code == 0, out
+    assert "rules/principles" in out
+    assert "rules/api" in out
+    assert "skills/rule-commit-style" in out
+    assert "NOT INSTALLED" not in out
