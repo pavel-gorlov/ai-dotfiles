@@ -18,6 +18,7 @@ import click
 
 from ai_dotfiles import ui
 from ai_dotfiles.core import (
+    codex_config,
     codex_install,
     elements,
     manifest,
@@ -185,7 +186,7 @@ def _install_project(
                 linked_items.extend(_link_element(element, claude_dir, catalog, backup))
 
         if "codex" in targets:
-            _install_codex_target(parsed, root, catalog, backup, prune=prune)
+            _install_codex_target(parsed, packages, root, catalog, backup, prune=prune)
 
         any_shim = _provision_runtimes(parsed, catalog)
 
@@ -361,6 +362,7 @@ def _link_element(
 
 def _install_codex_target(
     parsed: list[Element],
+    packages: list[str],
     project_root: Path,
     catalog: Path,
     backup: Path,
@@ -374,9 +376,11 @@ def _install_codex_target(
     Rules dispatch by ``RuleClass`` (ADR ai-1-2): always-on / path-scoped
     rules write managed blocks into one or more ``AGENTS.md`` files;
     description-only rules render as synthetic ``rule-<name>`` skills.
-    Domain ``hooks/`` has no Codex surface — the skip is reported, not
-    silent. With ``prune``, managed Codex files no longer backed by the
-    manifest are removed.
+    Domain ``settings.fragment.json`` permissions / sandbox keys land in
+    the managed region of ``.codex/config.toml`` (ADR ai-1-5); ``hooks``
+    and domain ``hooks/`` have no Codex surface — the skip is reported,
+    not silent. With ``prune``, managed Codex files no longer backed by
+    the manifest are removed.
     """
     ui.info("Codex target:")
     wanted_skills: set[Path] = set()
@@ -409,9 +413,45 @@ def _install_codex_target(
         for plan in iter_codex_rule_plans(element, project_root, catalog):
             _apply_codex_rule_plan(plan, project_root, wanted_rule_blocks)
 
+    _write_codex_config(packages, project_root, catalog)
+
     if prune:
         _prune_codex_target(project_root, wanted_skills, wanted_agents)
         _prune_codex_rule_blocks(project_root, wanted_rule_blocks)
+
+
+def _codex_fragment_pairs(packages: list[str], catalog: Path) -> list[tuple[str, Path]]:
+    """Pair each domain ``settings.fragment.json`` with its domain name.
+
+    Reuses :func:`settings_merge.collect_domain_fragments` (topological
+    order) and derives the domain name from the fragment's parent
+    directory — the catalog layout is ``catalog/<domain>/settings...``.
+    """
+    fragments = settings_merge.collect_domain_fragments(packages, catalog)
+    return [(path.parent.name, path) for path in fragments]
+
+
+def _write_codex_config(packages: list[str], project_root: Path, catalog: Path) -> None:
+    """Translate domain fragments into ``.codex/config.toml`` (ADR ai-1-5).
+
+    Permissions / sandbox keys land in the managed config region;
+    ``hooks`` have no Codex equivalent and are skipped with an explicit
+    fail-loud message naming each domain that carried them.
+    """
+    result = codex_config.write_codex_config(
+        project_root, _codex_fragment_pairs(packages, catalog)
+    )
+    if result.status == "created":
+        ui.success("config.toml (managed region created)")
+    elif result.status == "updated":
+        ui.success("config.toml (managed region updated)")
+    for domain_name, keys in sorted(result.skipped_keys.items()):
+        joined = ", ".join(keys)
+        ui.warn(
+            f"@{domain_name}: settings.fragment.json '{joined}' skipped for "
+            f"the Codex target (no config.toml equivalent — Codex has no "
+            f"hook harness)."
+        )
 
 
 def _apply_codex_rule_plan(
