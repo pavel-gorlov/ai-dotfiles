@@ -107,6 +107,21 @@ _RULE_PATH_SCOPED = (
 )
 _RULE_DESC_ONLY = "# Commit style\n\nUse Conventional Commits for every commit.\n"
 
+# A rule whose ``paths:`` are file globs — the real catalog shape
+# (``@fastapi`` / ``@playwright-e2e`` / ``@typescript`` all look like
+# this). Codex has no file-glob-scoped AGENTS.md surface, so this must
+# classify description-only and NEVER create a literal-glob directory
+# tree (the ai-18 bug).
+_RULE_GLOB_PATHS = (
+    "---\n"
+    "paths:\n"
+    '  - "**/*.py"\n'
+    '  - "**/playwright.config.ts"\n'
+    '  - "**/tests/e2e/**"\n'
+    "---\n\n"
+    "# Glob-scoped rule\n\nFile-type-scoped policy.\n"
+)
+
 
 def _make_rule(catalog: Path, name: str, text: str) -> Path:
     path = catalog / "rules" / f"{name}.md"
@@ -491,6 +506,64 @@ def test_cli_add_then_remove_rule_round_trips(project: Path, catalog: Path) -> N
 
     assert _run(project, "remove", "rule:principles")[0] == 0
     # The AGENTS.md held only the managed block — it is removed entirely.
+    assert not (project / "AGENTS.md").exists()
+
+
+# ── Regression: glob `paths:` must not create literal-glob dirs (ai-18) ───
+
+
+def _has_glob_metachar(name: str) -> bool:
+    return any(ch in name for ch in "*?[]")
+
+
+def test_cli_install_glob_paths_rule_creates_no_glob_dirs(
+    project: Path, catalog: Path
+) -> None:
+    """A rule with file-glob ``paths:`` must not create a ``**`` dir tree.
+
+    Regression for ai-18: ``install`` on a project whose domain rule
+    carries file globs (``**/*.py`` …) used to ``mkdir`` literal-glob
+    directories and write garbage ``AGENTS.md`` files at nonsense paths.
+    The rule must instead render as a Codex-only ``rule-<name>`` skill,
+    and *no* directory whose name contains a glob metacharacter may
+    appear anywhere under the project.
+    """
+    _make_rule(catalog, "globby", _RULE_GLOB_PATHS)
+    _write_manifest(project / "ai-dotfiles.json", ["rule:globby"], targets=["codex"])
+
+    code, out, _ = _run(project, "install")
+    assert code == 0, out
+
+    # The rule rendered as the Codex-native description-triggered skill.
+    assert (project / ".agents" / "skills" / "rule-globby" / "SKILL.md").is_file()
+    # No nested AGENTS.md was assembled — there is no directory surface.
+    assert not (project / "AGENTS.md").exists()
+
+    # The load-bearing assertion: walk the whole project tree and prove
+    # no directory carries a glob metacharacter in its name.
+    offenders = [
+        str(path.relative_to(project))
+        for path in project.rglob("*")
+        if path.is_dir() and _has_glob_metachar(path.name)
+    ]
+    assert offenders == [], f"glob-named directories created: {offenders}"
+
+
+def test_cli_install_mixed_glob_dir_rule_renders_as_skill(
+    project: Path, catalog: Path
+) -> None:
+    """All-or-nothing: one glob entry demotes the whole rule to a skill."""
+    mixed = "---\npaths:\n  - backend\n  - '**/*.spec.ts'\n---\n\n# Mixed\n\nBody.\n"
+    _make_rule(catalog, "mixed", mixed)
+    _write_manifest(project / "ai-dotfiles.json", ["rule:mixed"], targets=["codex"])
+
+    code, out, _ = _run(project, "install")
+    assert code == 0, out
+
+    assert (project / ".agents" / "skills" / "rule-mixed" / "SKILL.md").is_file()
+    # The literal `backend` dir must NOT get a nested AGENTS.md — the
+    # rule is rendered one way, as a skill.
+    assert not (project / "backend").exists()
     assert not (project / "AGENTS.md").exists()
 
 

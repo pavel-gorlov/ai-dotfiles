@@ -20,7 +20,12 @@ wiring the render into commands (ai-11) live elsewhere.
 
 Two optional rule-frontmatter fields drive the classification:
 
-* ``paths:`` — a list of directory globs the rule is scoped to.
+* ``paths:`` — a list of paths the rule is scoped to. Only entries that
+  are *literal, glob-free directory paths* can become a nested
+  ``AGENTS.md``; an entry with a glob metacharacter (``*``, ``?``,
+  ``[``, ``]`` — so ``**`` too) has no ``AGENTS.md`` surface. The
+  classification is all-or-nothing: one glob entry demotes the whole
+  rule to :data:`RuleClass.DESCRIPTION_ONLY`.
 * ``always_on:`` — a boolean; ``true`` marks an always-loaded rule.
 
 Both are explicit: always-on is *never* inferred from prose such as
@@ -36,7 +41,14 @@ from typing import Any
 from ai_dotfiles.core.errors import ElementError
 from ai_dotfiles.core.frontmatter import parse_frontmatter
 
-__all__ = ["RuleClass", "classify_rule"]
+__all__ = ["GLOB_METACHARS", "RuleClass", "classify_rule", "is_glob_free_dir"]
+
+# Glob metacharacters. A ``paths:`` entry carrying any of these is *not*
+# a literal directory and so cannot map to a nested ``AGENTS.md``
+# location: Codex discovers ``AGENTS.md`` by walking the directory tree
+# root->cwd, it has no file-glob-scoped instruction surface. ``**`` is
+# covered by ``*`` being in the set.
+GLOB_METACHARS: frozenset[str] = frozenset("*?[]")
 
 
 class RuleClass(Enum):
@@ -68,14 +80,38 @@ def _truthy(value: Any) -> bool:
     return False
 
 
+def is_glob_free_dir(raw: str) -> bool:
+    """Return True if ``raw`` is a literal directory path — no glob.
+
+    A ``paths:`` entry maps to a nested ``<dir>/AGENTS.md`` only when it
+    names a real directory. An entry carrying any :data:`GLOB_METACHARS`
+    metacharacter (``*``, ``?``, ``[``, ``]`` — so ``**`` too) is a file
+    glob, not a directory: Codex cannot pre-place an ``AGENTS.md`` at "any
+    matching path", so such an entry has no ``AGENTS.md`` surface. An
+    empty / whitespace-only entry is also rejected.
+    """
+    cleaned = raw.strip()
+    if not cleaned:
+        return False
+    return not any(ch in GLOB_METACHARS for ch in cleaned)
+
+
 def classify_rule(md_path: Path) -> RuleClass:
     """Classify the rule markdown file at ``md_path`` into a :class:`RuleClass`.
 
     Classification, in priority order:
 
-    1. A non-empty ``paths:`` list ⇒ :data:`RuleClass.PATH_SCOPED`. A
-       rule scoped to directories is inherently conditional, so ``paths:``
-       wins even when ``always_on: true`` is also present.
+    1. A non-empty ``paths:`` list whose **every** entry is a glob-free
+       directory path ⇒ :data:`RuleClass.PATH_SCOPED`. A rule scoped to
+       directories is inherently conditional, so ``paths:`` wins even
+       when ``always_on: true`` is also present.
+
+       If *any* entry contains a glob metacharacter the whole rule falls
+       through to :data:`RuleClass.DESCRIPTION_ONLY` — all-or-nothing.
+       File globs (``**/*.py``, ``**/playwright.config.ts``) have no
+       ``AGENTS.md`` surface in Codex, and half-applying a mixed rule is
+       unpredictable; the description-triggered ``rule-<name>`` skill is
+       the Codex-native fallback.
     2. Otherwise ``always_on: true`` ⇒ :data:`RuleClass.ALWAYS_ON`.
     3. Otherwise ⇒ :data:`RuleClass.DESCRIPTION_ONLY` (the default — a
        rule with neither field, which is every un-migrated catalog rule).
@@ -89,7 +125,14 @@ def classify_rule(md_path: Path) -> RuleClass:
     frontmatter = parse_frontmatter(md_path.read_text(encoding="utf-8"))
 
     paths = frontmatter.get("paths")
-    if isinstance(paths, list) and len(paths) > 0:
+    # Non-empty ``paths:`` whose every entry is a glob-free directory.
+    # One glob entry ⇒ no AGENTS.md surface ⇒ fall through to the
+    # always-on / description-only branches below (all-or-nothing).
+    if (
+        isinstance(paths, list)
+        and len(paths) > 0
+        and all(is_glob_free_dir(str(entry)) for entry in paths)
+    ):
         return RuleClass.PATH_SCOPED
 
     if _truthy(frontmatter.get("always_on")):
