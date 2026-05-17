@@ -14,16 +14,25 @@ Two element types have a Phase-1 Codex surface:
 * an **agent** materialises as a single generated
   ``.codex/agents/<name>.toml`` file.
 
-Every generated file carries the two-line drift header emitted by the
-render layer — line 1 ``# managed-by: ai-dotfiles``, line 2
-``# source-sha256: <hex>``. Removal and staleness checks key off that
-header so user-authored files in the same directories are never
-touched.
+Drift detection (ADR ai-1-1) records the SHA-256 of the catalog source.
+The marker is carried differently by the two targets:
+
+* an agent ``.toml`` keeps a two-line ``# managed-by`` / ``# source-sha256``
+  comment header — ``#`` is a valid TOML comment;
+* a skill ``SKILL.md`` must start with ``---`` on line 1 for Codex's
+  frontmatter parser to recognise it (ai-19), so its marker lives in a
+  per-skill ``.ai-dotfiles-meta`` JSON sidecar written next to it.
+
+Removal and staleness checks key off the appropriate marker — the
+header for an agent, the sidecar for a skill — so user-authored files
+in the same directories are never touched. A skill directory with no
+``.ai-dotfiles-meta`` sidecar is user-authored and never pruned.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 from pathlib import Path
 
@@ -32,6 +41,7 @@ from ai_dotfiles.core.codex_render import (
     render_agent_toml,
     render_rule_skill_md,
     render_skill_md,
+    source_sha256,
     split_body,
 )
 from ai_dotfiles.core.errors import LinkError
@@ -39,26 +49,84 @@ from ai_dotfiles.core.symlinks import safe_symlink
 
 __all__ = [
     "MANAGED_BY_HEADER",
+    "SKILL_META_FILENAME",
     "apply_codex_rule_blocks",
     "install_codex_agent",
     "install_codex_rule_skill",
     "install_codex_skill",
     "is_managed",
+    "is_managed_skill",
     "is_stale",
     "remove_codex_agent",
     "remove_codex_rule_blocks",
     "remove_codex_skill",
 ]
 
-# The marker line every generated Codex file starts with. Mirrors
-# ``codex_render._MANAGED_BY`` — kept as a public constant here so the
-# command layer can refer to "managed" files without importing a
-# private name from the render module.
+# The marker line every generated Codex agent ``.toml`` starts with.
+# Mirrors ``codex_render._MANAGED_BY`` — kept as a public constant here
+# so the command layer can refer to "managed" agents without importing
+# a private name from the render module.
 MANAGED_BY_HEADER = "# managed-by: ai-dotfiles"
 
 # The skill SKILL.md filename. The support files/dirs that get
 # symlinked are everything else in the catalog skill directory.
 _SKILL_FILE = "SKILL.md"
+
+# Per-skill sidecar holding the drift/ownership marker (ai-19). A
+# generated ``SKILL.md`` must start with ``---`` on line 1, so the
+# ``# managed-by`` / ``# source-sha256`` marker that an agent ``.toml``
+# keeps in a comment header instead lives in this JSON file next to the
+# generated ``SKILL.md``. Its presence marks the skill dir as managed.
+SKILL_META_FILENAME = ".ai-dotfiles-meta"
+
+# Identifier stored in the sidecar's ``managed_by`` field.
+_MANAGED_BY_VALUE = "ai-dotfiles"
+
+
+def _skill_meta_path(target_dir: Path) -> Path:
+    """Return the ``.ai-dotfiles-meta`` sidecar path for a skill directory."""
+    return target_dir / SKILL_META_FILENAME
+
+
+def _write_skill_meta(target_dir: Path, source_text: str) -> None:
+    """Write the skill drift/ownership sidecar next to the generated SKILL.md.
+
+    The sidecar is a small JSON object — ``{"managed_by": "ai-dotfiles",
+    "source_sha256": "<hex>"}`` — recording the SHA-256 of the catalog
+    source. ``remove`` / ``prune`` treat its presence as the
+    ai-dotfiles-managed marker; :func:`is_stale` reads ``source_sha256``.
+    """
+    payload = {
+        "managed_by": _MANAGED_BY_VALUE,
+        "source_sha256": source_sha256(source_text),
+    }
+    meta_path = _skill_meta_path(target_dir)
+    try:
+        meta_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    except OSError as exc:
+        raise LinkError(
+            f"Failed to write Codex skill sidecar {meta_path}: {exc}"
+        ) from exc
+
+
+def _read_skill_meta(target_dir: Path) -> dict[str, str] | None:
+    """Return the parsed skill sidecar, or ``None`` if absent/unreadable.
+
+    A skill directory without a readable sidecar is treated as
+    user-authored — never pruned, always considered stale.
+    """
+    meta_path = _skill_meta_path(target_dir)
+    try:
+        raw = meta_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return {str(k): str(v) for k, v in data.items()}
 
 
 def _read_header_lines(path: Path) -> list[str]:
@@ -71,11 +139,14 @@ def _read_header_lines(path: Path) -> list[str]:
 
 
 def is_managed(path: Path) -> bool:
-    """Return True if ``path`` is a generated file ai-dotfiles owns.
+    """Return True if ``path`` is a generated agent ``.toml`` ai-dotfiles owns.
 
-    A file is "managed" when its first line is the
-    :data:`MANAGED_BY_HEADER` marker. User-authored files in the same
-    directory have no such header and are therefore left alone.
+    An agent ``.toml`` is "managed" when its first line is the
+    :data:`MANAGED_BY_HEADER` comment marker. User-authored ``.toml``
+    files in the same directory have no such header and are left alone.
+
+    Skills carry their marker in a ``.ai-dotfiles-meta`` sidecar, not an
+    in-file header — use :func:`is_managed_skill` for a skill directory.
     """
     if not path.is_file():
         return False
@@ -83,32 +154,74 @@ def is_managed(path: Path) -> bool:
     return bool(lines) and lines[0] == MANAGED_BY_HEADER
 
 
+def is_managed_skill(target_dir: Path) -> bool:
+    """Return True if ``target_dir`` is an ai-dotfiles-managed Codex skill.
+
+    A skill directory is managed when it holds a ``.ai-dotfiles-meta``
+    sidecar with ``managed_by == "ai-dotfiles"`` (ai-19). A skill
+    directory without the sidecar is user-authored and must never be
+    pruned or removed.
+    """
+    if not target_dir.is_dir():
+        return False
+    meta = _read_skill_meta(target_dir)
+    return meta is not None and meta.get("managed_by") == _MANAGED_BY_VALUE
+
+
 def _source_sha256(text: str) -> str:
     """Return the hex SHA-256 of ``text`` encoded as UTF-8."""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def is_stale(generated_path: Path, source_path: Path) -> bool:
-    """Return True if ``generated_path`` no longer matches its source.
-
-    Reads the ``# source-sha256`` header line of the generated file and
-    compares it to a fresh hash of ``source_path``'s current content
-    (ADR ai-1-1 drift detection). A generated file with no readable
-    header, or a missing source, counts as stale — the safe answer that
-    nudges the user toward a regenerating ``install``.
-    """
-    if not generated_path.is_file():
-        return True
+def _agent_is_stale(generated_path: Path, source_path: Path) -> bool:
+    """Drift check for an agent ``.toml`` — compares the header SHA line."""
     lines = _read_header_lines(generated_path)
     if len(lines) < 2 or not lines[1].startswith("# source-sha256: "):
         return True
     recorded = lines[1].removeprefix("# source-sha256: ").strip()
-
     try:
         source_text = source_path.read_text(encoding="utf-8")
     except OSError:
         return True
     return recorded != _source_sha256(source_text)
+
+
+def _skill_is_stale(skill_md_path: Path, source_path: Path) -> bool:
+    """Drift check for a skill — compares the sidecar SHA to the source."""
+    meta = _read_skill_meta(skill_md_path.parent)
+    if meta is None:
+        return True
+    recorded = meta.get("source_sha256")
+    if not recorded:
+        return True
+    try:
+        source_text = source_path.read_text(encoding="utf-8")
+    except OSError:
+        return True
+    return recorded != _source_sha256(source_text)
+
+
+def is_stale(generated_path: Path, source_path: Path) -> bool:
+    """Return True if ``generated_path`` no longer matches its source.
+
+    Drift detection (ADR ai-1-1). The recorded SHA-256 of the catalog
+    source is compared to a fresh hash of ``source_path``'s current
+    content. The recorded value lives in a different place per target,
+    so this dispatches on the generated artefact:
+
+    * an agent ``.toml`` — read the ``# source-sha256`` comment header;
+    * a skill ``SKILL.md`` — read ``source_sha256`` from the sibling
+      ``.ai-dotfiles-meta`` sidecar (ai-19).
+
+    A missing generated file, an unreadable marker, or a missing source
+    counts as stale — the safe answer that nudges the user toward a
+    regenerating ``install``.
+    """
+    if not generated_path.is_file():
+        return True
+    if generated_path.name == _SKILL_FILE:
+        return _skill_is_stale(generated_path, source_path)
+    return _agent_is_stale(generated_path, source_path)
 
 
 def install_codex_agent(source_md: Path, target_toml: Path) -> str:
@@ -151,6 +264,10 @@ def install_codex_skill(source_dir: Path, target_dir: Path, backup: Path) -> str
     trimmed description (ADR ai-1-4); every other catalog file/dir
     (``scripts/``, ``references/``, ``assets/`` …) is symlinked into it.
 
+    The generated ``SKILL.md`` starts with ``---`` on line 1 (ai-19);
+    the drift/ownership marker is written to a ``.ai-dotfiles-meta``
+    sidecar next to it. Re-installing overwrites both cleanly.
+
     Returns ``"created"`` or ``"updated"``.
 
     Raises:
@@ -159,6 +276,7 @@ def install_codex_skill(source_dir: Path, target_dir: Path, backup: Path) -> str
     """
     source_skill_md = source_dir / _SKILL_FILE
     rendered = render_skill_md(source_skill_md)
+    source_text = source_skill_md.read_text(encoding="utf-8")
 
     existed = target_dir.exists()
     try:
@@ -168,6 +286,7 @@ def install_codex_skill(source_dir: Path, target_dir: Path, backup: Path) -> str
         raise LinkError(
             f"Failed to write Codex skill {target_dir / _SKILL_FILE}: {exc}"
         ) from exc
+    _write_skill_meta(target_dir, source_text)
 
     for item in _skill_support_items(source_dir):
         safe_symlink(item, target_dir / item.name, backup)
@@ -193,14 +312,15 @@ def remove_codex_agent(target_toml: Path) -> bool:
 def remove_codex_skill(target_dir: Path) -> bool:
     """Delete a managed Codex skill directory. Return True if removed.
 
-    A skill directory is removed only when its ``SKILL.md`` is managed
-    (carries the :data:`MANAGED_BY_HEADER`). The directory's symlinked
+    A skill directory is removed only when it carries the
+    ``.ai-dotfiles-meta`` sidecar marking it ai-dotfiles-managed
+    (ai-19) — see :func:`is_managed_skill`. The directory's symlinked
     support files point back into the read-only catalog, so removing the
     directory tree only drops the symlinks, never the catalog content.
-    A user-authored ``.agents/skills/<name>/`` is left untouched.
+    A user-authored ``.agents/skills/<name>/`` (no sidecar) is left
+    untouched.
     """
-    skill_md = target_dir / _SKILL_FILE
-    if not is_managed(skill_md):
+    if not is_managed_skill(target_dir):
         return False
     try:
         shutil.rmtree(target_dir)
@@ -229,8 +349,9 @@ def install_codex_rule_skill(rule_md: Path, target_dir: Path) -> str:
     directory holding a single generated ``SKILL.md`` — the rule body
     wrapped in synthesised ``name`` / ``description`` frontmatter (ADR
     ai-1-2). Unlike a catalog skill it has no support files to symlink.
-    The generated ``SKILL.md`` carries the managed-by + source-sha256
-    header so :func:`remove_codex_skill` and drift detection key off it.
+    The generated ``SKILL.md`` starts with ``---`` on line 1 (ai-19);
+    the drift/ownership marker goes to a ``.ai-dotfiles-meta`` sidecar so
+    :func:`remove_codex_skill` and drift detection key off it.
 
     Returns ``"created"`` or ``"updated"``.
 
@@ -238,6 +359,7 @@ def install_codex_rule_skill(rule_md: Path, target_dir: Path) -> str:
         LinkError: if the skill directory cannot be materialised.
     """
     rendered = render_rule_skill_md(rule_md)
+    source_text = rule_md.read_text(encoding="utf-8")
     existed = target_dir.exists()
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -246,6 +368,7 @@ def install_codex_rule_skill(rule_md: Path, target_dir: Path) -> str:
         raise LinkError(
             f"Failed to write Codex rule skill {target_dir / _SKILL_FILE}: {exc}"
         ) from exc
+    _write_skill_meta(target_dir, source_text)
     return "updated" if existed else "created"
 
 

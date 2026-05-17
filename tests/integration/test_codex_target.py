@@ -190,11 +190,15 @@ def test_codex_skill_is_real_dir_with_generated_skill_md(
 
     skill_md = skill_dir / "SKILL.md"
     assert skill_md.is_file() and not skill_md.is_symlink()
-    lines = skill_md.read_text(encoding="utf-8").splitlines()
-    assert lines[0] == MANAGED_BY_HEADER
-    assert lines[1].startswith("# source-sha256: ")
-    # ADR ai-1-4: the description is trimmed to its first sentence.
     body = skill_md.read_text(encoding="utf-8")
+    # ai-19: SKILL.md starts with '---' on line 1 — no '#' drift header.
+    assert body.splitlines()[0] == "---"
+    assert "# managed-by" not in body
+    # The drift/ownership marker lives in the .ai-dotfiles-meta sidecar.
+    meta = json.loads((skill_dir / ".ai-dotfiles-meta").read_text(encoding="utf-8"))
+    assert meta["managed_by"] == "ai-dotfiles"
+    assert meta["source_sha256"]
+    # ADR ai-1-4: the description is trimmed to its first sentence.
     assert 'description: "First sentence here."' in body
 
 
@@ -293,6 +297,28 @@ def test_status_flips_to_stale_when_catalog_source_changes(
     # Mutate the catalog source — the recorded source-sha256 no longer matches.
     agent_md.write_text(
         _AGENT_MD.format(name="researcher") + "\nAn extra paragraph.\n",
+        encoding="utf-8",
+    )
+
+    code, out, _ = _run(status, project)
+    assert code == 1
+    assert "STALE" in out
+
+
+def test_status_flips_skill_to_stale_via_sidecar(project: Path, catalog: Path) -> None:
+    """ai-19: skill drift detection works through the .ai-dotfiles-meta sidecar.
+
+    The skill SKILL.md carries no '#' header — its source-sha256 lives in
+    the sidecar. Mutating the catalog source must still flip status STALE.
+    """
+    skill = _make_skill(catalog, "commit")
+    _write_manifest(project / "ai-dotfiles.json", ["skill:commit"], targets=["codex"])
+    assert _run(install, project)[0] == 0
+    assert "STALE" not in _run(status, project)[1]
+
+    # Mutate the catalog source — the sidecar's source_sha256 goes stale.
+    (skill / "SKILL.md").write_text(
+        _SKILL_MD.format(name="commit") + "\nAn extra paragraph.\n",
         encoding="utf-8",
     )
 
@@ -472,11 +498,15 @@ def test_description_only_rule_renders_codex_only_skill(
     code, out, _ = _run(install, project)
     assert code == 0, out
 
-    skill_md = project / ".agents" / "skills" / "rule-commit-style" / "SKILL.md"
+    skill_dir = project / ".agents" / "skills" / "rule-commit-style"
+    skill_md = skill_dir / "SKILL.md"
     assert skill_md.is_file()
     body = skill_md.read_text(encoding="utf-8")
-    assert body.splitlines()[0] == MANAGED_BY_HEADER
+    # ai-19: the synthetic skill SKILL.md also starts with '---' on line 1.
+    assert body.splitlines()[0] == "---"
     assert "name: rule-commit-style" in body
+    # The drift/ownership marker lives in the .ai-dotfiles-meta sidecar.
+    assert (skill_dir / ".ai-dotfiles-meta").is_file()
     # ADR ai-1-2: the synthetic skill is never installed for Claude.
     assert not (project / ".claude" / "skills" / "rule-commit-style").exists()
     # The rule still links into the Claude rules tree as a plain rule.

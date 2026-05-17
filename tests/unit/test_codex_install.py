@@ -3,20 +3,25 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
 
 from ai_dotfiles.core.codex_install import (
     MANAGED_BY_HEADER,
+    SKILL_META_FILENAME,
     install_codex_agent,
+    install_codex_rule_skill,
     install_codex_skill,
     is_managed,
+    is_managed_skill,
     is_stale,
     remove_codex_agent,
     remove_codex_skill,
 )
 from ai_dotfiles.core.errors import ElementError
+from ai_dotfiles.core.frontmatter import parse_frontmatter
 
 _AGENT_MD = """\
 ---
@@ -98,10 +103,23 @@ def test_install_skill_generates_skill_md_and_symlinks_support(
     assert target.is_dir() and not target.is_symlink()
     skill_md = target / "SKILL.md"
     assert skill_md.is_file() and not skill_md.is_symlink()
-    assert skill_md.read_text(encoding="utf-8").splitlines()[0] == MANAGED_BY_HEADER
+    # ai-19: SKILL.md starts with '---' on line 1 (no '#' drift header),
+    # so Codex's frontmatter parser recognises it.
+    text = skill_md.read_text(encoding="utf-8")
+    assert text.splitlines()[0] == "---"
+    assert "# managed-by" not in text
+    front = parse_frontmatter(text)
+    assert front["name"] == "commit"
     # Description trimmed to the first sentence (ADR ai-1-4).
-    assert 'description: "Write a Conventional Commit."' in skill_md.read_text(
-        encoding="utf-8"
+    assert front["description"] == "Write a Conventional Commit."
+    # The drift/ownership marker lives in a sidecar next to SKILL.md.
+    meta = json.loads((target / SKILL_META_FILENAME).read_text(encoding="utf-8"))
+    assert meta["managed_by"] == "ai-dotfiles"
+    assert (
+        meta["source_sha256"]
+        == hashlib.sha256(
+            (skill_src / "SKILL.md").read_text(encoding="utf-8").encode("utf-8")
+        ).hexdigest()
     )
     # Support files/dirs are symlinks back into the catalog.
     assert (target / "scripts").is_symlink()
@@ -116,6 +134,67 @@ def test_install_skill_reports_updated_on_second_install(tmp_path: Path) -> None
 
     assert install_codex_skill(skill_src, target, tmp_path / "b") == "created"
     assert install_codex_skill(skill_src, target, tmp_path / "b") == "updated"
+
+
+def test_reinstall_overwrites_legacy_broken_skill_md(tmp_path: Path) -> None:
+    """Re-rendering replaces an old '#'-header SKILL.md cleanly (ai-19)."""
+    skill_src = tmp_path / "skills" / "commit"
+    _write(skill_src / "SKILL.md", _SKILL_MD)
+    target = tmp_path / "out" / "commit"
+    target.mkdir(parents=True)
+    # Simulate a Phase-1 generated file with the broken leading '#' header.
+    (target / "SKILL.md").write_text(
+        f"{MANAGED_BY_HEADER}\n# source-sha256: stale\n---\nname: commit\n---\n",
+        encoding="utf-8",
+    )
+
+    install_codex_skill(skill_src, target, tmp_path / "b")
+
+    text = (target / "SKILL.md").read_text(encoding="utf-8")
+    assert text.splitlines()[0] == "---"
+    assert "# managed-by" not in text
+
+
+# ── install_codex_rule_skill ───────────────────────────────────────
+
+
+def test_install_rule_skill_writes_frontmatter_and_sidecar(tmp_path: Path) -> None:
+    """A synthetic rule-<name> skill starts with '---' and gets a sidecar."""
+    rule_md = _write(
+        tmp_path / "rules" / "principles.md",
+        "# Principles\n\nKeep changes surgical.\n",
+    )
+    target = tmp_path / ".agents" / "skills" / "rule-principles"
+
+    assert install_codex_rule_skill(rule_md, target) == "created"
+
+    text = (target / "SKILL.md").read_text(encoding="utf-8")
+    assert text.splitlines()[0] == "---"
+    front = parse_frontmatter(text)
+    assert front["name"] == "rule-principles"
+    assert is_managed_skill(target) is True
+
+
+# ── is_managed_skill ───────────────────────────────────────────────
+
+
+def test_is_managed_skill_true_for_generated_skill(tmp_path: Path) -> None:
+    skill_src = tmp_path / "skills" / "commit"
+    _write(skill_src / "SKILL.md", _SKILL_MD)
+    target = tmp_path / "out" / "commit"
+    install_codex_skill(skill_src, target, tmp_path / "b")
+    assert is_managed_skill(target) is True
+
+
+def test_is_managed_skill_false_for_user_authored_skill(tmp_path: Path) -> None:
+    """A skill dir with no .ai-dotfiles-meta sidecar is user-authored."""
+    user_skill = tmp_path / ".agents" / "skills" / "mine"
+    _write(user_skill / "SKILL.md", "---\nname: mine\n---\n\nbody\n")
+    assert is_managed_skill(user_skill) is False
+
+
+def test_is_managed_skill_false_for_missing_directory(tmp_path: Path) -> None:
+    assert is_managed_skill(tmp_path / "absent") is False
 
 
 # ── is_managed ─────────────────────────────────────────────────────
