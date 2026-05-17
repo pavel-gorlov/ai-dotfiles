@@ -52,11 +52,11 @@ as a glob). Fix the classification + targeting:
 
 ## Acceptance criteria
 
-- [ ] A rule whose `paths:` contains any glob is classified `DESCRIPTION_ONLY` and renders as a `rule-<name>` Codex skill.
-- [ ] A rule whose `paths:` are all glob-free directories still renders nested `AGENTS.md` in those dirs.
-- [ ] `rule_block_targets` / `upsert_rule_block` never create a directory whose name contains a glob metacharacter.
-- [ ] A regression test installs a glob-`paths` rule and asserts no `**` / glob-named directory appears in the project.
-- [ ] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green.
+- [x] A rule whose `paths:` contains any glob is classified `DESCRIPTION_ONLY` and renders as a `rule-<name>` Codex skill.
+- [x] A rule whose `paths:` are all glob-free directories still renders nested `AGENTS.md` in those dirs.
+- [x] `rule_block_targets` / `upsert_rule_block` never create a directory whose name contains a glob metacharacter.
+- [x] A regression test installs a glob-`paths` rule and asserts no `**` / glob-named directory appears in the project.
+- [x] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green (951 passed; mypy 59 files; ruff + black clean).
 - [ ] PR opened against `main`.
 
 ## Anti-patterns
