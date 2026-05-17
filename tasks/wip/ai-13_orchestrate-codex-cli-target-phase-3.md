@@ -49,12 +49,14 @@ No read-only subtasks — all write, sequential per the Cognition rule.
 
 ## Acceptance criteria
 
-- [ ] All three subtasks (ai-14…ai-16) are `done`.
-- [ ] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green.
-- [ ] A domain's `settings.fragment.json` translatable keys
+- [x] All four subtasks (ai-14, ai-15, ai-17, ai-16) are `done`
+      (ai-17 added mid-execution — see Execution log).
+- [x] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green
+      (933 passed; mypy 59 files clean; ruff + black clean).
+- [x] A domain's `settings.fragment.json` translatable keys
       (permissions, sandbox) land in `.codex/config.toml`; hooks are
       skipped with an explicit logged message (ADR ai-1-5).
-- [ ] A domain's `mcp.fragment.json` lands in the `[mcp_servers]`
+- [x] A domain's `mcp.fragment.json` lands in the `[mcp_servers]`
       section of `.codex/config.toml`.
 - [ ] PR `feat: Codex CLI target — config.toml + MCP` opened against `main`.
 

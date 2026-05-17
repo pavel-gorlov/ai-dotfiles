@@ -1,7 +1,7 @@
 ---
 id: ai-16
 kind: subtask
-status: wip
+status: done
 created_at: '2026-05-17T10:57:41+00:00'
 parent: ai-1
 context_files:
@@ -31,9 +31,9 @@ builtin skill) get correct advice for Phase 3 behaviour.
 
 ## Definition of done
 
-- [ ] `builtin_ai_dotfiles_skill.md` documents the settings→config.toml mapping (incl. the hooks skip) and the MCP→`[mcp_servers]` mapping.
-- [ ] `README.md` covers Codex `config.toml` + MCP support; the stale Phase 1 limitation note is removed.
-- [ ] No doc claims behaviour beyond Phase 3 (global Codex install remains out of scope per the epic).
+- [x] `builtin_ai_dotfiles_skill.md` documents the settings→config.toml mapping (incl. the hooks skip) and the MCP→`[mcp_servers]` mapping.
+- [x] `README.md` covers Codex `config.toml` + MCP support; the stale Phase 1 limitation note is removed.
+- [x] No doc claims behaviour beyond Phase 3 (global Codex install remains out of scope per the epic).
 
 ## Notes
 
