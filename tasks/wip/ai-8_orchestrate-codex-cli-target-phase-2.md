@@ -62,6 +62,27 @@ No read-only subtasks — all write, sequential per the Cognition rule.
       text in `AGENTS.md` is untouched.
 - [ ] PR `feat: Codex CLI target — rules support` opened against `main`.
 
+## Execution log
+
+### ai-9 done (commit `4c13474`)
+
+Notes for ai-10 / ai-11:
+
+- `core/rule_classify.py`: `classify_rule(md_path) -> RuleClass`;
+  `RuleClass` ∈ `ALWAYS_ON` / `PATH_SCOPED` / `DESCRIPTION_ONLY`.
+  Priority: non-empty `paths:` → `PATH_SCOPED` (wins over `always_on`);
+  else `always_on: true` → `ALWAYS_ON`; else `DESCRIPTION_ONLY`.
+- New `RenderMode.DISPATCH`: `RENDER_POLICY[CODEX][RULE]` is now
+  `DISPATCH` — the signal that the command layer must `classify_rule`
+  and route by `RuleClass` (it does not auto-route).
+- `elements.py` `resolve_target_paths` / `_codex_pair_for` **still
+  hard-raises `ElementError` for `rule:` + `CODEX`** — ai-11 must relax
+  this and wire the real routing.
+- `core/codex_targets.py` `iter_codex_pairs` currently returns no pairs
+  for standalone rules (placeholder bail). ai-11 replaces it; the test
+  `test_codex_targets.py::test_standalone_rule_yields_no_pairs` will
+  then need updating.
+
 ## Anti-patterns
 
 - Starting before Phase 1 (ai-2 / PR #6) is merged — Phase 2 builds on

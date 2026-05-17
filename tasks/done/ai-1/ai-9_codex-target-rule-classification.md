@@ -1,7 +1,7 @@
 ---
 id: ai-9
 kind: subtask
-status: wip
+status: done
 created_at: '2026-05-17T10:57:40+00:00'
 parent: ai-1
 context_files:
@@ -35,11 +35,11 @@ always-on, path-scoped, description-only.
 
 ## Definition of done
 
-- [ ] Rule frontmatter supports an optional `paths:` field (list of directory globs).
-- [ ] `classify_rule` returns `ALWAYS_ON` / `PATH_SCOPED` / `DESCRIPTION_ONLY` deterministically.
-- [ ] `targets.py` rule policy for `Target.CODEX` reflects the three classes (no longer a flat `SKIP`).
-- [ ] Unit tests cover each class incl. edge cases (empty `paths:`, both signals present).
-- [ ] `pytest`, `mypy --strict`, `ruff`, `black` green.
+- [x] Rule frontmatter supports an optional `paths:` field (list of directory globs).
+- [x] `classify_rule` returns `ALWAYS_ON` / `PATH_SCOPED` / `DESCRIPTION_ONLY` deterministically.
+- [x] `targets.py` rule policy for `Target.CODEX` reflects the three classes (no longer a flat `SKIP`).
+- [x] Unit tests cover each class incl. edge cases (empty `paths:`, both signals present).
+- [x] `pytest`, `mypy --strict`, `ruff`, `black` green.
 
 ## Notes
 
