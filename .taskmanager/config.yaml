@@ -1,0 +1,13 @@
+project_slug: ai
+id_counter: 7
+default_assignee: claude
+transitions:
+  allow:
+  - backlog->to_do
+  - to_do->wip
+  - wip->done
+  - wip->to_do
+  - to_do->backlog
+gh:
+  repo: pavel-gorlov/ai-dotfiles
+  import_label: null
