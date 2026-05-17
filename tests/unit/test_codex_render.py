@@ -8,8 +8,13 @@ from pathlib import Path
 import pytest
 import tomllib
 
-from ai_dotfiles.core.codex_render import render_agent_toml, render_skill_md
+from ai_dotfiles.core.codex_render import (
+    render_agent_toml,
+    render_rule_skill_md,
+    render_skill_md,
+)
 from ai_dotfiles.core.errors import ElementError
+from ai_dotfiles.core.frontmatter import parse_frontmatter
 
 _AGENT_MD = """\
 ---
@@ -149,14 +154,42 @@ def test_skill_md_preserves_body_and_other_frontmatter(tmp_path: Path) -> None:
     assert "# Commit\n\nSkill body text here." in out
 
 
-def test_skill_md_carries_header(tmp_path: Path) -> None:
+def test_skill_md_starts_with_frontmatter_and_parses(tmp_path: Path) -> None:
+    """ai-19: a generated SKILL.md must start with '---' on line 1.
+
+    Codex's skill parser only recognises frontmatter that begins the
+    file. No ``#`` drift header may push ``---`` off line 1. The catalog
+    frontmatter parser is anchored to the start of the file (``\\A``), so
+    a non-empty parse result is itself proof the frontmatter is visible.
+    """
     path = _write(tmp_path, "SKILL.md", _SKILL_MD)
     out = render_skill_md(path)
-    lines = out.splitlines()
-    assert lines[0] == "# managed-by: ai-dotfiles"
-    expected = hashlib.sha256(_SKILL_MD.encode("utf-8")).hexdigest()
-    assert lines[1] == f"# source-sha256: {expected}"
-    assert lines[2] == "---"
+    assert out.splitlines()[0] == "---"
+    front = parse_frontmatter(out)
+    assert front["name"] == "commit"
+    assert front["description"] == "Write a Conventional Commit."
+
+
+def test_rule_skill_md_starts_with_frontmatter_and_parses(tmp_path: Path) -> None:
+    """ai-19: a synthetic rule-<name> SKILL.md must also start with '---'."""
+    rule = _write(
+        tmp_path,
+        "principles.md",
+        "# Engineering principles\n\nKeep changes surgical and small.\n",
+    )
+    out = render_rule_skill_md(rule)
+    assert out.splitlines()[0] == "---"
+    front = parse_frontmatter(out)
+    assert front["name"] == "rule-principles"
+    assert isinstance(front["description"], str) and front["description"]
+
+
+def test_skill_md_carries_no_managed_header(tmp_path: Path) -> None:
+    """The drift header moved to a sidecar — it must not be in the SKILL.md."""
+    path = _write(tmp_path, "SKILL.md", _SKILL_MD)
+    out = render_skill_md(path)
+    assert "# managed-by" not in out
+    assert "# source-sha256" not in out
 
 
 def test_skill_md_description_without_terminator_is_kept(tmp_path: Path) -> None:

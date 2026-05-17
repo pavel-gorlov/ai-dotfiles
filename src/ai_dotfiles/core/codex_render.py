@@ -9,10 +9,16 @@ target wants two different on-disk shapes:
 * a catalog ``SKILL.md`` is re-emitted with its ``description`` trimmed
   to a single sentence (ADR ai-1-4).
 
-Both outputs carry a two-line drift-detection header (ADR ai-1-1) — a
-``# managed-by`` marker and the SHA-256 of the *source* file's content.
+Drift detection (ADR ai-1-1) records the SHA-256 of the *source* file's
+content. The two targets carry that marker differently:
 
-The two public functions are pure string transforms: they take a path,
+* an agent ``.toml`` keeps a two-line ``# managed-by`` / ``# source-sha256``
+  comment header — ``#`` is a valid TOML comment;
+* a skill ``SKILL.md`` must start with ``---`` on line 1 for Codex's
+  frontmatter parser to see it (ai-19), so its marker lives in a sidecar
+  ``.ai-dotfiles-meta`` JSON file written next to it by the install layer.
+
+The public functions are pure string transforms: they take a path,
 read it, and return a string. They do no writing and no symlinking —
 that is the command/install layer's job (ai-5).
 """
@@ -33,6 +39,7 @@ __all__ = [
     "render_agent_toml",
     "render_rule_skill_md",
     "render_skill_md",
+    "source_sha256",
     "split_body",
 ]
 
@@ -47,14 +54,24 @@ _SENTENCE_END_RE = re.compile(r"[.!?](?=\s|$)")
 _MANAGED_BY = "# managed-by: ai-dotfiles"
 
 
-def _source_sha256(text: str) -> str:
-    """Return the hex SHA-256 of ``text`` encoded as UTF-8."""
+def source_sha256(text: str) -> str:
+    """Return the hex SHA-256 of ``text`` encoded as UTF-8.
+
+    The drift-detection digest (ADR ai-1-1). Public so the install layer
+    can record it — in an agent ``.toml`` header or a skill sidecar —
+    without re-implementing the hashing.
+    """
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _header(source_text: str) -> str:
-    """Build the two-line managed-by + source-sha256 drift header."""
-    return f"{_MANAGED_BY}\n# source-sha256: {_source_sha256(source_text)}\n"
+def _toml_header(source_text: str) -> str:
+    """Build the two-line managed-by + source-sha256 header for a ``.toml``.
+
+    Used only for agent ``.toml`` output, where ``#`` is a valid TOML
+    comment. A skill ``SKILL.md`` carries no such header — its marker
+    lives in a ``.ai-dotfiles-meta`` sidecar (ai-19).
+    """
+    return f"{_MANAGED_BY}\n# source-sha256: {source_sha256(source_text)}\n"
 
 
 def split_body(text: str) -> str:
@@ -117,7 +134,7 @@ def render_agent_toml(md_path: Path) -> str:
         table["model"] = model
 
     # tomli-w emits no comments, so the drift header is prepended raw.
-    return _header(source_text) + tomli_w.dumps(table)
+    return _toml_header(source_text) + tomli_w.dumps(table)
 
 
 def render_skill_md(md_path: Path) -> str:
@@ -125,8 +142,13 @@ def render_skill_md(md_path: Path) -> str:
 
     The ``description`` frontmatter field is trimmed to its first
     sentence (ADR ai-1-4); every other frontmatter field and the
-    markdown body are preserved verbatim. The managed-by +
-    source-sha256 header (ADR ai-1-1) is prepended.
+    markdown body are preserved verbatim.
+
+    The output starts with ``---`` on line 1 (ai-19): Codex's skill
+    parser only recognises frontmatter that begins the file. Drift
+    metadata lives in a ``.ai-dotfiles-meta`` sidecar written by the
+    install layer, not in a ``#`` header that would push ``---`` off
+    line 1.
 
     Raises:
         ElementError: if the skill has no frontmatter ``description``.
@@ -145,7 +167,7 @@ def render_skill_md(md_path: Path) -> str:
     trimmed = _trim_description_line(frontmatter_block, description)
     body = source_text[match.end() :]
 
-    return f"{_header(source_text)}---\n{trimmed}\n---\n{body}"
+    return f"---\n{trimmed}\n---\n{body}"
 
 
 def _rule_skill_description(rule_md: Path, body: str) -> str:
@@ -175,9 +197,11 @@ def render_rule_skill_md(rule_md: Path) -> str:
     onto a synthetic Codex skill named ``rule-<stem>``. Catalog rules
     have no ``SKILL.md`` shape (often no frontmatter at all), so this
     synthesises ``name`` / ``description`` frontmatter — the description
-    trimmed to one sentence (ADR ai-1-4) — and keeps the rule body. The
-    managed-by + source-sha256 header (ADR ai-1-1) keys off the rule's
-    own content so drift detection works exactly as for a real skill.
+    trimmed to one sentence (ADR ai-1-4) — and keeps the rule body.
+
+    Like a real skill (ai-19) the output starts with ``---`` on line 1;
+    drift metadata goes to the ``.ai-dotfiles-meta`` sidecar, keyed off
+    the rule's own content.
     """
     source_text = rule_md.read_text(encoding="utf-8")
     body = split_body(source_text)
@@ -185,10 +209,7 @@ def render_rule_skill_md(rule_md: Path) -> str:
     escaped = description.replace("\\", "\\\\").replace('"', '\\"')
     name = f"rule-{rule_md.stem}"
 
-    return (
-        f"{_header(source_text)}"
-        f'---\nname: {name}\ndescription: "{escaped}"\n---\n\n{body}\n'
-    )
+    return f'---\nname: {name}\ndescription: "{escaped}"\n---\n\n{body}\n'
 
 
 def _trim_description_line(frontmatter_block: str, description: str) -> str:
