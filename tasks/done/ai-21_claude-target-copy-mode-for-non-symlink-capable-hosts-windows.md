@@ -1,7 +1,7 @@
 ---
 id: ai-21
 kind: task
-status: wip
+status: done
 created_at: '2026-05-17T19:19:20+00:00'
 parent: ai-1
 dependencies:
@@ -54,7 +54,7 @@ Add a `link_mode` option to the project manifest:
 - [x] `remove` cleans copy-mode installs; `status` does not misreport copies as broken.
 - [x] Docs (`builtin_ai_dotfiles_skill.md`, `README.md`) cover `link_mode`.
 - [x] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green (995 passed; mypy 62 files; ruff + black clean).
-- [ ] PR opened against `main`.
+- [x] PR opened against `main` — [#12](https://github.com/pavel-gorlov/ai-dotfiles/pull/12), merged.
 
 ## Anti-patterns
 
