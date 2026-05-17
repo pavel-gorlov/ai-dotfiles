@@ -1,7 +1,7 @@
 ---
 id: ai-18
 kind: task
-status: wip
+status: done
 created_at: '2026-05-17T17:39:40+00:00'
 parent: ai-1
 dependencies: []
@@ -57,7 +57,7 @@ as a glob). Fix the classification + targeting:
 - [x] `rule_block_targets` / `upsert_rule_block` never create a directory whose name contains a glob metacharacter.
 - [x] A regression test installs a glob-`paths` rule and asserts no `**` / glob-named directory appears in the project.
 - [x] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green (951 passed; mypy 59 files; ruff + black clean).
-- [ ] PR opened against `main`.
+- [x] PR opened against `main` — [#9](https://github.com/pavel-gorlov/ai-dotfiles/pull/9), merged.
 
 ## Anti-patterns
 
