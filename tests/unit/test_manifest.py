@@ -11,6 +11,7 @@ from ai_dotfiles.core.errors import ConfigError
 from ai_dotfiles.core.manifest import (
     add_packages,
     get_packages,
+    get_targets,
     read_manifest,
     remove_packages,
     write_manifest,
@@ -125,3 +126,44 @@ def test_remove_packages_mixed(tmp_path: Path) -> None:
     removed = remove_packages(path, ["@python", "skill:nope"])
     assert removed == ["@python"]
     assert get_packages(path) == ["skill:x"]
+
+
+# ---------------------------------------------------------------------------
+# get_targets
+# ---------------------------------------------------------------------------
+
+
+def test_get_targets_missing_file_defaults_to_claude(tmp_path: Path) -> None:
+    assert get_targets(tmp_path / "missing.json") == ["claude"]
+
+
+def test_get_targets_no_targets_field_defaults_to_claude(tmp_path: Path) -> None:
+    path = tmp_path / "m.json"
+    write_manifest(path, {"packages": ["@python"]})
+    assert get_targets(path) == ["claude"]
+
+
+def test_get_targets_explicit_list(tmp_path: Path) -> None:
+    path = tmp_path / "m.json"
+    write_manifest(path, {"packages": [], "targets": ["claude", "codex"]})
+    assert get_targets(path) == ["claude", "codex"]
+
+
+def test_get_targets_empty_list_is_honoured(tmp_path: Path) -> None:
+    path = tmp_path / "m.json"
+    write_manifest(path, {"packages": [], "targets": []})
+    assert get_targets(path) == []
+
+
+def test_get_targets_non_list_raises(tmp_path: Path) -> None:
+    path = tmp_path / "m.json"
+    write_manifest(path, {"packages": [], "targets": "codex"})
+    with pytest.raises(ConfigError):
+        get_targets(path)
+
+
+def test_get_targets_non_string_items_raise(tmp_path: Path) -> None:
+    path = tmp_path / "m.json"
+    write_manifest(path, {"packages": [], "targets": ["claude", 3]})
+    with pytest.raises(ConfigError):
+        get_targets(path)

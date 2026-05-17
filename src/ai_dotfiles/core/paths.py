@@ -146,3 +146,13 @@ def project_manifest_path(root: Path) -> Path:
 def project_claude_dir(root: Path) -> Path:
     """Project-level Claude config directory (``<root>/.claude``)."""
     return root / ".claude"
+
+
+def project_codex_skills_dir(root: Path) -> Path:
+    """Project-level Codex skills directory (``<root>/.agents/skills``)."""
+    return root / ".agents" / "skills"
+
+
+def project_codex_agents_dir(root: Path) -> Path:
+    """Project-level Codex agents directory (``<root>/.codex/agents``)."""
+    return root / ".codex" / "agents"

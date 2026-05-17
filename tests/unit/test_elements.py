@@ -16,6 +16,7 @@ from ai_dotfiles.core.elements import (
     validate_element_exists,
 )
 from ai_dotfiles.core.errors import ElementError
+from ai_dotfiles.core.targets import Target
 
 # ---------------------------------------------------------------------------
 # parse_element / parse_elements
@@ -301,3 +302,82 @@ def test_validate_exists_missing(tmp_path: Path) -> None:
 def test_validate_exists_missing_skill(tmp_path: Path) -> None:
     with pytest.raises(ElementError):
         validate_element_exists(parse_element("skill:nope"), tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# resolve_target_paths — Codex target
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_target_default_is_claude(tmp_path: Path) -> None:
+    # Omitting `target` and passing Target.CLAUDE explicitly must agree.
+    catalog = tmp_path / "catalog"
+    claude_dir = tmp_path / ".claude"
+    default = resolve_target_paths(parse_element("skill:x"), claude_dir, catalog)
+    explicit = resolve_target_paths(
+        parse_element("skill:x"), claude_dir, catalog, target=Target.CLAUDE
+    )
+    assert default == explicit
+
+
+def test_resolve_target_codex_skill(tmp_path: Path) -> None:
+    catalog = tmp_path / "catalog"
+    root = tmp_path / "project"
+    pairs = resolve_target_paths(
+        parse_element("skill:code-review"), root, catalog, target=Target.CODEX
+    )
+    assert pairs == [
+        (
+            catalog / "skills" / "code-review",
+            root / ".agents" / "skills" / "code-review",
+        )
+    ]
+
+
+def test_resolve_target_codex_agent(tmp_path: Path) -> None:
+    catalog = tmp_path / "catalog"
+    root = tmp_path / "project"
+    pairs = resolve_target_paths(
+        parse_element("agent:researcher"), root, catalog, target=Target.CODEX
+    )
+    assert pairs == [
+        (
+            catalog / "agents" / "researcher.md",
+            root / ".codex" / "agents" / "researcher.toml",
+        )
+    ]
+
+
+def test_resolve_target_codex_rule_raises(tmp_path: Path) -> None:
+    catalog = tmp_path / "catalog"
+    root = tmp_path / "project"
+    with pytest.raises(ElementError):
+        resolve_target_paths(
+            parse_element("rule:security"), root, catalog, target=Target.CODEX
+        )
+
+
+def test_resolve_target_codex_domain_expands_skills_and_agents(tmp_path: Path) -> None:
+    catalog = tmp_path / "catalog"
+    root = tmp_path / "project"
+    domain = catalog / "python"
+    (domain / "skills" / "pytest").mkdir(parents=True)
+    (domain / "skills" / "pytest" / "SKILL.md").write_text("x")
+    (domain / "agents").mkdir(parents=True)
+    (domain / "agents" / "researcher.md").write_text("x")
+    (domain / "rules").mkdir(parents=True)
+    (domain / "rules" / "pep8.md").write_text("x")  # no Codex surface — skipped
+
+    pairs = resolve_target_paths(
+        parse_element("@python"), root, catalog, target=Target.CODEX
+    )
+    assert set(pairs) == {
+        (
+            domain / "skills" / "pytest",
+            root / ".agents" / "skills" / "pytest",
+        ),
+        (
+            domain / "agents" / "researcher.md",
+            root / ".codex" / "agents" / "researcher.toml",
+        ),
+    }

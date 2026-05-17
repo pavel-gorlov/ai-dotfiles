@@ -18,8 +18,12 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ai_dotfiles.core.errors import ElementError
+
+if TYPE_CHECKING:
+    from ai_dotfiles.core.targets import Target
 
 __all__ = [
     "Element",
@@ -163,7 +167,7 @@ def resolve_source_path(element: Element, catalog: Path) -> Path:
 
 
 def _domain_target_pairs(
-    element: Element, claude_dir: Path, catalog: Path
+    element: Element, config_dir: Path, catalog: Path
 ) -> list[tuple[Path, Path]]:
     domain_root = catalog / element.name
     pairs: list[tuple[Path, Path]] = []
@@ -171,7 +175,7 @@ def _domain_target_pairs(
         source_dir = domain_root / subdir
         if not source_dir.is_dir():
             continue
-        target_dir = claude_dir / subdir
+        target_dir = config_dir / subdir
         for entry in sorted(source_dir.iterdir()):
             if entry.name in _DOMAIN_SKIP_FILES:
                 continue
@@ -182,19 +186,9 @@ def _domain_target_pairs(
     return pairs
 
 
-def resolve_target_paths(
+def _claude_target_pairs(
     element: Element, claude_dir: Path, catalog: Path
 ) -> list[tuple[Path, Path]]:
-    """Return ``(source, target)`` pairs to create symlinks for.
-
-    For :data:`ElementType.DOMAIN`, this walks the domain's ``skills/``,
-    ``agents/``, ``rules/`` and ``hooks/`` subdirectories and emits one pair
-    per entry (skipping ``README.md`` and ``settings.fragment.json``, which
-    are handled elsewhere).
-
-    For standalone element types, a single pair is returned mirroring the
-    source path under ``claude_dir``.
-    """
     if element.type is ElementType.DOMAIN:
         return _domain_target_pairs(element, claude_dir, catalog)
 
@@ -208,6 +202,89 @@ def resolve_target_paths(
     raise ElementError(  # pragma: no cover - exhaustive
         f"Unsupported element type: {element.type!r}"
     )
+
+
+def _codex_pair_for(
+    element_type: ElementType, name: str, source: Path, project_root: Path, raw: str
+) -> tuple[Path, Path]:
+    """Return the ``(source, target)`` pair for one Codex skill or agent.
+
+    Codex skills land under ``.agents/skills/<name>/`` and Codex agents
+    under ``.codex/agents/<name>.toml`` — two distinct roots, unlike the
+    single ``.claude`` tree. Element types with no Phase-1 Codex surface
+    (rules, hooks) raise :class:`ElementError`.
+    """
+    # Imported lazily: ``core.paths`` depends on this module's ``ElementType``,
+    # so a top-level import would cycle.
+    from ai_dotfiles.core import paths
+
+    if element_type is ElementType.SKILL:
+        return (source, paths.project_codex_skills_dir(project_root) / name)
+    if element_type is ElementType.AGENT:
+        return (source, paths.project_codex_agents_dir(project_root) / f"{name}.toml")
+    raise ElementError(
+        f"Element type {element_type.value!r} has no Codex target surface "
+        f"(specifier {raw!r})."
+    )
+
+
+def _codex_target_pairs(
+    element: Element, project_root: Path, catalog: Path
+) -> list[tuple[Path, Path]]:
+    if element.type is ElementType.DOMAIN:
+        # Expand the domain into its member skills/agents and resolve each
+        # for the Codex target. Rules and hooks have no Phase-1 surface.
+        domain_root = catalog / element.name
+        pairs: list[tuple[Path, Path]] = []
+        for subdir, member_type in (
+            ("skills", ElementType.SKILL),
+            ("agents", ElementType.AGENT),
+        ):
+            source_dir = domain_root / subdir
+            if not source_dir.is_dir():
+                continue
+            for entry in sorted(source_dir.iterdir()):
+                if entry.name in _DOMAIN_SKIP_FILES or entry.name.startswith("."):
+                    continue
+                name = entry.stem if member_type is ElementType.AGENT else entry.name
+                pairs.append(
+                    _codex_pair_for(member_type, name, entry, project_root, element.raw)
+                )
+        return pairs
+
+    source = resolve_source_path(element, catalog)
+    return [
+        _codex_pair_for(element.type, element.name, source, project_root, element.raw)
+    ]
+
+
+def resolve_target_paths(
+    element: Element,
+    config_root: Path,
+    catalog: Path,
+    target: Target | None = None,
+) -> list[tuple[Path, Path]]:
+    """Return ``(source, target)`` pairs to materialise ``element`` for ``target``.
+
+    ``target`` defaults to :data:`Target.CLAUDE`; the Claude resolution is
+    byte-identical to the pre-multi-target behaviour. For Claude,
+    ``config_root`` is the ``.claude`` directory; for Codex it is the
+    project root (Codex spreads skills and agents across two distinct
+    sub-trees).
+
+    For :data:`ElementType.DOMAIN`, the domain is expanded into its member
+    elements. For standalone types, a single pair is returned. The Codex
+    target raises :class:`ElementError` for element types with no Phase-1
+    Codex surface (e.g. rules).
+    """
+    # Imported lazily to avoid a module-level import cycle (``targets``
+    # imports ``ElementType`` from this module).
+    from ai_dotfiles.core.targets import Target as _Target
+
+    effective = _Target.CLAUDE if target is None else target
+    if effective is _Target.CLAUDE:
+        return _claude_target_pairs(element, config_root, catalog)
+    return _codex_target_pairs(element, config_root, catalog)
 
 
 def validate_element_exists(element: Element, catalog: Path) -> None:
