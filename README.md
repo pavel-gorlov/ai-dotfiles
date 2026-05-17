@@ -84,8 +84,10 @@ ai-dotfiles install
   `install` / `add` / `remove` also render elements for the OpenAI Codex CLI:
   skills land in `.agents/skills/<name>/` (generated `SKILL.md` with a
   first-sentence description, symlinked support files); agents land in
-  `.codex/agents/<name>.toml` (generated TOML, committed to the repo).
-  Rules and hooks are skipped for Codex with an explicit message.
+  `.codex/agents/<name>.toml` (generated TOML, committed to the repo). Rules
+  dispatch to one of three Codex surfaces depending on their frontmatter (see
+  [Codex rule support](#codex-rule-support) below). Domain hooks are skipped
+  with an explicit message — Codex has no hook harness.
   The Codex target is **project-scoped only** — `-g` commands always use
   `["claude"]`.
 - **Drift detection** — every generated Codex file carries a
@@ -128,7 +130,8 @@ Then `ai-dotfiles install` produces:
 |-----------------|-------------|-----------|
 | `skill:commit` | `.claude/skills/commit/` → symlink | `.agents/skills/commit/` — real dir, generated `SKILL.md` + symlinked support files |
 | `agent:reviewer` | `.claude/agents/reviewer.md` → symlink | `.codex/agents/reviewer.toml` — generated TOML |
-| `rule:*` / domain hooks | `.claude/rules/` / hooks | Skipped (explicit message); rules are Phase 2 |
+| `rule:*` / domain `rules/` | `.claude/rules/<name>.md` → symlink | Dispatched by rule frontmatter — see [Codex rule support](#codex-rule-support) |
+| Domain `hooks/` | `.claude/settings.json` hooks | Skipped (explicit message) — Codex has no hook harness |
 
 Every generated Codex file carries `# managed-by: ai-dotfiles` and
 `# source-sha256: <hex>` (hash of the source catalog file). `ai-dotfiles status`
@@ -141,6 +144,53 @@ touched.
 The Codex target is **project-scoped only** — `install -g`, `add -g`, `remove -g`,
 and `status -g` always target Claude Code (`["claude"]`). The global manifest
 has no `targets` field.
+
+### Codex rule support
+
+A catalog rule has no single Codex equivalent. `install` reads two optional
+frontmatter fields on each rule file and dispatches to one of three surfaces:
+
+| Rule frontmatter | Classification | Codex output |
+|-----------------|---------------|--------------|
+| `always_on: true` | Always-on | Managed block in the project-root `AGENTS.md` |
+| `paths: [src/**, tests/**]` | Path-scoped | Managed block in `src/AGENTS.md` and `tests/AGENTS.md`; Codex activates it via its root→cwd walk |
+| Neither field (default) | Description-only | Synthetic Codex-only skill `rule-<name>` under `.agents/skills/rule-<name>/` |
+
+**Classification priority**: `paths:` wins over `always_on:` when both are set.
+
+`AGENTS.md` blocks are owned by ai-dotfiles via HTML-comment markers
+(`<!-- ai-dotfiles:rule:<name> START/END -->`). `remove` strips only those
+markers; user-authored text in `AGENTS.md` is preserved. An `AGENTS.md` left
+empty after the strip is deleted. `install --prune` removes orphaned blocks and
+orphaned `rule-<name>` skills.
+
+`ai-dotfiles status` reports the block presence for always-on / path-scoped
+rules (`rules/<name> -> AGENTS.md`) and drift for description-only rule skills
+(`skills/rule-<name>`).
+
+The synthetic `rule-<name>` skill is **Codex-only**: the same rule still
+symlinks into `.claude/rules/` for the Claude target.
+
+To control where a rule lands for Codex, add `always_on:` or `paths:` to its
+YAML frontmatter:
+
+```yaml
+---
+always_on: true   # always active — lands in the project-root AGENTS.md
+---
+```
+
+```yaml
+---
+paths:            # conditional — lands in src/AGENTS.md and tests/AGENTS.md
+  - src/**
+  - tests/**
+---
+```
+
+Without either field the rule becomes a `rule-<name>` skill (Codex loads it on
+demand via its description). This is the default for any existing catalog rule
+that has not yet been migrated.
 
 ## Element Format
 
@@ -444,9 +494,10 @@ are enforced via `commitizen`.
   (e.g. `HOME=$TMP/home ai-dotfiles init -g`) or set `$AI_DOTFILES_HOME`
   only and let `~/.claude/` be re-linked.
 - Symlinks only; Windows is not officially supported.
-- Codex target (Phase 1): rules and hooks are not rendered for Codex — the
-  command prints an explicit skip message. Rules-to-Codex mapping and
-  `config.toml` / MCP support are Phases 2–3 and are not yet available.
+- Codex target: domain `hooks/` members are not rendered for Codex — the
+  command prints an explicit skip message (Codex has no hook harness). Rules
+  are rendered (see [Codex rule support](#codex-rule-support)). `config.toml`
+  and MCP support are not yet available.
 
 ## License
 
