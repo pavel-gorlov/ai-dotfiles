@@ -23,15 +23,21 @@ Translation map (ADR ai-1-5):
 
 Composability — the critical constraint
 ----------------------------------------
-``.codex/config.toml`` is a **shared** file. ai-15 will write an
-``[mcp_servers]`` table into the same file, and the user may hand-author
-their own tables. This writer therefore owns exactly *one* top-level
-table — ``[ai_dotfiles]`` — delimited by marker comments. Every write
-round-trips the file through :mod:`tomllib` -> modify only the
-``ai_dotfiles`` key -> :mod:`tomli_w`, so unrelated tables survive
-untouched. ``strip_managed`` is the ``remove``-side analogue: it drops
-only the ``[ai_dotfiles]`` table and leaves the rest of the file
-(user content, ``[mcp_servers]`` …) byte-faithful modulo re-serialise.
+``.codex/config.toml`` is a **shared** file. Three writers contribute to
+it: the settings writer (this module's ``[ai_dotfiles]`` table, ADR
+ai-1-5), the MCP writer (this module's ``[mcp_servers]`` table, ai-15),
+and the user, who may hand-author their own tables and their own MCP
+servers. Each ai-dotfiles writer owns exactly *one* top-level table and
+round-trips the file through :mod:`tomllib` -> modify only its table ->
+:mod:`tomli_w`, so unrelated tables survive untouched.
+
+* ``[ai_dotfiles]`` — wholly ai-dotfiles-owned. ``strip_managed`` drops
+  it entirely on ``remove``.
+* ``[mcp_servers]`` — *partly* owned: a domain's ``mcp.fragment.json``
+  servers are ai-dotfiles-owned, but the user may add their own server
+  entries to the same table. Ownership is tracked in a sidecar file
+  (:mod:`ai_dotfiles.core.codex_mcp_ownership`) so ``remove`` strips
+  only domain-contributed servers and leaves the user's intact.
 """
 
 from __future__ import annotations
@@ -42,25 +48,43 @@ from typing import Any
 import tomli_w
 import tomllib
 
+from ai_dotfiles.core.codex_mcp_ownership import (
+    delete_mcp_ownership,
+    load_mcp_ownership,
+    save_mcp_ownership,
+)
 from ai_dotfiles.core.errors import ConfigError, LinkError
+from ai_dotfiles.core.mcp_merge import assemble_mcp_servers
 from ai_dotfiles.core.settings_merge import load_fragment
 
 __all__ = [
     "CONFIG_FILENAME",
     "MANAGED_TABLE",
+    "MCP_TABLE",
     "ConfigResult",
+    "McpResult",
     "build_managed_table",
+    "build_mcp_table",
     "config_path",
     "render_config_toml",
+    "strip_codex_mcp",
     "strip_managed",
     "translate_fragment",
+    "translate_mcp_server",
     "write_codex_config",
+    "write_codex_mcp",
 ]
 
-# The single top-level table this module owns inside ``config.toml``.
-# Everything else in the file (``[mcp_servers]``, user tables) is left
-# untouched on every write.
+# The settings table this module owns inside ``config.toml``. Everything
+# else in the file (``[mcp_servers]``, user tables) is left untouched on
+# every settings write.
 MANAGED_TABLE = "ai_dotfiles"
+
+# The MCP table. Codex reads MCP servers from ``[mcp_servers.<name>]``
+# sub-tables of ``config.toml`` (whereas the Claude target writes a JSON
+# ``mcpServers`` object into ``.mcp.json``). Domain-contributed servers
+# are ai-dotfiles-owned; user-authored servers in the same table survive.
+MCP_TABLE = "mcp_servers"
 
 # The project-scoped Codex config filename.
 CONFIG_FILENAME = "config.toml"
@@ -326,4 +350,225 @@ def strip_managed(project_root: Path) -> bool:
             path.unlink()
     except OSError as exc:
         raise LinkError(f"Failed to strip managed config from {path}: {exc}") from exc
+    return True
+
+
+# ── MCP: mcp.fragment.json -> [mcp_servers] (ai-15) ───────────────────
+
+
+class McpResult:
+    """Outcome of a Codex ``[mcp_servers]`` write.
+
+    ``status`` is ``"created"``, ``"updated"`` or ``"removed"``.
+    ``collisions`` lists server names a domain declared that the user
+    had already hand-authored in ``[mcp_servers]`` — the user version is
+    kept and the command layer turns this into a warning.
+    """
+
+    __slots__ = ("collisions", "status")
+
+    def __init__(self, status: str, collisions: list[str] | None = None) -> None:
+        self.status = status
+        self.collisions: list[str] = collisions or []
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid only
+        return f"McpResult(status={self.status!r}, collisions={self.collisions!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, McpResult):
+            return NotImplemented
+        return self.status == other.status and self.collisions == other.collisions
+
+
+def translate_mcp_server(server: dict[str, Any]) -> dict[str, Any]:
+    """Translate one ``.mcp.json`` server entry for the Codex target.
+
+    The Claude ``.mcp.json`` server shape (``command``, ``args``,
+    ``env``, ``type``, ``url`` …) and the Codex ``[mcp_servers.<name>]``
+    TOML shape use the *same* keys — the only structural difference is
+    the container format (JSON object vs TOML table). The translation is
+    therefore a faithful copy, with one constraint: TOML has no ``null``,
+    so keys whose value is ``None`` are dropped (a ``null`` in a fragment
+    means "unset", which is exactly an absent TOML key).
+    """
+    return {k: v for k, v in server.items() if v is not None}
+
+
+def build_mcp_table(
+    fragment_paths: list[tuple[str, Path]],
+) -> tuple[dict[str, dict[str, Any]], dict[str, list[str]]]:
+    """Assemble the domain-owned ``[mcp_servers]`` servers from fragments.
+
+    ``fragment_paths`` is a list of ``(domain_name, mcp_fragment_path)``
+    in caller-supplied (topological) order — the same shape
+    :func:`ai_dotfiles.core.mcp_merge.collect_mcp_fragments` produces.
+
+    Returns ``(servers, ownership)``: the per-server TOML-ready dicts to
+    write under ``[mcp_servers]`` and a ``server_name -> [domain, ...]``
+    ownership map for the next strip cycle.
+    """
+    raw_servers, ownership = assemble_mcp_servers(fragment_paths)
+    servers = {name: translate_mcp_server(cfg) for name, cfg in raw_servers.items()}
+    return servers, ownership
+
+
+def _merge_mcp_servers(
+    existing_mcp: dict[str, Any],
+    domain_servers: dict[str, dict[str, Any]],
+    previous_ownership: dict[str, list[str]],
+) -> tuple[dict[str, Any], list[str]]:
+    """Compose the final ``[mcp_servers]`` table.
+
+    Mirrors :func:`ai_dotfiles.core.mcp_merge.merge_with_existing_mcp`:
+
+    * user-authored servers (in ``existing_mcp`` but not in
+      ``previous_ownership``) are preserved verbatim;
+    * previously domain-owned servers missing from ``domain_servers``
+      are dropped;
+    * ``domain_servers`` is applied on top, but a first-time collision
+      with a user-authored name keeps the user version.
+
+    Returns ``(merged_table, collisions)``.
+    """
+    merged: dict[str, Any] = {}
+    collisions: list[str] = []
+
+    for name, cfg in existing_mcp.items():
+        if name not in previous_ownership:
+            # User-authored — preserve.
+            merged[name] = cfg
+
+    for name, cfg in domain_servers.items():
+        if name in existing_mcp and name not in previous_ownership:
+            # First-time collision: the user owns this name. Keep theirs.
+            collisions.append(name)
+            continue
+        merged[name] = cfg
+
+    return merged, collisions
+
+
+def write_codex_mcp(
+    project_root: Path,
+    fragment_paths: list[tuple[str, Path]],
+) -> McpResult:
+    """Write the domain-owned servers into ``[mcp_servers]`` of config.toml.
+
+    The Codex-side analogue of
+    :func:`ai_dotfiles.core.mcp_apply.rebuild_claude_config`'s MCP half.
+    Translates every domain ``mcp.fragment.json`` into the
+    ``[mcp_servers]`` table of ``<root>/.codex/config.toml``, preserving
+    user-authored servers and any unrelated table (``[ai_dotfiles]`` …).
+    Domain-contributed server names are recorded in a sidecar ownership
+    file so a later :func:`strip_codex_mcp` drops exactly those.
+
+    When no fragment declares a server the domain-owned servers are
+    stripped; if that empties the ``[mcp_servers]`` table it is removed,
+    and if that empties the file it is deleted.
+
+    Raises:
+        ConfigError: if an existing ``config.toml`` or ownership file is
+            malformed.
+        LinkError: if the file cannot be written.
+    """
+    domain_servers, new_ownership = build_mcp_table(fragment_paths)
+    path = config_path(project_root)
+    existing = _parse_existing(path)
+    previous_ownership = load_mcp_ownership(project_root)
+
+    existing_mcp_raw = existing.get(MCP_TABLE, {})
+    existing_mcp: dict[str, Any] = (
+        dict(existing_mcp_raw) if isinstance(existing_mcp_raw, dict) else {}
+    )
+    had_mcp = bool(existing_mcp)
+
+    merged, collisions = _merge_mcp_servers(
+        existing_mcp, domain_servers, previous_ownership
+    )
+
+    new_config = {k: v for k, v in existing.items() if k != MCP_TABLE}
+    if merged:
+        new_config[MCP_TABLE] = merged
+
+    existed = path.is_file()
+    text = tomli_w.dumps(new_config).strip()
+    text = text + "\n" if text else ""
+
+    try:
+        if text:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        elif existed:
+            path.unlink()
+    except OSError as exc:
+        raise LinkError(f"Failed to write Codex MCP config {path}: {exc}") from exc
+
+    # Persist or clear ownership symmetric to the config write. Only
+    # names that actually landed in the merged table count as owned.
+    effective_ownership = {
+        name: domains
+        for name, domains in new_ownership.items()
+        if name in merged and name not in collisions
+    }
+    if effective_ownership:
+        save_mcp_ownership(project_root, effective_ownership)
+    else:
+        delete_mcp_ownership(project_root)
+
+    if not merged.keys() & domain_servers.keys():
+        status = "removed" if had_mcp and previous_ownership else "updated"
+    elif not (had_mcp and previous_ownership):
+        status = "created"
+    else:
+        status = "updated"
+    return McpResult(status, collisions)
+
+
+def strip_codex_mcp(project_root: Path) -> bool:
+    """Drop only domain-owned servers from ``[mcp_servers]`` of config.toml.
+
+    The ``remove``-side analogue of :func:`write_codex_mcp`. User-authored
+    servers in ``[mcp_servers]`` and unrelated tables (``[ai_dotfiles]``
+    …) are preserved; a ``[mcp_servers]`` table left empty is removed and
+    a file left empty is deleted. Returns ``True`` if the file was
+    rewritten or deleted, ``False`` if there was nothing to do.
+
+    Raises:
+        ConfigError: if the existing ``config.toml`` or ownership file is
+            malformed.
+        LinkError: if the file cannot be rewritten.
+    """
+    path = config_path(project_root)
+    previous_ownership = load_mcp_ownership(project_root)
+    if not path.is_file() or not previous_ownership:
+        delete_mcp_ownership(project_root)
+        return False
+
+    existing = _parse_existing(path)
+    existing_mcp_raw = existing.get(MCP_TABLE, {})
+    existing_mcp: dict[str, Any] = (
+        dict(existing_mcp_raw) if isinstance(existing_mcp_raw, dict) else {}
+    )
+    surviving = {
+        name: cfg
+        for name, cfg in existing_mcp.items()
+        if name not in previous_ownership
+    }
+
+    new_config = {k: v for k, v in existing.items() if k != MCP_TABLE}
+    if surviving:
+        new_config[MCP_TABLE] = surviving
+
+    text = tomli_w.dumps(new_config).strip()
+    text = text + "\n" if text else ""
+    try:
+        if text:
+            path.write_text(text, encoding="utf-8")
+        else:
+            path.unlink()
+    except OSError as exc:
+        raise LinkError(
+            f"Failed to strip managed MCP servers from {path}: {exc}"
+        ) from exc
+    delete_mcp_ownership(project_root)
     return True

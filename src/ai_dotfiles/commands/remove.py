@@ -26,6 +26,7 @@ from ai_dotfiles.core.elements import (
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
 from ai_dotfiles.core.gitignore import collect_managed_paths, sync_gitignore
 from ai_dotfiles.core.mcp_apply import rebuild_claude_config
+from ai_dotfiles.core.mcp_merge import collect_mcp_fragments
 from ai_dotfiles.core.paths import (
     backup_dir,
     bin_dir,
@@ -169,6 +170,14 @@ def _rebuild_codex_config(
         ui.info("Codex: stripped managed region from .codex/config.toml")
     elif result.status in ("created", "updated"):
         ui.info("Codex: rebuilt .codex/config.toml managed region")
+
+    mcp_result = codex_config.write_codex_mcp(
+        project_root, collect_mcp_fragments(packages, catalog)
+    )
+    if mcp_result.status == "removed":
+        ui.info("Codex: stripped [mcp_servers] from .codex/config.toml")
+    elif mcp_result.status in ("created", "updated"):
+        ui.info("Codex: rebuilt .codex/config.toml [mcp_servers]")
 
 
 def _rebuild_settings(manifest_path: Path, claude_dir: Path, catalog: Path) -> None:
