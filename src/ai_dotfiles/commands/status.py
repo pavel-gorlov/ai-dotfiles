@@ -18,7 +18,15 @@ from typing import Any
 import click
 
 from ai_dotfiles import ui
-from ai_dotfiles.core import elements, manifest, paths, settings_merge, symlinks
+from ai_dotfiles.core import (
+    codex_install,
+    elements,
+    manifest,
+    paths,
+    settings_merge,
+    symlinks,
+)
+from ai_dotfiles.core.codex_targets import iter_codex_pairs
 from ai_dotfiles.core.elements import Element, ElementType
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
 
@@ -193,6 +201,51 @@ def _domain_specs(packages: list[str]) -> list[str]:
     return names
 
 
+def _print_codex_target(
+    parsed: list[Element], project_root: Path, catalog: Path
+) -> int:
+    """Print Codex-target status. Return the count of issues found.
+
+    Each manifest element is expanded into its Codex artefacts; a
+    skill/agent is OK when its generated file exists, BROKEN when it is
+    missing, and STALE when its ``# source-sha256`` header no longer
+    matches the catalog source (ADR ai-1-1 drift detection). A stale
+    agent counts as one issue.
+    """
+    ui.info("")
+    ui.info("  Codex target")
+    issues = 0
+    found_any = False
+
+    for element in parsed:
+        for pair in iter_codex_pairs(element, project_root, catalog):
+            found_any = True
+            kind = "skills" if pair.element_type is ElementType.SKILL else "agents"
+            label = f"{kind}/{pair.target.name}"
+            generated = (
+                pair.target / "SKILL.md"
+                if pair.element_type is ElementType.SKILL
+                else pair.target
+            )
+            source = (
+                pair.source / "SKILL.md"
+                if pair.element_type is ElementType.SKILL
+                else pair.source
+            )
+            if not generated.is_file():
+                ui.info(f"    {_MISSING} {label.ljust(28)} NOT INSTALLED")
+                issues += 1
+            elif codex_install.is_stale(generated, source):
+                ui.info(f"    {_BROKEN} {label.ljust(28)} STALE (source changed)")
+                issues += 1
+            else:
+                ui.info(_format_line(_OK, label, source, "OK"))
+
+    if not found_any:
+        ui.info("    (no Codex-renderable elements in the manifest)")
+    return issues
+
+
 @click.command("status")
 @click.option(
     "-g",
@@ -226,12 +279,20 @@ def status(is_global: bool) -> None:
         ui.error(str(exc))
         raise SystemExit(exc.exit_code) from exc
 
-    total_issues = 0
-    for element in parsed:
-        triples = _expected_pairs(element, claude_dir, catalog)
-        total_issues += _print_package(element, triples, storage)
+    # The Codex target is project-scoped only (ADR ai-1-3).
+    targets = ["claude"] if is_global else manifest.get_targets(manifest_path)
 
-    _print_settings_summary(packages, catalog, claude_dir)
+    total_issues = 0
+    if "claude" in targets:
+        for element in parsed:
+            triples = _expected_pairs(element, claude_dir, catalog)
+            total_issues += _print_package(element, triples, storage)
+        _print_settings_summary(packages, catalog, claude_dir)
+
+    if "codex" in targets and not is_global:
+        project_root = paths.find_project_root()
+        if project_root is not None:
+            total_issues += _print_codex_target(parsed, project_root, catalog)
 
     ui.info("")
     if total_issues:

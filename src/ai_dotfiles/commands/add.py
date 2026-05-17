@@ -16,7 +16,11 @@ from pathlib import Path
 import click
 
 from ai_dotfiles import ui
-from ai_dotfiles.core import manifest, symlinks
+from ai_dotfiles.core import codex_install, manifest, symlinks
+from ai_dotfiles.core.codex_targets import (
+    codex_skipped_domain_subdirs,
+    iter_codex_pairs,
+)
 from ai_dotfiles.core.completions import (
     complete_available_specifiers,
     make_completer,
@@ -81,6 +85,33 @@ def _link_element(element: Element, claude_dir: Path, catalog: Path) -> None:
     pairs = resolve_target_paths(element, claude_dir, catalog)
     for source, target in pairs:
         symlinks.safe_symlink(source, target, backup_dir())
+
+
+def _link_codex_element(element: Element, project_root: Path, catalog: Path) -> None:
+    """Render and write Codex artefacts for a single element.
+
+    Skills become ``.agents/skills/<name>/`` (generated ``SKILL.md`` +
+    symlinked support files); agents become ``.codex/agents/<name>.toml``.
+    Domain ``rules/``/``hooks/`` and standalone rules have no Phase-1
+    Codex surface — the skip is reported explicitly.
+    """
+    for sub in codex_skipped_domain_subdirs(element, catalog):
+        ui.warn(
+            f"@{element.name}: {sub}/ skipped for the Codex target "
+            f"(no Phase-1 Codex surface)."
+        )
+    pairs = iter_codex_pairs(element, project_root, catalog)
+    if not pairs and element.type is ElementType.RULE:
+        ui.warn(
+            f"{element.raw} skipped for the Codex target "
+            f"(rules have no Phase-1 Codex surface)."
+        )
+        return
+    for pair in pairs:
+        if pair.element_type is ElementType.SKILL:
+            codex_install.install_codex_skill(pair.source, pair.target, backup_dir())
+        else:
+            codex_install.install_codex_agent(pair.source, pair.target)
 
 
 def _rebuild_settings(manifest_path: Path, claude_dir: Path, catalog: Path) -> None:
@@ -166,7 +197,11 @@ def add(packages: tuple[str, ...], is_global: bool, no_gitignore: bool) -> None:
             validate_element_exists(element, catalog)
 
         manifest_path, claude_dir, project_root = _resolve_scope(is_global)
-        claude_dir.mkdir(parents=True, exist_ok=True)
+        # The Codex target is project-scoped only (ADR ai-1-3); the global
+        # manifest has no `targets` field and stays Claude-only.
+        targets = ["claude"] if is_global else manifest.get_targets(manifest_path)
+        if "claude" in targets:
+            claude_dir.mkdir(parents=True, exist_ok=True)
 
         # Expand each user-supplied element to include its transitive deps,
         # in topological order (deps appear first). The user's explicit
@@ -189,26 +224,30 @@ def add(packages: tuple[str, ...], is_global: bool, no_gitignore: bool) -> None:
         for element in expanded:
             if element.raw not in added_set:
                 continue
-            _link_element(element, claude_dir, catalog)
+            if "claude" in targets:
+                _link_element(element, claude_dir, catalog)
+            if "codex" in targets and project_root is not None:
+                _link_codex_element(element, project_root, catalog)
             if element.raw in explicit_set:
                 ui.success(element.raw)
             else:
                 ui.success(f"{element.raw} (pulled in as a dependency)")
 
         has_domain = any(el.type is ElementType.DOMAIN for el in expanded)
-        if project_root is not None:
-            rebuild_claude_config(
-                manifest_path=manifest_path,
-                claude_dir=claude_dir,
-                catalog=catalog,
-                project_root=project_root,
-                backup_root=backup_dir(),
-                warn=ui.warn,
-            )
-        else:
-            _rebuild_settings(manifest_path, claude_dir, catalog)
-        if has_domain:
-            ui.info(f"Settings: rebuilt {claude_dir.name}/settings.json")
+        if "claude" in targets:
+            if project_root is not None:
+                rebuild_claude_config(
+                    manifest_path=manifest_path,
+                    claude_dir=claude_dir,
+                    catalog=catalog,
+                    project_root=project_root,
+                    backup_root=backup_dir(),
+                    warn=ui.warn,
+                )
+            else:
+                _rebuild_settings(manifest_path, claude_dir, catalog)
+            if has_domain:
+                ui.info(f"Settings: rebuilt {claude_dir.name}/settings.json")
 
         _maybe_sync_gitignore(
             project_root=project_root,
