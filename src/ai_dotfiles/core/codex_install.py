@@ -8,9 +8,10 @@ managed artefacts.
 Two element types have a Phase-1 Codex surface:
 
 * a **skill** materialises as a real ``.agents/skills/<name>/``
-  directory holding a generated ``SKILL.md`` plus symlinks back to the
+  directory holding a generated ``SKILL.md`` plus *copies* of the
   catalog skill's support files (``scripts/``, ``references/``,
-  ``assets/`` …);
+  ``assets/`` …) — the Codex target is self-contained by design (ai-20),
+  so a Windows project never sees a symlink into the WSL catalog;
 * an **agent** materialises as a single generated
   ``.codex/agents/<name>.toml`` file.
 
@@ -45,7 +46,7 @@ from ai_dotfiles.core.codex_render import (
     split_body,
 )
 from ai_dotfiles.core.errors import LinkError
-from ai_dotfiles.core.symlinks import safe_symlink
+from ai_dotfiles.core.fs_copy import copy_tree_into
 
 __all__ = [
     "MANAGED_BY_HEADER",
@@ -69,7 +70,7 @@ __all__ = [
 MANAGED_BY_HEADER = "# managed-by: ai-dotfiles"
 
 # The skill SKILL.md filename. The support files/dirs that get
-# symlinked are everything else in the catalog skill directory.
+# copied are everything else in the catalog skill directory.
 _SKILL_FILE = "SKILL.md"
 
 # Per-skill sidecar holding the drift/ownership marker (ai-19). A
@@ -245,28 +246,62 @@ def install_codex_agent(source_md: Path, target_toml: Path) -> str:
     return "updated" if existed else "created"
 
 
-def _skill_support_items(source_dir: Path) -> list[Path]:
-    """Return the catalog skill's support files/dirs (everything but SKILL.md)."""
-    items: list[Path] = []
-    for child in sorted(source_dir.iterdir()):
+def _skill_support_names(source_dir: Path) -> list[str]:
+    """Return the names of a catalog skill's support items (all but SKILL.md).
+
+    Everything in the catalog skill directory other than ``SKILL.md`` and
+    dotfiles is a support item — ``scripts/``, ``references/``,
+    ``assets/`` and any sibling file.
+    """
+    return [
+        child.name
+        for child in sorted(source_dir.iterdir())
+        if child.name != _SKILL_FILE and not child.name.startswith(".")
+    ]
+
+
+def _clear_stale_support(target_dir: Path, keep: set[str]) -> None:
+    """Drop previously copied support items no longer present in the catalog.
+
+    Re-install copies the current support items afresh; this removes any
+    that a previous install left behind but the catalog source has since
+    renamed or deleted. The generated ``SKILL.md`` and the
+    ``.ai-dotfiles-meta`` sidecar (dotfiles) are always kept.
+    """
+    for child in target_dir.iterdir():
         if child.name == _SKILL_FILE or child.name.startswith("."):
             continue
-        items.append(child)
-    return items
+        if child.name in keep:
+            continue
+        try:
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+        except OSError as exc:
+            raise LinkError(
+                f"Failed to clear stale support item {child}: {exc}"
+            ) from exc
 
 
-def install_codex_skill(source_dir: Path, target_dir: Path, backup: Path) -> str:
+def install_codex_skill(source_dir: Path, target_dir: Path) -> str:
     """Install a catalog skill into ``target_dir`` for the Codex target.
 
     ``target_dir`` (``.agents/skills/<name>/``) is created as a real
     directory; ``SKILL.md`` is generated via
     :func:`~ai_dotfiles.core.codex_render.render_skill_md` with a
     trimmed description (ADR ai-1-4); every other catalog file/dir
-    (``scripts/``, ``references/``, ``assets/`` …) is symlinked into it.
+    (``scripts/``, ``references/``, ``assets/`` …) is *copied* into it
+    (ai-20). The Codex target is self-contained by design — copying
+    rather than symlinking means a Windows project never carries a
+    symlink into the WSL-resident catalog. Executable bits on copied
+    ``scripts/`` are preserved (:func:`shutil.copy2` keeps mode).
 
     The generated ``SKILL.md`` starts with ``---`` on line 1 (ai-19);
     the drift/ownership marker is written to a ``.ai-dotfiles-meta``
-    sidecar next to it. Re-installing overwrites both cleanly.
+    sidecar next to it. Re-installing overwrites the ``SKILL.md`` and
+    sidecar cleanly and refreshes the copied support items — a catalog
+    file removed between installs does not linger.
 
     Returns ``"created"`` or ``"updated"``.
 
@@ -288,8 +323,11 @@ def install_codex_skill(source_dir: Path, target_dir: Path, backup: Path) -> str
         ) from exc
     _write_skill_meta(target_dir, source_text)
 
-    for item in _skill_support_items(source_dir):
-        safe_symlink(item, target_dir / item.name, backup)
+    support_names = _skill_support_names(source_dir)
+    if existed:
+        _clear_stale_support(target_dir, keep=set(support_names))
+    for name in support_names:
+        copy_tree_into(source_dir / name, target_dir / name)
 
     return "updated" if existed else "created"
 
@@ -314,11 +352,10 @@ def remove_codex_skill(target_dir: Path) -> bool:
 
     A skill directory is removed only when it carries the
     ``.ai-dotfiles-meta`` sidecar marking it ai-dotfiles-managed
-    (ai-19) — see :func:`is_managed_skill`. The directory's symlinked
-    support files point back into the read-only catalog, so removing the
-    directory tree only drops the symlinks, never the catalog content.
-    A user-authored ``.agents/skills/<name>/`` (no sidecar) is left
-    untouched.
+    (ai-19) — see :func:`is_managed_skill`. The directory's support
+    files are copies (ai-20), so dropping the directory tree removes
+    them with it and never touches the catalog source. A user-authored
+    ``.agents/skills/<name>/`` (no sidecar) is left untouched.
     """
     if not is_managed_skill(target_dir):
         return False
