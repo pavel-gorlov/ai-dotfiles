@@ -20,7 +20,7 @@ from ai_dotfiles.commands._codex_config_writer import (
     write_codex_config,
     write_codex_mcp,
 )
-from ai_dotfiles.core import codex_install, manifest, symlinks
+from ai_dotfiles.core import claude_copy, codex_install, manifest, symlinks
 from ai_dotfiles.core.codex_targets import (
     codex_skipped_domain_subdirs,
     iter_codex_pairs,
@@ -85,8 +85,17 @@ def _resolve_scope(is_global: bool) -> tuple[Path, Path, Path | None]:
     return project_manifest_path(root), project_claude_dir(root), root
 
 
-def _link_element(element: Element, claude_dir: Path, catalog: Path) -> None:
-    """Create symlinks for a single element into ``claude_dir``."""
+def _link_element(
+    element: Element, claude_dir: Path, catalog: Path, link_mode: str
+) -> None:
+    """Materialise a single element into ``claude_dir``.
+
+    In ``copy`` mode the element's content is copied (a self-contained
+    snapshot); in ``symlink`` mode it is symlinked into the catalog.
+    """
+    if link_mode == "copy":
+        claude_copy.copy_element(element, claude_dir, catalog)
+        return
     pairs = resolve_target_paths(element, claude_dir, catalog)
     for source, target in pairs:
         symlinks.safe_symlink(source, target, backup_dir())
@@ -202,8 +211,11 @@ def add(packages: tuple[str, ...], is_global: bool, no_gitignore: bool) -> None:
 
         manifest_path, claude_dir, project_root = _resolve_scope(is_global)
         # The Codex target is project-scoped only (ADR ai-1-3); the global
-        # manifest has no `targets` field and stays Claude-only.
+        # manifest has no `targets` field and stays Claude-only. Copy mode
+        # is a project concern too — the global `.claude/` sits next to the
+        # catalog, so symlinks always resolve there.
         targets = ["claude"] if is_global else manifest.get_targets(manifest_path)
+        link_mode = "symlink" if is_global else manifest.get_link_mode(manifest_path)
         if "claude" in targets:
             claude_dir.mkdir(parents=True, exist_ok=True)
 
@@ -229,7 +241,7 @@ def add(packages: tuple[str, ...], is_global: bool, no_gitignore: bool) -> None:
             if element.raw not in added_set:
                 continue
             if "claude" in targets:
-                _link_element(element, claude_dir, catalog)
+                _link_element(element, claude_dir, catalog, link_mode)
             if "codex" in targets and project_root is not None:
                 _link_codex_element(element, project_root, catalog)
             if element.raw in explicit_set:
