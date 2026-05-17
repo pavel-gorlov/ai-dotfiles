@@ -16,6 +16,10 @@ from pathlib import Path
 import click
 
 from ai_dotfiles import ui
+from ai_dotfiles.commands._codex_config_writer import (
+    write_codex_config,
+    write_codex_mcp,
+)
 from ai_dotfiles.core import codex_install, manifest, symlinks
 from ai_dotfiles.core.codex_targets import (
     codex_skipped_domain_subdirs,
@@ -232,6 +236,16 @@ def add(packages: tuple[str, ...], is_global: bool, no_gitignore: bool) -> None:
                 ui.success(element.raw)
             else:
                 ui.success(f"{element.raw} (pulled in as a dependency)")
+
+        if "codex" in targets and project_root is not None:
+            # The codex_config writers round-trip the WHOLE managed region,
+            # so feed them every package now in the manifest — not just the
+            # freshly-added ones. Passing a delta would drop a sibling
+            # domain's [ai_dotfiles] / [mcp_servers] content.
+            ui.info("Codex target:")
+            all_packages = manifest.get_packages(manifest_path)
+            write_codex_config(all_packages, project_root, catalog)
+            write_codex_mcp(all_packages, project_root, catalog)
 
         has_domain = any(el.type is ElementType.DOMAIN for el in expanded)
         if "claude" in targets:
