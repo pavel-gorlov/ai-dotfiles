@@ -164,6 +164,8 @@ Absent `targets` field → `["claude"]`. Every existing manifest keeps working u
 | `agent:name` or domain agent | `.codex/agents/<name>.toml` | Generated TOML (`name`, `description`, `developer_instructions`, optional `model`) — a committed project artefact |
 | `rule:name` or domain `rules/` member | See rule classes below | Dispatched by rule frontmatter — three possible outputs |
 | Domain `hooks/` members | — | Skipped; the command prints an explicit `! ... skipped for the Codex target` message (Codex has no hook harness) |
+| Domain `settings.fragment.json` | `.codex/config.toml` `[ai_dotfiles]` table | `permissions` and `sandbox` keys translated; `hooks` skipped with a logged message |
+| Domain `mcp.fragment.json` | `.codex/config.toml` `[mcp_servers]` table | Each server entry written as a `[mcp_servers.<name>]` sub-table; ownership in `.codex/.ai-dotfiles-mcp-ownership.json` |
 
 #### Rule classes for the Codex target
 
@@ -215,6 +217,53 @@ paths:
 ```
 
 Without either field the rule becomes a `rule-<name>` skill, which Codex loads on demand via its description (progressive disclosure). This is a sensible default for rules that are not universally relevant.
+
+#### Codex `config.toml` and MCP
+
+Domain `settings.fragment.json` and `mcp.fragment.json` are translated into
+`.codex/config.toml` on every `install`, `add`, and `remove`.
+
+**Settings — `[ai_dotfiles]` table**
+
+Keys with a Codex `config.toml` equivalent land in a managed `[ai_dotfiles]`
+block, wrapped in marker comments:
+
+```
+# >>> ai-dotfiles managed (config) — do not edit by hand >>>
+[ai_dotfiles.permissions]
+allow = ["Bash(git:*)"]
+
+[ai_dotfiles.sandbox]
+network = false
+# <<< ai-dotfiles managed (config) <<<
+```
+
+Translation rules:
+
+| Fragment key | Codex table | Merge behaviour |
+|---|---|---|
+| `permissions.allow` / `.deny` / `.ask` | `[ai_dotfiles.permissions]` | Concat-deduped across all installed domains |
+| `sandbox` | `[ai_dotfiles.sandbox]` | Last installed domain wins on conflict |
+| `hooks` | — | **Not written.** CLI prints an explicit skip message naming each domain whose fragment contained hooks (Codex has no hook harness — ADR ai-1-5) |
+
+**MCP — `[mcp_servers]` table**
+
+Each server in a domain's `mcp.fragment.json` lands in a `[mcp_servers.<name>]`
+sub-table of `.codex/config.toml`. The Codex `[mcp_servers.<name>]` shape uses
+the same keys as the Claude `.mcp.json` shape (`command`, `args`, `env`, `type`,
+`url`); keys whose value is `null` are dropped (TOML has no null).
+
+Domain-owned server names are tracked in `.codex/.ai-dotfiles-mcp-ownership.json`
+so that `remove` drops only domain-contributed servers and preserves user-authored
+entries. A name collision — a domain declaring a server the user already
+hand-authored — keeps the user's version and prints a warning.
+
+**Shared file**
+
+The `[ai_dotfiles]` (settings) and `[mcp_servers]` (MCP) regions coexist in
+`.codex/config.toml`. Each writer owns exactly one top-level table and leaves all
+other content untouched. `remove` rebuilds both regions from the remaining domains
+and deletes the file entirely if it would be left empty.
 
 Every generated Codex file starts with:
 
@@ -318,9 +367,13 @@ ai-dotfiles init                           # creates ai-dotfiles.json
 # Edit ai-dotfiles.json to add "targets": ["claude", "codex"]
 ai-dotfiles add @gitflow skill:commit      # adds to manifest
 ai-dotfiles install
-# Claude:  <project>/.claude/skills/commit/   (symlink)
-# Codex:   <project>/.agents/skills/commit/   (generated SKILL.md + symlinked support)
-#          <project>/.codex/agents/...toml     (generated from any agent in @gitflow)
+# Claude:  <project>/.claude/skills/commit/        (symlink)
+#          <project>/.claude/settings.json          (merged from settings.fragment.json)
+#          <project>/.mcp.json                      (merged from mcp.fragment.json)
+# Codex:   <project>/.agents/skills/commit/        (generated SKILL.md + symlinked support)
+#          <project>/.codex/agents/...toml          (generated from any agent in @gitflow)
+#          <project>/.codex/config.toml             (permissions/sandbox from settings.fragment.json;
+#                                                    [mcp_servers] from mcp.fragment.json)
 
 ai-dotfiles status                         # includes a "Codex target" block
 ```
@@ -376,8 +429,8 @@ ai-dotfiles list --available           # cross-check against catalog contents
 - The `targets` field in `ai-dotfiles.json` controls which CLIs the manifest renders to. Valid values: `"claude"`, `"codex"`. Absent → `["claude"]`. The Codex target is project-scoped only — `-g` commands always use `["claude"]`.
 - Never edit `~/.claude/` directly for anything managed by ai-dotfiles — use `add` / `remove` so the manifest stays authoritative.
 - The manifest file is `<project>/ai-dotfiles.json` (per-project) or `~/.ai-dotfiles/global.json` (global). Specifiers live under `"packages"`.
-- `settings.fragment.json` inside a domain is deep-merged into `.claude/settings.json` on every `add` / `remove` / `install`. **User-authored keys are preserved**: existing settings are loaded as the merge base, then domain fragments are layered on top. `permissions.allow` / `permissions.deny` / `permissions.ask` are concat-deduped (user entries survive, domain entries are appended once). `hooks` keep per-event concat behaviour. Other top-level keys: overlay wins on conflict. Ownership for what ai-dotfiles wrote last time is tracked in `<project>/.claude/.ai-dotfiles-settings-ownership.json`, so `remove` cleans up only entries it added — user lines stay. Caveat: if a user line has the exact same value as a domain entry, the CLI cannot tell them apart and will treat it as managed (i.e. removed on uninstall).
-- `mcp.fragment.json` inside a domain declares `mcpServers` merged into `<project>/.mcp.json` on `add` / `install`. Permissions `mcp__<server>__*` are auto-added to `settings.json` and server names are appended to `enabledMcpjsonServers` (precise allowlist — user-added entries in `.mcp.json` keep Claude Code's default approval prompt). Env-var expansion uses Claude Code's native `${VAR}` / `${VAR:-default}` syntax. Ownership is tracked in `<project>/.claude/.ai-dotfiles-mcp-ownership.json`; user-authored entries in `.mcp.json` are preserved on remove. If you previously denied a server at Claude Code's approval prompt, run `claude mcp reset-project-choices` after `add`. Global scope (`-g`) does not yet support MCP.
+- `settings.fragment.json` inside a domain is deep-merged into `.claude/settings.json` on every `add` / `remove` / `install`. **User-authored keys are preserved**: existing settings are loaded as the merge base, then domain fragments are layered on top. `permissions.allow` / `permissions.deny` / `permissions.ask` are concat-deduped (user entries survive, domain entries are appended once). `hooks` keep per-event concat behaviour. Other top-level keys: overlay wins on conflict. Ownership for what ai-dotfiles wrote last time is tracked in `<project>/.claude/.ai-dotfiles-settings-ownership.json`, so `remove` cleans up only entries it added — user lines stay. Caveat: if a user line has the exact same value as a domain entry, the CLI cannot tell them apart and will treat it as managed (i.e. removed on uninstall). **For the Codex target**, the same fragments are also translated into `.codex/config.toml`: `permissions` and `sandbox` land in the managed `[ai_dotfiles]` table; `hooks` are skipped with a logged message (Codex has no hook harness — ADR ai-1-5). See [Codex config.toml and MCP](#codex-configtoml-and-mcp).
+- `mcp.fragment.json` inside a domain declares `mcpServers` merged into `<project>/.mcp.json` on `add` / `install`. Permissions `mcp__<server>__*` are auto-added to `settings.json` and server names are appended to `enabledMcpjsonServers` (precise allowlist — user-added entries in `.mcp.json` keep Claude Code's default approval prompt). Env-var expansion uses Claude Code's native `${VAR}` / `${VAR:-default}` syntax. Ownership is tracked in `<project>/.claude/.ai-dotfiles-mcp-ownership.json`; user-authored entries in `.mcp.json` are preserved on remove. If you previously denied a server at Claude Code's approval prompt, run `claude mcp reset-project-choices` after `add`. Global scope (`-g`) does not yet support MCP. **For the Codex target**, the same fragments are also translated into the `[mcp_servers]` table of `.codex/config.toml`; ownership is tracked in `.codex/.ai-dotfiles-mcp-ownership.json`. See [Codex config.toml and MCP](#codex-configtoml-and-mcp).
 - Do not hand-edit a domain-owned MCP server's entry in `.mcp.json` (e.g. tweaking its `command` or `args`). The ownership file marks it as managed, so the next `add` / `remove` / `install` regenerates it from the domain's fragment and your edits are lost. To change behaviour, edit the catalog's `mcp.fragment.json` (or fork the domain). Only servers that are NOT in the ownership map are considered user-authored and preserved across rebuilds.
 - `.gitignore` is auto-managed in a block delimited by `# >>> ai-dotfiles managed — do not edit manually <<<` markers. On every `add` / `remove` / `install` the block is regenerated to list every vendored symlink currently under `.claude/` (format: `/.claude/skills/<name>`). User-authored lines outside the block are never touched; a literal path already ignored by a user-authored line is not duplicated in the block. Opt out per-call with `--no-gitignore`, or globally by setting `"manage_gitignore": false` at the top level of `ai-dotfiles.json` (project) or `~/.ai-dotfiles/global.json` — both must be unset or `true` for the block to be written.
 - On conflict or unexpected symlink state, run `ai-dotfiles status` first — do not resolve by deleting files manually.

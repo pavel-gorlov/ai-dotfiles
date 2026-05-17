@@ -132,6 +132,8 @@ Then `ai-dotfiles install` produces:
 | `agent:reviewer` | `.claude/agents/reviewer.md` → symlink | `.codex/agents/reviewer.toml` — generated TOML |
 | `rule:*` / domain `rules/` | `.claude/rules/<name>.md` → symlink | Dispatched by rule frontmatter — see [Codex rule support](#codex-rule-support) |
 | Domain `hooks/` | `.claude/settings.json` hooks | Skipped (explicit message) — Codex has no hook harness |
+| Domain `settings.fragment.json` | Deep-merged into `.claude/settings.json` | `permissions` and `sandbox` keys land in the managed `[ai_dotfiles]` table of `.codex/config.toml`; `hooks` is skipped with an explicit message |
+| Domain `mcp.fragment.json` | Merged into `<project>/.mcp.json` | Servers land in the `[mcp_servers]` table of `.codex/config.toml`; ownership tracked in `.codex/.ai-dotfiles-mcp-ownership.json` |
 
 Every generated Codex file carries `# managed-by: ai-dotfiles` and
 `# source-sha256: <hex>` (hash of the source catalog file). `ai-dotfiles status`
@@ -191,6 +193,57 @@ paths:            # conditional — lands in src/AGENTS.md and tests/AGENTS.md
 Without either field the rule becomes a `rule-<name>` skill (Codex loads it on
 demand via its description). This is the default for any existing catalog rule
 that has not yet been migrated.
+
+### Codex config.toml and MCP support
+
+Domain `settings.fragment.json` and `mcp.fragment.json` are translated into
+`.codex/config.toml` by `install`, `add`, and `remove`.
+
+**Settings — `[ai_dotfiles]` table**
+
+Keys with a Codex `config.toml` equivalent land in the `[ai_dotfiles]` managed
+table, wrapped in marker comments so the region is clearly owned:
+
+```toml
+# >>> ai-dotfiles managed (config) — do not edit by hand >>>
+[ai_dotfiles.permissions]
+allow = ["Bash(git:*)"]
+deny = []
+
+[ai_dotfiles.sandbox]
+network = false
+# <<< ai-dotfiles managed (config) <<<
+```
+
+- `permissions` — the `allow` / `deny` / `ask` lists from the fragment land
+  under `[ai_dotfiles.permissions]`, concat-deduped across all installed domains.
+- `sandbox` — the fragment's `sandbox` object lands under `[ai_dotfiles.sandbox]`
+  (last installed domain wins on conflict).
+- `hooks` — Codex has no hook harness. Hooks are **not** written; the CLI prints
+  an explicit skip message naming each domain whose fragment contained hooks.
+
+**MCP — `[mcp_servers]` table**
+
+Each server declared in a domain's `mcp.fragment.json` is written as a
+`[mcp_servers.<name>]` sub-table in `.codex/config.toml`. The Codex
+`[mcp_servers.<name>]` shape uses the same keys as the Claude `.mcp.json` shape
+(`command`, `args`, `env`, `type`, `url`); the only difference is the container
+format. Keys with a `null` value are dropped (TOML has no null).
+
+Domain-owned server names are tracked in `.codex/.ai-dotfiles-mcp-ownership.json`
+so that `remove` strips only domain-contributed servers. User-authored entries in
+`[mcp_servers]` are preserved across every `add`, `remove`, and `install`. A name
+collision — where a domain declares a server name the user already hand-authored —
+keeps the user's version and prints a warning.
+
+**Shared file**
+
+The `[ai_dotfiles]` (settings) and `[mcp_servers]` (MCP) regions coexist in
+`.codex/config.toml`. Each writer touches only its own top-level table; all other
+tables, including user-authored ones, survive untouched.
+
+`remove` rebuilds both regions from the remaining installed domains, and deletes
+the file entirely if it would be left empty.
 
 ## Element Format
 
@@ -496,8 +549,10 @@ are enforced via `commitizen`.
 - Symlinks only; Windows is not officially supported.
 - Codex target: domain `hooks/` members are not rendered for Codex — the
   command prints an explicit skip message (Codex has no hook harness). Rules
-  are rendered (see [Codex rule support](#codex-rule-support)). `config.toml`
-  and MCP support are not yet available.
+  are rendered (see [Codex rule support](#codex-rule-support)).
+- Codex target: `install -g`, `add -g`, `remove -g` always target Claude Code
+  only; the global manifest has no `targets` field and does not support the
+  Codex target.
 
 ## License
 
