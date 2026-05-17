@@ -1,7 +1,7 @@
 ---
 id: ai-10
 kind: subtask
-status: wip
+status: done
 created_at: '2026-05-17T10:57:40+00:00'
 parent: ai-1
 context_files:
@@ -36,12 +36,12 @@ without touching user-authored text.
 
 ## Definition of done
 
-- [ ] `agents_md.py` writes an `ALWAYS_ON` rule as a managed block in the root `AGENTS.md`.
-- [ ] A `PATH_SCOPED` rule is written as a managed block in each target `<dir>/AGENTS.md`.
-- [ ] Managed blocks are marker-delimited; the strip function removes only ai-dotfiles blocks and preserves user text.
-- [ ] Re-running assembly is idempotent (no duplicate blocks, no drift).
-- [ ] Unit tests cover write, idempotent re-write, strip, and user-text preservation.
-- [ ] `pytest`, `mypy --strict`, `ruff`, `black` green.
+- [x] `agents_md.py` writes an `ALWAYS_ON` rule as a managed block in the root `AGENTS.md`.
+- [x] A `PATH_SCOPED` rule is written as a managed block in each target `<dir>/AGENTS.md`.
+- [x] Managed blocks are marker-delimited; the strip function removes only ai-dotfiles blocks and preserves user text.
+- [x] Re-running assembly is idempotent (no duplicate blocks, no drift).
+- [x] Unit tests cover write, idempotent re-write, strip, and user-text preservation.
+- [x] `pytest`, `mypy --strict`, `ruff`, `black` green.
 
 ## Notes
 

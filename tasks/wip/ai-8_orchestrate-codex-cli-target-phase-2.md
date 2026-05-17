@@ -83,6 +83,27 @@ Notes for ai-10 / ai-11:
   `test_codex_targets.py::test_standalone_rule_yields_no_pairs` will
   then need updating.
 
+### ai-10 done (commit `2807b1b`)
+
+Notes for ai-11 (wiring `agents_md.py` into commands):
+
+- API: `rule_block_targets(md_path, project_root, rule_class_value)`
+  returns the `AGENTS.md` paths to write; `upsert_rule_block(agents_md,
+  name, body)` writes one block (idempotent, returns `False` on no-op);
+  `strip_rule_blocks(text, {name})` removes owned blocks; `rule_name_of`
+  derives the block / `rule-<name>` name.
+- `rule_class` is passed as the `RuleClass.value` **string** (avoids an
+  import cycle). `DESCRIPTION_ONLY` is rejected by `rule_block_targets`
+  with `ElementError` — ai-11 routes those to the Codex-only skill path
+  *before* calling `agents_md`.
+- `upsert_rule_block` wants the **frontmatter-stripped body** — extract
+  it the way `codex_render._split_body` does (consider exposing a shared
+  helper).
+- Ownership is self-describing via the in-file markers — **no separate
+  ownership JSON** is needed (unlike `settings_ownership.py`).
+- An `AGENTS.md` left whitespace-only after a strip is a deletion
+  candidate — ai-11 decides; `agents_md.py` never deletes files.
+
 ## Anti-patterns
 
 - Starting before Phase 1 (ai-2 / PR #6) is merged — Phase 2 builds on
