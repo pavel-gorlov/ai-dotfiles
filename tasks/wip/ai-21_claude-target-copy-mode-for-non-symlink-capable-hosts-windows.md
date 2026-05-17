@@ -48,12 +48,12 @@ Add a `link_mode` option to the project manifest:
 
 ## Acceptance criteria
 
-- [ ] `manifest.get_link_mode()` returns `"symlink"` when the field is absent (backward compatible).
-- [ ] With `link_mode: "copy"`, `install` / `add` copy skills/agents/rules into `.claude/`; no symlinks created.
-- [ ] With `link_mode: "symlink"` (or absent), behaviour is byte-identical to today.
-- [ ] `remove` cleans copy-mode installs; `status` does not misreport copies as broken.
-- [ ] Docs (`builtin_ai_dotfiles_skill.md`, `README.md`) cover `link_mode`.
-- [ ] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green.
+- [x] `manifest.get_link_mode()` returns `"symlink"` when the field is absent (backward compatible).
+- [x] With `link_mode: "copy"`, `install` / `add` copy skills/agents/rules into `.claude/`; no symlinks created.
+- [x] With `link_mode: "symlink"` (or absent), behaviour is byte-identical to today.
+- [x] `remove` cleans copy-mode installs; `status` does not misreport copies as broken.
+- [x] Docs (`builtin_ai_dotfiles_skill.md`, `README.md`) cover `link_mode`.
+- [x] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green (995 passed; mypy 62 files; ruff + black clean).
 - [ ] PR opened against `main`.
 
 ## Anti-patterns
