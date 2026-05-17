@@ -1,7 +1,7 @@
 ---
 id: ai-3
 kind: subtask
-status: wip
+status: done
 created_at: '2026-05-17T07:09:43+00:00'
 parent: ai-1
 context_files:
@@ -44,12 +44,12 @@ no command wiring, no filesystem rendering.
 
 ## Definition of done
 
-- [ ] `core/frontmatter.py` exists; `dependencies.py` uses it; no duplicated parser.
-- [ ] `core/targets.py` defines `Target` + render policy with type annotations.
-- [ ] `paths.py` exposes the two Codex path resolvers.
-- [ ] `manifest.get_targets()` returns `["claude"]` for a manifest with no `targets` key.
-- [ ] `resolve_target_paths` resolves Codex paths for `Target.CODEX`.
-- [ ] Unit tests added (`tests/unit/`) for `frontmatter`, `targets`, `get_targets`, Codex path resolution; `pytest`, `mypy --strict`, `ruff`, `black` green.
+- [x] `core/frontmatter.py` exists; `dependencies.py` uses it; no duplicated parser.
+- [x] `core/targets.py` defines `Target` + render policy with type annotations.
+- [x] `paths.py` exposes the two Codex path resolvers.
+- [x] `manifest.get_targets()` returns `["claude"]` for a manifest with no `targets` key.
+- [x] `resolve_target_paths` resolves Codex paths for `Target.CODEX`.
+- [x] Unit tests added (`tests/unit/`) for `frontmatter`, `targets`, `get_targets`, Codex path resolution; `pytest`, `mypy --strict`, `ruff`, `black` green.
 
 ## Notes
 

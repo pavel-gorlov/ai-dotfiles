@@ -64,6 +64,29 @@ core-module surface and **must** be sequential.
 - [ ] A manifest without `targets` installs byte-identically to pre-change behaviour.
 - [ ] PR `feat: Codex CLI target support (skills + agents)` opened against `main`.
 
+## Execution log
+
+### ai-3 done (commit `6172f4f`)
+
+Constraints for ai-4 / ai-5 surfaced during ai-3:
+
+- **Circular import.** `core/targets.py` imports `ElementType` from
+  `core/elements.py`, so `elements.py` must not import `targets`/`paths`
+  at module level — `resolve_target_paths` uses a lazy import. ai-4's
+  `codex_render.py` may import `targets` directly.
+- **`resolve_target_paths` signature.** New optional 4th param
+  `target: Target | None = None` (None → `Target.CLAUDE`). The `commands/`
+  callers were left untouched (foundation-only scope) — **ai-5 must
+  update them** to pass `Target.CODEX` + the correct root.
+- **Codex paths span two roots.** Skills → `.agents/skills/`, agents →
+  `.codex/agents/` — not one `config_dir + subdir` join. Use the two
+  `paths.py` resolvers; do not reconstruct from `RENDER_POLICY.subdir`.
+- **Codex `RULE` is `RenderMode.SKIP`** in Phase 1: `resolve_target_paths`
+  raises `ElementError` for `rule:` + `Target.CODEX`; domain expansion
+  skips `rules/` and `hooks/`. Phase 2 changes this.
+- **`get_targets`.** Absent `targets` key → `["claude"]`; an explicit
+  `targets: []` is honoured as `[]`. Raises `ConfigError` if not a list.
+
 ## Anti-patterns
 
 - Dispatching ai-4 before ai-3 is `done` — the render layer imports the
