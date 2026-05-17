@@ -1,7 +1,7 @@
 ---
 id: ai-17
 kind: subtask
-status: wip
+status: done
 created_at: '2026-05-17T13:32:13+00:00'
 parent: ai-1
 context_files:
@@ -35,13 +35,13 @@ for the Codex target — closing the gap where only `install` did so.
 
 ## Definition of done
 
-- [ ] `ai-dotfiles add @domain` writes the domain's `settings.fragment.json`
+- [x] `ai-dotfiles add @domain` writes the domain's `settings.fragment.json`
       (translatable keys) and `mcp.fragment.json` into `.codex/config.toml`.
-- [ ] The hooks-skipped message fires on `add` too (consistent with `install`).
-- [ ] Adding a second domain does not drop the first domain's managed
+- [x] The hooks-skipped message fires on `add` too (consistent with `install`).
+- [x] Adding a second domain does not drop the first domain's managed
       `config.toml` regions.
-- [ ] Integration / e2e tests cover `add` writing `config.toml`.
-- [ ] `pytest`, `mypy --strict`, `ruff`, `black` green.
+- [x] Integration / e2e tests cover `add` writing `config.toml`.
+- [x] `pytest`, `mypy --strict`, `ruff`, `black` green.
 
 ## Notes
 
