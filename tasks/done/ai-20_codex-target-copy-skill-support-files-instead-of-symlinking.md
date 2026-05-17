@@ -1,7 +1,7 @@
 ---
 id: ai-20
 kind: task
-status: wip
+status: done
 created_at: '2026-05-17T19:19:20+00:00'
 parent: ai-1
 dependencies: []
@@ -52,7 +52,7 @@ makes `.agents/skills/<name>/` entirely real files.
 - [x] Re-install refreshes copied support files; `remove` deletes them with the skill dir.
 - [x] A test asserts `.agents/skills/` contains no symlinks after install.
 - [x] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green (962 passed; mypy 60 files; ruff + black clean).
-- [ ] PR opened against `main`.
+- [x] PR opened against `main` — [#11](https://github.com/pavel-gorlov/ai-dotfiles/pull/11), merged.
 
 ## Anti-patterns
 
