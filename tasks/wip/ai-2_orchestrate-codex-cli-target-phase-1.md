@@ -1,7 +1,7 @@
 ---
 id: ai-2
 kind: task
-status: backlog
+status: wip
 created_at: '2026-05-17T07:09:43+00:00'
 parent: ai-1
 dependencies: []
