@@ -17,7 +17,18 @@ from pathlib import Path
 import click
 
 from ai_dotfiles import ui
-from ai_dotfiles.core import elements, manifest, paths, settings_merge, symlinks
+from ai_dotfiles.core import (
+    codex_install,
+    elements,
+    manifest,
+    paths,
+    settings_merge,
+    symlinks,
+)
+from ai_dotfiles.core.codex_targets import (
+    codex_skipped_domain_subdirs,
+    iter_codex_pairs,
+)
 from ai_dotfiles.core.dependencies import resolve_transitive
 from ai_dotfiles.core.elements import Element, ElementType
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError, MissingDependencyError
@@ -150,7 +161,9 @@ def _install_project(
     catalog = paths.catalog_dir()
     backup = paths.backup_dir()
     claude_dir = paths.project_claude_dir(root)
-    claude_dir.mkdir(parents=True, exist_ok=True)
+    targets = manifest.get_targets(manifest_path)
+    if "claude" in targets:
+        claude_dir.mkdir(parents=True, exist_ok=True)
 
     packages = _expand_manifest_deps(manifest_path, catalog, strict_deps=strict_deps)
 
@@ -165,35 +178,40 @@ def _install_project(
         for element in parsed:
             elements.validate_element_exists(element, catalog)
 
-        for element in parsed:
-            linked_items.extend(_link_element(element, claude_dir, catalog, backup))
+        if "claude" in targets:
+            for element in parsed:
+                linked_items.extend(_link_element(element, claude_dir, catalog, backup))
+
+        if "codex" in targets:
+            _install_codex_target(parsed, root, catalog, backup, prune=prune)
 
         any_shim = _provision_runtimes(parsed, catalog)
 
         fragments = settings_merge.collect_domain_fragments(packages, catalog)
         fragment_count = len(fragments)
 
-    # Always regenerate settings + MCP, even on an empty manifest, so any
-    # stale state left by a crashed `add` / `remove` gets cleaned up.
-    rebuild_claude_config(
-        manifest_path=manifest_path,
-        claude_dir=claude_dir,
-        catalog=catalog,
-        project_root=root,
-        backup_root=backup,
-        warn=ui.warn,
-    )
-    settings_written = (claude_dir / "settings.json").exists()
+    if "claude" in targets:
+        # Always regenerate settings + MCP, even on an empty manifest, so any
+        # stale state left by a crashed `add` / `remove` gets cleaned up.
+        rebuild_claude_config(
+            manifest_path=manifest_path,
+            claude_dir=claude_dir,
+            catalog=catalog,
+            project_root=root,
+            backup_root=backup,
+            warn=ui.warn,
+        )
+        settings_written = (claude_dir / "settings.json").exists()
 
-    if prune:
-        _report_pruned(claude_dir, paths.storage_root())
+        if prune:
+            _report_pruned(claude_dir, paths.storage_root())
 
-    _maybe_sync_gitignore(
-        project_root=root,
-        claude_dir=claude_dir,
-        manifest_path=manifest_path,
-        no_gitignore=no_gitignore,
-    )
+        _maybe_sync_gitignore(
+            project_root=root,
+            claude_dir=claude_dir,
+            manifest_path=manifest_path,
+            no_gitignore=no_gitignore,
+        )
 
     if not packages:
         ui.info("Nothing to install.")
@@ -337,6 +355,90 @@ def _link_element(
     ui.success(element.raw)
     entries.append(element.raw)
     return entries
+
+
+def _install_codex_target(
+    parsed: list[Element],
+    project_root: Path,
+    catalog: Path,
+    backup: Path,
+    *,
+    prune: bool,
+) -> None:
+    """Render and write Codex artefacts for every element in ``parsed``.
+
+    Skills become ``.agents/skills/<name>/`` (generated ``SKILL.md`` +
+    symlinked support files); agents become ``.codex/agents/<name>.toml``.
+    Domain ``rules/``/``hooks/`` have no Phase-1 Codex surface — the skip
+    is reported, not silent. With ``prune``, managed Codex files no
+    longer backed by the manifest are removed.
+    """
+    ui.info("Codex target:")
+    wanted_skills: set[Path] = set()
+    wanted_agents: set[Path] = set()
+
+    for element in parsed:
+        for sub in codex_skipped_domain_subdirs(element, catalog):
+            ui.warn(
+                f"@{element.name}: {sub}/ skipped for the Codex target "
+                f"(no Phase-1 Codex surface)."
+            )
+        pairs = iter_codex_pairs(element, project_root, catalog)
+        if not pairs and element.type is ElementType.RULE:
+            ui.warn(
+                f"{element.raw} skipped for the Codex target "
+                f"(rules have no Phase-1 Codex surface)."
+            )
+            continue
+        for pair in pairs:
+            if pair.element_type is ElementType.SKILL:
+                status = codex_install.install_codex_skill(
+                    pair.source, pair.target, backup
+                )
+                wanted_skills.add(pair.target)
+                ui.success(f"skills/{pair.target.name} ({status})")
+            else:
+                status = codex_install.install_codex_agent(pair.source, pair.target)
+                wanted_agents.add(pair.target)
+                ui.success(f"agents/{pair.target.name} ({status})")
+
+    if prune:
+        _prune_codex_target(project_root, wanted_skills, wanted_agents)
+
+
+def _prune_codex_target(
+    project_root: Path,
+    wanted_skills: set[Path],
+    wanted_agents: set[Path],
+) -> None:
+    """Remove managed Codex files no longer backed by the manifest.
+
+    Only files carrying the ``# managed-by: ai-dotfiles`` header are
+    touched — user-authored skills/agents in the same directories stay.
+    """
+    skills_dir = paths.project_codex_skills_dir(project_root)
+    agents_dir = paths.project_codex_agents_dir(project_root)
+    removed: list[str] = []
+
+    if skills_dir.is_dir():
+        for child in sorted(skills_dir.iterdir()):
+            if (
+                child.is_dir()
+                and child not in wanted_skills
+                and codex_install.remove_codex_skill(child)
+            ):
+                removed.append(f"skills/{child.name}")
+    if agents_dir.is_dir():
+        for child in sorted(agents_dir.iterdir()):
+            if (
+                child.suffix == ".toml"
+                and child not in wanted_agents
+                and codex_install.remove_codex_agent(child)
+            ):
+                removed.append(f"agents/{child.name}")
+
+    for label in removed:
+        ui.info(f"  - pruned Codex {label}")
 
 
 def _provision_runtimes(parsed: list[Element], catalog: Path) -> bool:

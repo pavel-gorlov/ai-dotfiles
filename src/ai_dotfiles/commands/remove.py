@@ -8,7 +8,8 @@ from pathlib import Path
 import click
 
 from ai_dotfiles import ui
-from ai_dotfiles.core import manifest, symlinks
+from ai_dotfiles.core import codex_install, manifest, symlinks
+from ai_dotfiles.core.codex_targets import iter_codex_pairs
 from ai_dotfiles.core.completions import (
     complete_installed_specifiers,
     make_completer,
@@ -124,6 +125,21 @@ def _unlink_element(element: Element, claude_dir: Path, catalog: Path) -> None:
 
     for _, target in resolve_target_paths(element, claude_dir, catalog):
         symlinks.unlink_standalone(target)
+
+
+def _unlink_codex_element(element: Element, project_root: Path, catalog: Path) -> None:
+    """Remove managed Codex artefacts created for ``element``.
+
+    Only files carrying the ``# managed-by: ai-dotfiles`` header are
+    deleted — a user-authored skill/agent of the same name is left
+    untouched. Element types with no Phase-1 Codex surface (rules) and
+    domain ``rules/``/``hooks/`` members simply yield nothing to remove.
+    """
+    for pair in iter_codex_pairs(element, project_root, catalog):
+        if pair.element_type is ElementType.SKILL:
+            codex_install.remove_codex_skill(pair.target)
+        else:
+            codex_install.remove_codex_agent(pair.target)
 
 
 def _rebuild_settings(manifest_path: Path, claude_dir: Path, catalog: Path) -> None:
@@ -256,6 +272,8 @@ def remove(
 
         catalog = catalog_dir()
         manifest_path, claude_dir, project_root = _resolve_scope(is_global)
+        # The Codex target is project-scoped only (ADR ai-1-3).
+        targets = ["claude"] if is_global else manifest.get_targets(manifest_path)
 
         if not force:
             _check_reverse_deps(manifest_path, catalog, elements)
@@ -273,27 +291,34 @@ def remove(
         ui.info(f"Removed from {manifest_name}:")
         for element in elements:
             if element.raw in removed_set:
-                _unlink_element(element, claude_dir, catalog)
+                if "claude" in targets:
+                    _unlink_element(element, claude_dir, catalog)
+                if "codex" in targets and project_root is not None:
+                    _unlink_codex_element(element, project_root, catalog)
                 ui.info(f"  - {element.raw}")
             else:
                 ui.info(f"  ~ {element.raw} (not installed)")
 
-        if project_root is not None:
-            rebuild_claude_config(
-                manifest_path=manifest_path,
-                claude_dir=claude_dir,
-                catalog=catalog,
-                project_root=project_root,
-                backup_root=backup_dir(),
-                warn=ui.warn,
-            )
-        else:
-            _rebuild_settings(manifest_path, claude_dir, catalog)
         had_domain = any(
             el.type is ElementType.DOMAIN for el in elements if el.raw in removed_set
         )
+        if "claude" in targets:
+            if project_root is not None:
+                rebuild_claude_config(
+                    manifest_path=manifest_path,
+                    claude_dir=claude_dir,
+                    catalog=catalog,
+                    project_root=project_root,
+                    backup_root=backup_dir(),
+                    warn=ui.warn,
+                )
+            else:
+                _rebuild_settings(manifest_path, claude_dir, catalog)
+            if had_domain:
+                ui.info(f"Settings: rebuilt {claude_dir.name}/settings.json")
+        # Domain runtimes (venv + bin shims) are target-agnostic — they
+        # are provisioned for any target, so tear them down regardless.
         if had_domain:
-            ui.info(f"Settings: rebuilt {claude_dir.name}/settings.json")
             _maybe_tear_down_runtimes(elements, removed_set, catalog)
 
         _maybe_sync_gitignore(
