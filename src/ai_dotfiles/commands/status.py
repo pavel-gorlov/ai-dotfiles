@@ -27,6 +27,7 @@ from ai_dotfiles.core import (
     symlinks,
 )
 from ai_dotfiles.core.codex_targets import iter_codex_pairs, iter_codex_rule_plans
+from ai_dotfiles.core.copy_ownership import load_copy_ownership, relative_label
 from ai_dotfiles.core.elements import Element, ElementType
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
 
@@ -87,8 +88,29 @@ def _relative_label(target: Path, claude_dir: Path) -> str:
     return str(rel)
 
 
-def _classify(source: Path, target: Path, storage: Path) -> str:
-    """Return one of :data:`_OK`, :data:`_BROKEN`, :data:`_MISSING`."""
+def _classify(
+    source: Path,
+    target: Path,
+    storage: Path,
+    *,
+    copy_mode: bool = False,
+    owned_copies: frozenset[str] = frozenset(),
+    claude_dir: Path | None = None,
+) -> str:
+    """Return one of :data:`_OK`, :data:`_BROKEN`, :data:`_MISSING`.
+
+    In ``copy_mode`` the Claude target holds real copied files, not
+    symlinks: a target is OK when it exists and is recorded as an
+    ai-dotfiles-managed copy in the copy-ownership sidecar; MISSING when
+    absent; BROKEN when present but unrecorded (the user's own file).
+    """
+    if copy_mode:
+        if not target.exists() and not target.is_symlink():
+            return _MISSING
+        if claude_dir is None:
+            return _BROKEN
+        return _OK if relative_label(target, claude_dir) in owned_copies else _BROKEN
+
     if not target.is_symlink() and not target.exists():
         return _MISSING
 
@@ -132,8 +154,16 @@ def _print_package(
     element: Element,
     triples: list[tuple[Path, Path, str]],
     storage: Path,
+    *,
+    copy_mode: bool = False,
+    owned_copies: frozenset[str] = frozenset(),
+    claude_dir: Path | None = None,
 ) -> int:
-    """Print one package block. Returns count of issues found."""
+    """Print one package block. Returns count of issues found.
+
+    In ``copy_mode`` the Claude target is materialised as copied files,
+    so an OK entry is reported as ``copied`` rather than a live symlink.
+    """
     header = element.raw
     ui.info(f"  {header}")
 
@@ -144,15 +174,30 @@ def _print_package(
         ui.info(f"    {_MISSING} (no linkable items found in catalog)")
         return 1
 
+    ok_text = "OK (copied)" if copy_mode else "OK"
     for source, target, label in triples:
-        status = _classify(source, target, storage)
+        status = _classify(
+            source,
+            target,
+            storage,
+            copy_mode=copy_mode,
+            owned_copies=owned_copies,
+            claude_dir=claude_dir,
+        )
         if status == _OK:
-            ui.info(_format_line(_OK, label, source, "OK"))
+            ui.info(_format_line(_OK, label, source, ok_text))
         elif status == _BROKEN:
-            ui.info(f"    {_BROKEN} {label.ljust(28)} -> BROKEN (target missing)")
+            if copy_mode:
+                ui.info(
+                    f"    {_BROKEN} {label.ljust(28)} -> BROKEN "
+                    "(unmanaged file at target)"
+                )
+            else:
+                ui.info(f"    {_BROKEN} {label.ljust(28)} -> BROKEN (target missing)")
             issues += 1
         else:
-            ui.info(f"    {_MISSING} {label.ljust(28)} NOT LINKED")
+            not_text = "NOT COPIED" if copy_mode else "NOT LINKED"
+            ui.info(f"    {_MISSING} {label.ljust(28)} {not_text}")
             issues += 1
     return issues
 
@@ -317,14 +362,29 @@ def status(is_global: bool) -> None:
         ui.error(str(exc))
         raise SystemExit(exc.exit_code) from exc
 
-    # The Codex target is project-scoped only (ADR ai-1-3).
+    # The Codex target is project-scoped only (ADR ai-1-3); the global
+    # scope is always symlink-mode.
     targets = ["claude"] if is_global else manifest.get_targets(manifest_path)
+    link_mode = "symlink" if is_global else manifest.get_link_mode(manifest_path)
+    copy_mode = link_mode == "copy"
 
     total_issues = 0
     if "claude" in targets:
+        owned_copies = (
+            frozenset(load_copy_ownership(claude_dir)) if copy_mode else frozenset()
+        )
+        if copy_mode:
+            ui.info("  Claude target: copy mode (real files, snapshot of catalog)")
         for element in parsed:
             triples = _expected_pairs(element, claude_dir, catalog)
-            total_issues += _print_package(element, triples, storage)
+            total_issues += _print_package(
+                element,
+                triples,
+                storage,
+                copy_mode=copy_mode,
+                owned_copies=owned_copies,
+                claude_dir=claude_dir,
+            )
         _print_settings_summary(packages, catalog, claude_dir)
 
     if "codex" in targets and not is_global:

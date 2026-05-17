@@ -22,6 +22,7 @@ from ai_dotfiles.commands._codex_config_writer import (
     write_codex_mcp,
 )
 from ai_dotfiles.core import (
+    claude_copy,
     codex_install,
     elements,
     manifest,
@@ -168,6 +169,7 @@ def _install_project(
     backup = paths.backup_dir()
     claude_dir = paths.project_claude_dir(root)
     targets = manifest.get_targets(manifest_path)
+    link_mode = manifest.get_link_mode(manifest_path)
     if "claude" in targets:
         claude_dir.mkdir(parents=True, exist_ok=True)
 
@@ -186,7 +188,9 @@ def _install_project(
 
         if "claude" in targets:
             for element in parsed:
-                linked_items.extend(_link_element(element, claude_dir, catalog, backup))
+                linked_items.extend(
+                    _link_element(element, claude_dir, catalog, backup, link_mode)
+                )
 
         if "codex" in targets:
             _install_codex_target(parsed, packages, root, catalog, prune=prune)
@@ -210,7 +214,7 @@ def _install_project(
         settings_written = (claude_dir / "settings.json").exists()
 
         if prune:
-            _report_pruned(claude_dir, paths.storage_root())
+            _report_pruned(claude_dir, paths.storage_root(), parsed, catalog, link_mode)
 
         _maybe_sync_gitignore(
             project_root=root,
@@ -265,7 +269,9 @@ def _install_global(*, prune: bool = False, strict_deps: bool = False) -> None:
             elements.validate_element_exists(element, catalog)
 
         for element in parsed:
-            linked_items.extend(_link_element(element, claude_dir, catalog, backup))
+            linked_items.extend(
+                _link_element(element, claude_dir, catalog, backup, "symlink")
+            )
 
         any_shim = _provision_runtimes(parsed, catalog)
 
@@ -295,7 +301,9 @@ def _install_global(*, prune: bool = False, strict_deps: bool = False) -> None:
             save_settings_ownership(claude_dir, new_ownership)
 
     if prune:
-        _report_pruned(claude_dir, storage)
+        # The global scope is always symlink-mode (the global `.claude/`
+        # sits next to the catalog, so symlinks resolve); no copy prune.
+        _report_pruned(claude_dir, storage, parsed, paths.catalog_dir(), "symlink")
 
     _print_summary(
         parsed,
@@ -330,23 +338,56 @@ def _maybe_sync_gitignore(
     sync_gitignore(project_root, managed)
 
 
-def _report_pruned(claude_dir: Path, storage: Path) -> None:
-    """Run prune_dangling and print one line per removed symlink."""
-    removed = symlinks.prune_dangling(claude_dir, storage)
+def _report_pruned(
+    claude_dir: Path,
+    storage: Path,
+    parsed: list[Element],
+    catalog: Path,
+    link_mode: str,
+) -> None:
+    """Prune stale Claude-target entries and print one line per removal.
+
+    In ``symlink`` mode this removes dangling symlinks into storage; in
+    ``copy`` mode it removes managed copies no longer backed by the
+    manifest (``parsed``). User-authored files are never touched.
+    """
+    if link_mode == "copy":
+        removed = claude_copy.prune_copies(parsed, claude_dir, catalog)
+        noun = "copy" if len(removed) == 1 else "copies"
+    else:
+        removed = symlinks.prune_dangling(claude_dir, storage)
+        noun = "dangling symlink" if len(removed) == 1 else "dangling symlinks"
     if not removed:
         return
-    ui.info(
-        f"Pruned {len(removed)} dangling symlink{'s' if len(removed) != 1 else ''}:"
-    )
+    ui.info(f"Pruned {len(removed)} {noun}:")
     for label in removed:
         ui.info(f"  - {label}")
 
 
 def _link_element(
-    element: Element, claude_dir: Path, catalog: Path, backup: Path
+    element: Element, claude_dir: Path, catalog: Path, backup: Path, link_mode: str
 ) -> list[str]:
-    """Link a single element and return human-readable entries."""
+    """Materialise a single element and return human-readable entries.
+
+    In ``copy`` mode the element's content is copied into ``claude_dir``
+    (a self-contained snapshot for non-symlink-capable hosts); in
+    ``symlink`` mode it is symlinked into the catalog as before.
+    """
     entries: list[str] = []
+    if link_mode == "copy":
+        if element.type is ElementType.DOMAIN:
+            labels = claude_copy.copy_element(element, claude_dir, catalog)
+            count = len(labels)
+            ui.success(
+                f"@{element.name} ({count} item{'s' if count != 1 else ''}, copied)"
+            )
+            entries.append(f"@{element.name}")
+            return entries
+        claude_copy.copy_element(element, claude_dir, catalog)
+        ui.success(f"{element.raw} (copied)")
+        entries.append(element.raw)
+        return entries
+
     if element.type is ElementType.DOMAIN:
         source = elements.resolve_source_path(element, catalog)
         messages = symlinks.link_domain(source, claude_dir, backup)

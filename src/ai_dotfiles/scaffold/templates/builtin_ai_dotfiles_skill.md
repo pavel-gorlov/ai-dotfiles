@@ -156,6 +156,25 @@ Absent `targets` field → `["claude"]`. Every existing manifest keeps working u
 
 **Codex is project-scoped only.** `install -g`, `add -g`, `remove -g`, and `status -g` always force `["claude"]`; the global manifest has no `targets` field.
 
+### `link_mode` — symlink vs copy for the Claude target
+
+The optional top-level `link_mode` field in `ai-dotfiles.json` controls how the **Claude target** materialises skills/agents/rules into `<project>/.claude/`:
+
+```json
+{ "packages": ["@gitflow", "skill:commit"], "link_mode": "copy" }
+```
+
+| Value | Meaning |
+|-------|---------|
+| `"symlink"` | The default. `.claude/` entries are symlinks into `~/.ai-dotfiles/catalog/` — a live view of the catalog. Right choice on Linux / WSL. |
+| `"copy"` | `.claude/` entries are **real copied files**. Use on a native-Windows host whose catalog lives in WSL: native Windows cannot resolve a symlink that points into the WSL filesystem, so every `.claude/` entry would appear broken / 0-byte. |
+
+Absent `link_mode` field → `"symlink"`. Every existing manifest keeps byte-identical behaviour. An unknown value is rejected with an error.
+
+**A copy is a snapshot, not a live view.** Unlike a symlink, a copied `.claude/` entry does not track the catalog — after a catalog change (a `pull`, an edit, a vendored update) re-run `ai-dotfiles install` to refresh the copies.
+
+`install` / `add` copy instead of symlink; `remove` and `install --prune` delete stale copies (a `.ai-dotfiles-copies.json` sidecar under `.claude/` records which entries are ai-dotfiles-managed, so user-authored files are never touched); `status` reports copies as `OK (copied)` rather than flagging them as unmanaged. `link_mode` is a project concern only — the global scope (`-g` commands) always uses symlinks, since the global `~/.claude/` sits next to the catalog.
+
 #### What `"codex"` produces
 
 | Element | Output path | Format |
@@ -427,6 +446,7 @@ ai-dotfiles list --available           # cross-check against catalog contents
 ## Notes
 
 - The `targets` field in `ai-dotfiles.json` controls which CLIs the manifest renders to. Valid values: `"claude"`, `"codex"`. Absent → `["claude"]`. The Codex target is project-scoped only — `-g` commands always use `["claude"]`.
+- The `link_mode` field in `ai-dotfiles.json` controls how the Claude target writes into `.claude/`. Valid values: `"symlink"` (default — live symlinks into the catalog), `"copy"` (real copied files, for native-Windows hosts whose catalog lives in WSL). Absent → `"symlink"`; an unknown value is rejected. A copy is a snapshot — re-run `ai-dotfiles install` after a catalog change. Project-scoped only; `-g` commands always symlink. See [`link_mode`](#link_mode--symlink-vs-copy-for-the-claude-target).
 - Never edit `~/.claude/` directly for anything managed by ai-dotfiles — use `add` / `remove` so the manifest stays authoritative.
 - The manifest file is `<project>/ai-dotfiles.json` (per-project) or `~/.ai-dotfiles/global.json` (global). Specifiers live under `"packages"`.
 - `settings.fragment.json` inside a domain is deep-merged into `.claude/settings.json` on every `add` / `remove` / `install`. **User-authored keys are preserved**: existing settings are loaded as the merge base, then domain fragments are layered on top. `permissions.allow` / `permissions.deny` / `permissions.ask` are concat-deduped (user entries survive, domain entries are appended once). `hooks` keep per-event concat behaviour. Other top-level keys: overlay wins on conflict. Ownership for what ai-dotfiles wrote last time is tracked in `<project>/.claude/.ai-dotfiles-settings-ownership.json`, so `remove` cleans up only entries it added — user lines stay. Caveat: if a user line has the exact same value as a domain entry, the CLI cannot tell them apart and will treat it as managed (i.e. removed on uninstall). **For the Codex target**, the same fragments are also translated into `.codex/config.toml`: `permissions` and `sandbox` land in the managed `[ai_dotfiles]` table; `hooks` are skipped with a logged message (Codex has no hook harness — ADR ai-1-5). See [Codex config.toml and MCP](#codex-configtoml-and-mcp).

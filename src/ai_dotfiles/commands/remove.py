@@ -8,7 +8,13 @@ from pathlib import Path
 import click
 
 from ai_dotfiles import ui
-from ai_dotfiles.core import codex_config, codex_install, manifest, symlinks
+from ai_dotfiles.core import (
+    claude_copy,
+    codex_config,
+    codex_install,
+    manifest,
+    symlinks,
+)
 from ai_dotfiles.core.codex_targets import iter_codex_pairs, iter_codex_rule_plans
 from ai_dotfiles.core.completions import (
     complete_installed_specifiers,
@@ -112,8 +118,18 @@ def _resolve_scope(is_global: bool) -> tuple[Path, Path, Path | None]:
     return project_manifest_path(root), project_claude_dir(root), root
 
 
-def _unlink_element(element: Element, claude_dir: Path, catalog: Path) -> None:
-    """Remove symlinks created for ``element``."""
+def _unlink_element(
+    element: Element, claude_dir: Path, catalog: Path, link_mode: str
+) -> None:
+    """Remove the Claude-target artefacts created for ``element``.
+
+    In ``copy`` mode the recorded managed copies are deleted (user files
+    are never touched — only sidecar-recorded entries); in ``symlink``
+    mode the symlinks into the catalog are unlinked.
+    """
+    if link_mode == "copy":
+        claude_copy.remove_copied_element(element, claude_dir, catalog)
+        return
     if element.type is ElementType.DOMAIN:
         source = resolve_source_path(element, catalog)
         if source.exists():
@@ -310,8 +326,11 @@ def remove(
 
         catalog = catalog_dir()
         manifest_path, claude_dir, project_root = _resolve_scope(is_global)
-        # The Codex target is project-scoped only (ADR ai-1-3).
+        # The Codex target is project-scoped only (ADR ai-1-3); the global
+        # scope is always symlink-mode (its `.claude/` sits next to the
+        # catalog).
         targets = ["claude"] if is_global else manifest.get_targets(manifest_path)
+        link_mode = "symlink" if is_global else manifest.get_link_mode(manifest_path)
 
         if not force:
             _check_reverse_deps(manifest_path, catalog, elements)
@@ -330,7 +349,7 @@ def remove(
         for element in elements:
             if element.raw in removed_set:
                 if "claude" in targets:
-                    _unlink_element(element, claude_dir, catalog)
+                    _unlink_element(element, claude_dir, catalog, link_mode)
                 if "codex" in targets and project_root is not None:
                     _unlink_codex_element(element, project_root, catalog)
                 ui.info(f"  - {element.raw}")

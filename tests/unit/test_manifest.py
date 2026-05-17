@@ -10,6 +10,7 @@ import pytest
 from ai_dotfiles.core.errors import ConfigError
 from ai_dotfiles.core.manifest import (
     add_packages,
+    get_link_mode,
     get_packages,
     get_targets,
     read_manifest,
@@ -167,3 +168,42 @@ def test_get_targets_non_string_items_raise(tmp_path: Path) -> None:
     write_manifest(path, {"packages": [], "targets": ["claude", 3]})
     with pytest.raises(ConfigError):
         get_targets(path)
+
+
+# ── get_link_mode ─────────────────────────────────────────────────────────
+
+
+def test_get_link_mode_absent_defaults_to_symlink(tmp_path: Path) -> None:
+    path = tmp_path / "m.json"
+    write_manifest(path, {"packages": ["@python"]})
+    assert get_link_mode(path) == "symlink"
+
+
+def test_get_link_mode_missing_file_defaults_to_symlink(tmp_path: Path) -> None:
+    assert get_link_mode(tmp_path / "nope.json") == "symlink"
+
+
+def test_get_link_mode_explicit_symlink(tmp_path: Path) -> None:
+    path = tmp_path / "m.json"
+    write_manifest(path, {"packages": [], "link_mode": "symlink"})
+    assert get_link_mode(path) == "symlink"
+
+
+def test_get_link_mode_explicit_copy(tmp_path: Path) -> None:
+    path = tmp_path / "m.json"
+    write_manifest(path, {"packages": [], "link_mode": "copy"})
+    assert get_link_mode(path) == "copy"
+
+
+def test_get_link_mode_unknown_value_raises(tmp_path: Path) -> None:
+    path = tmp_path / "m.json"
+    write_manifest(path, {"packages": [], "link_mode": "hardlink"})
+    with pytest.raises(ConfigError):
+        get_link_mode(path)
+
+
+def test_get_link_mode_non_string_raises(tmp_path: Path) -> None:
+    path = tmp_path / "m.json"
+    write_manifest(path, {"packages": [], "link_mode": True})
+    with pytest.raises(ConfigError):
+        get_link_mode(path)

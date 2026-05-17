@@ -88,6 +88,39 @@ def get_targets(path: Path) -> list[str]:
     return list(targets)
 
 
+_LINK_MODES: frozenset[str] = frozenset({"symlink", "copy"})
+
+
+def get_link_mode(path: Path) -> str:
+    """Return the Claude-target ``link_mode`` from the manifest.
+
+    Controls how Claude-target elements materialise into ``.claude/``:
+
+    * ``"symlink"`` (default) — live symlinks into the catalog. The
+      right choice on Linux / WSL where the catalog is on the same
+      filesystem.
+    * ``"copy"`` — real copied files. Use on a native-Windows host whose
+      catalog lives in WSL: a symlink into the catalog points at a path
+      Windows tooling cannot resolve, so every ``.claude/`` entry would
+      appear broken. A copy is a *snapshot* — re-run ``ai-dotfiles
+      install`` to refresh it after a catalog change.
+
+    An absent field resolves to ``"symlink"`` so every pre-existing
+    manifest keeps byte-identical behaviour. Raises :class:`ConfigError`
+    if the field is present but not one of the two known values.
+    """
+    data = read_manifest(path)
+    if "link_mode" not in data:
+        return "symlink"
+    value = data["link_mode"]
+    if not isinstance(value, str) or value not in _LINK_MODES:
+        raise ConfigError(
+            f"Manifest {path} 'link_mode' must be one of "
+            f"{sorted(_LINK_MODES)}, got {value!r}"
+        )
+    return value
+
+
 def get_flag(path: Path, key: str, default: bool) -> bool:
     """Return a top-level boolean flag from the manifest.
 

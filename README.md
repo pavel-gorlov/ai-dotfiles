@@ -147,6 +147,43 @@ The Codex target is **project-scoped only** — `install -g`, `add -g`, `remove 
 and `status -g` always target Claude Code (`["claude"]`). The global manifest
 has no `targets` field.
 
+## Copy mode for the Claude target (`link_mode`)
+
+By default the Claude target writes `.claude/skills/`, `.claude/agents/` and
+`.claude/rules/` as **symlinks** into `~/.ai-dotfiles/catalog/` — a live view of
+the catalog. On Linux and WSL that is the right choice.
+
+It breaks on a **native-Windows host whose catalog lives in WSL**: native Windows
+cannot resolve a symlink that points into the WSL filesystem, so every `.claude/`
+entry appears broken / 0-byte to a native-Windows Claude Code.
+
+Set `link_mode` in `ai-dotfiles.json` to opt into copying real files instead:
+
+```json
+{
+  "packages": ["@gitflow", "skill:commit"],
+  "link_mode": "copy"
+}
+```
+
+| `link_mode` | Behaviour |
+|-------------|-----------|
+| `"symlink"` | Default. `.claude/` entries are symlinks into the catalog. |
+| `"copy"` | `.claude/` entries are real copied files — fully self-contained, resolvable by any host. |
+
+An absent `link_mode` field resolves to `"symlink"`, so every existing manifest
+keeps byte-identical behaviour; an unknown value is rejected.
+
+A copy is a **snapshot**, not a live view — unlike a symlink it does not track the
+catalog. After a catalog change (a `pull`, an edit, a vendored update) re-run
+`ai-dotfiles install` to refresh the copies. `remove` and `install --prune` clean
+up stale copies; a `.ai-dotfiles-copies.json` sidecar under `.claude/` records
+which entries are ai-dotfiles-managed, so user-authored files are never deleted.
+`ai-dotfiles status` reports copies as `OK (copied)`.
+
+`link_mode` is **project-scoped only** — `-g` commands always symlink, since the
+global `~/.claude/` sits next to the catalog.
+
 ### Codex rule support
 
 A catalog rule has no single Codex equivalent. `install` reads two optional
@@ -546,7 +583,10 @@ are enforced via `commitizen`.
   the command for testing, either invoke the installed entry point directly
   (e.g. `HOME=$TMP/home ai-dotfiles init -g`) or set `$AI_DOTFILES_HOME`
   only and let `~/.claude/` be re-linked.
-- Symlinks only; Windows is not officially supported.
+- The Claude target uses symlinks by default. On a native-Windows host whose
+  catalog lives in WSL, set `"link_mode": "copy"` in `ai-dotfiles.json` so
+  `.claude/` holds real copied files instead — see
+  [Copy mode for the Claude target](#copy-mode-for-the-claude-target-link_mode).
 - Codex target: domain `hooks/` members are not rendered for Codex — the
   command prints an explicit skip message (Codex has no hook harness). Rules
   are rendered (see [Codex rule support](#codex-rule-support)).
