@@ -8,7 +8,7 @@ from pathlib import Path
 import click
 
 from ai_dotfiles import ui
-from ai_dotfiles.core import codex_install, manifest, symlinks
+from ai_dotfiles.core import codex_config, codex_install, manifest, symlinks
 from ai_dotfiles.core.codex_targets import iter_codex_pairs, iter_codex_rule_plans
 from ai_dotfiles.core.completions import (
     complete_installed_specifiers,
@@ -148,6 +148,27 @@ def _unlink_codex_element(element: Element, project_root: Path, catalog: Path) -
         name = rule_name_of(plan.source)
         for agents_md_path in plan.agents_md_paths:
             codex_install.remove_codex_rule_blocks(agents_md_path, name)
+
+
+def _rebuild_codex_config(
+    manifest_path: Path, project_root: Path, catalog: Path
+) -> None:
+    """Reassemble ``.codex/config.toml`` from the remaining domain fragments.
+
+    The Codex analogue of :func:`_rebuild_settings` — after a removal the
+    managed ``[ai_dotfiles]`` region is rebuilt from whatever domains
+    are still in the manifest, so a sibling domain's permissions / sandbox
+    survive. Unrelated tables (``[mcp_servers]`` …) and user content are
+    left intact. When no domain remains, the managed region is stripped.
+    """
+    packages = manifest.get_packages(manifest_path)
+    fragments = collect_domain_fragments(packages, catalog)
+    fragment_pairs = [(path.parent.name, path) for path in fragments]
+    result = codex_config.write_codex_config(project_root, fragment_pairs)
+    if result.status == "removed":
+        ui.info("Codex: stripped managed region from .codex/config.toml")
+    elif result.status in ("created", "updated"):
+        ui.info("Codex: rebuilt .codex/config.toml managed region")
 
 
 def _rebuild_settings(manifest_path: Path, claude_dir: Path, catalog: Path) -> None:
@@ -310,6 +331,8 @@ def remove(
         had_domain = any(
             el.type is ElementType.DOMAIN for el in elements if el.raw in removed_set
         )
+        if "codex" in targets and project_root is not None:
+            _rebuild_codex_config(manifest_path, project_root, catalog)
         if "claude" in targets:
             if project_root is not None:
                 rebuild_claude_config(
