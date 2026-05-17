@@ -53,12 +53,12 @@ A generated `SKILL.md` must start with `---` (valid frontmatter, line 1).
 
 ## Acceptance criteria
 
-- [ ] Every generated `SKILL.md` (domain skill and `rule-<name>` skill) has `---` as line 1; `yaml.safe_load` of the frontmatter succeeds.
-- [ ] Skill drift detection (`status` STALE) works via the sidecar — flips when the catalog source changes.
-- [ ] `remove` / `install --prune` identify managed skills via the sidecar; a user-authored skill (no sidecar) is never touched.
-- [ ] Agent `.toml` rendering is unchanged (header still present, valid TOML).
-- [ ] A test asserts the generated `SKILL.md` first line is `---` and the frontmatter is parseable — the test that would have caught this.
-- [ ] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green.
+- [x] Every generated `SKILL.md` (domain skill and `rule-<name>` skill) has `---` as line 1; frontmatter parses.
+- [x] Skill drift detection (`status` STALE) works via the sidecar — flips when the catalog source changes.
+- [x] `remove` / `install --prune` identify managed skills via the sidecar; a user-authored skill (no sidecar) is never touched.
+- [x] Agent `.toml` rendering is unchanged (header still present, valid TOML).
+- [x] A test asserts the generated `SKILL.md` first line is `---` and the frontmatter is parseable — the test that would have caught this.
+- [x] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green (959 passed; mypy 59 files; ruff + black clean).
 - [ ] PR opened against `main`.
 
 ## Anti-patterns
