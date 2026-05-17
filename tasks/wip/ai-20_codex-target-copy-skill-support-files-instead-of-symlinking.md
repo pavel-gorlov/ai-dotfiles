@@ -46,12 +46,12 @@ makes `.agents/skills/<name>/` entirely real files.
 
 ## Acceptance criteria
 
-- [ ] Codex skill support files (`scripts/`, `references/`, `assets/`) are copied into `.agents/skills/<name>/`, not symlinked.
-- [ ] After install there are no symlinks anywhere under `.agents/skills/`.
-- [ ] Executable bits on copied `scripts/` are preserved.
-- [ ] Re-install refreshes copied support files; `remove` deletes them with the skill dir.
-- [ ] A test asserts `.agents/skills/` contains no symlinks after install.
-- [ ] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green.
+- [x] Codex skill support files (`scripts/`, `references/`, `assets/`) are copied into `.agents/skills/<name>/`, not symlinked.
+- [x] After install there are no symlinks anywhere under `.agents/skills/`.
+- [x] Executable bits on copied `scripts/` are preserved.
+- [x] Re-install refreshes copied support files; `remove` deletes them with the skill dir.
+- [x] A test asserts `.agents/skills/` contains no symlinks after install.
+- [x] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green (962 passed; mypy 60 files; ruff + black clean).
 - [ ] PR opened against `main`.
 
 ## Anti-patterns
