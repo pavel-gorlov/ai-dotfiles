@@ -139,6 +139,42 @@ Specifiers are the strings that appear in `packages` arrays:
 - `agent:name` → `catalog/agents/<name>.md`.
 - `rule:name` → `catalog/rules/<name>.md`.
 
+### `targets` — multi-target manifests
+
+The `targets` array in `ai-dotfiles.json` declares which agent CLIs the project renders its catalog elements to:
+
+```json
+{ "packages": ["@gitflow", "skill:commit", "agent:reviewer"], "targets": ["claude", "codex"] }
+```
+
+| Value | Meaning |
+|-------|---------|
+| `"claude"` | Claude Code — the default; installs into `<project>/.claude/` as before |
+| `"codex"` | OpenAI Codex CLI — installs into `<project>/.agents/skills/` and `<project>/.codex/agents/` |
+
+Absent `targets` field → `["claude"]`. Every existing manifest keeps working unchanged.
+
+**Codex is project-scoped only.** `install -g`, `add -g`, `remove -g`, and `status -g` always force `["claude"]`; the global manifest has no `targets` field.
+
+#### What `"codex"` produces
+
+| Element | Output path | Format |
+|---------|------------|--------|
+| `skill:name` or domain skill | `.agents/skills/<name>/` | Real directory with a generated `SKILL.md` (first-sentence `description`) + symlinked support files (`scripts/`, `references/`, `assets/`, …) |
+| `agent:name` or domain agent | `.codex/agents/<name>.toml` | Generated TOML (`name`, `description`, `developer_instructions`, optional `model`) — a committed project artefact |
+| `rule:name` or domain `rules/` and `hooks/` | — | Skipped in Phase 1; the command prints an explicit `! ... skipped for the Codex target` message |
+
+Every generated Codex file starts with:
+
+```
+# managed-by: ai-dotfiles
+# source-sha256: <hex>
+```
+
+The hash is of the source catalog file (UTF-8). `ai-dotfiles status` compares it to the current catalog source and flags the artefact as `STALE (source changed)` when they differ. Run `ai-dotfiles install` to regenerate. User-authored files in the same directories (no `# managed-by` header) are never touched by `add`, `remove`, or `--prune`.
+
+`install --prune` also prunes managed Codex artefacts — skills directories and `.toml` files carrying the managed-by header — that are no longer backed by the manifest.
+
 ### `domain.json`
 
 Every domain has a `catalog/<domain>/domain.json` that declares its metadata:
@@ -223,6 +259,20 @@ ai-dotfiles remove -g skill:my-skill   # drop from global.json + unlink from ~/.
 
 The same `-g` flag works for any specifier: `@domain`, `skill:name`, `agent:name`, `rule:name`.
 
+### 1c. New project targeting Claude + Codex
+
+```bash
+ai-dotfiles init                           # creates ai-dotfiles.json
+# Edit ai-dotfiles.json to add "targets": ["claude", "codex"]
+ai-dotfiles add @gitflow skill:commit      # adds to manifest
+ai-dotfiles install
+# Claude:  <project>/.claude/skills/commit/   (symlink)
+# Codex:   <project>/.agents/skills/commit/   (generated SKILL.md + symlinked support)
+#          <project>/.codex/agents/...toml     (generated from any agent in @gitflow)
+
+ai-dotfiles status                         # includes a "Codex target" block
+```
+
 ### 2. Vendor an external pack
 
 ```bash
@@ -271,6 +321,7 @@ ai-dotfiles list --available           # cross-check against catalog contents
 
 ## Notes
 
+- The `targets` field in `ai-dotfiles.json` controls which CLIs the manifest renders to. Valid values: `"claude"`, `"codex"`. Absent → `["claude"]`. The Codex target is project-scoped only — `-g` commands always use `["claude"]`.
 - Never edit `~/.claude/` directly for anything managed by ai-dotfiles — use `add` / `remove` so the manifest stays authoritative.
 - The manifest file is `<project>/ai-dotfiles.json` (per-project) or `~/.ai-dotfiles/global.json` (global). Specifiers live under `"packages"`.
 - `settings.fragment.json` inside a domain is deep-merged into `.claude/settings.json` on every `add` / `remove` / `install`. **User-authored keys are preserved**: existing settings are loaded as the merge base, then domain fragments are layered on top. `permissions.allow` / `permissions.deny` / `permissions.ask` are concat-deduped (user entries survive, domain entries are appended once). `hooks` keep per-event concat behaviour. Other top-level keys: overlay wins on conflict. Ownership for what ai-dotfiles wrote last time is tracked in `<project>/.claude/.ai-dotfiles-settings-ownership.json`, so `remove` cleans up only entries it added — user lines stay. Caveat: if a user line has the exact same value as a domain entry, the CLI cannot tell them apart and will treat it as managed (i.e. removed on uninstall).
