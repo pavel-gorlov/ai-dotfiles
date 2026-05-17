@@ -348,16 +348,56 @@ def test_resolve_target_codex_agent(tmp_path: Path) -> None:
     ]
 
 
-def test_resolve_target_codex_rule_raises(tmp_path: Path) -> None:
+def test_resolve_target_codex_description_only_rule_is_synthetic_skill(
+    tmp_path: Path,
+) -> None:
+    """A description-only rule resolves to its synthetic ``rule-<name>`` skill."""
     catalog = tmp_path / "catalog"
     root = tmp_path / "project"
-    with pytest.raises(ElementError):
+    rule_md = catalog / "rules" / "security.md"
+    rule_md.parent.mkdir(parents=True)
+    rule_md.write_text("# Security\n\nA description-only rule body.\n")
+
+    pairs = resolve_target_paths(
+        parse_element("rule:security"), root, catalog, target=Target.CODEX
+    )
+    assert pairs == [(rule_md, root / ".agents" / "skills" / "rule-security")]
+
+
+def test_resolve_target_codex_always_on_rule_is_root_agents_md(
+    tmp_path: Path,
+) -> None:
+    """An always-on rule resolves to a managed block in the root AGENTS.md."""
+    catalog = tmp_path / "catalog"
+    root = tmp_path / "project"
+    rule_md = catalog / "rules" / "principles.md"
+    rule_md.parent.mkdir(parents=True)
+    rule_md.write_text("---\nalways_on: true\n---\n\nAlways-on body.\n")
+
+    pairs = resolve_target_paths(
+        parse_element("rule:principles"), root, catalog, target=Target.CODEX
+    )
+    assert pairs == [(rule_md, root / "AGENTS.md")]
+
+
+def test_resolve_target_codex_missing_rule_yields_no_pairs(
+    tmp_path: Path,
+) -> None:
+    """An unresolvable rule file yields no Codex pairs rather than raising."""
+    catalog = tmp_path / "catalog"
+    root = tmp_path / "project"
+    assert (
         resolve_target_paths(
-            parse_element("rule:security"), root, catalog, target=Target.CODEX
+            parse_element("rule:absent"), root, catalog, target=Target.CODEX
         )
+        == []
+    )
 
 
-def test_resolve_target_codex_domain_expands_skills_and_agents(tmp_path: Path) -> None:
+def test_resolve_target_codex_domain_expands_all_member_kinds(
+    tmp_path: Path,
+) -> None:
+    """A domain expands into skill, agent, and rule Codex surfaces (Phase 2)."""
     catalog = tmp_path / "catalog"
     root = tmp_path / "project"
     domain = catalog / "python"
@@ -366,7 +406,8 @@ def test_resolve_target_codex_domain_expands_skills_and_agents(tmp_path: Path) -
     (domain / "agents").mkdir(parents=True)
     (domain / "agents" / "researcher.md").write_text("x")
     (domain / "rules").mkdir(parents=True)
-    (domain / "rules" / "pep8.md").write_text("x")  # no Codex surface — skipped
+    # A description-only rule (no frontmatter) -> synthetic rule-<name> skill.
+    (domain / "rules" / "pep8.md").write_text("# PEP 8\n\nStyle guide.\n")
 
     pairs = resolve_target_paths(
         parse_element("@python"), root, catalog, target=Target.CODEX
@@ -379,5 +420,9 @@ def test_resolve_target_codex_domain_expands_skills_and_agents(tmp_path: Path) -
         (
             domain / "agents" / "researcher.md",
             root / ".codex" / "agents" / "researcher.toml",
+        ),
+        (
+            domain / "rules" / "pep8.md",
+            root / ".agents" / "skills" / "rule-pep8",
         ),
     }

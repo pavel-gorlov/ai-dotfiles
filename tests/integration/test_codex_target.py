@@ -113,6 +113,20 @@ def _make_agent(catalog: Path, name: str) -> Path:
     return path
 
 
+# Rule fixtures, one per RuleClass (epic ai-1 Phase 2 / ADR ai-1-2).
+_RULE_ALWAYS_ON = "---\nalways_on: true\n---\n\n# Principles\n\nAlways-loaded.\n"
+_RULE_PATH_SCOPED = (
+    "---\npaths:\n  - src/api\n---\n\n# API rule\n\nScoped to the API.\n"
+)
+_RULE_DESC_ONLY = "# Commit style\n\nUse Conventional Commits for every commit.\n"
+
+
+def _make_rule(catalog: Path, name: str, text: str) -> Path:
+    path = catalog / "rules" / f"{name}.md"
+    _write(path, text)
+    return path
+
+
 def _write_manifest(
     path: Path, packages: list[str], *, targets: list[str] | None = None
 ) -> None:
@@ -379,3 +393,165 @@ def test_install_prune_preserves_user_authored_codex_files(
     assert code == 0
     assert user_toml.is_file()
     assert (user_skill / "SKILL.md").is_file()
+
+
+# ── Rules: AGENTS.md assembly + synthetic skills (Phase 2, ADR ai-1-2) ────
+
+
+def test_always_on_rule_lands_in_root_agents_md(project: Path, catalog: Path) -> None:
+    """An always-on rule writes a managed block to the project-root AGENTS.md."""
+    _make_rule(catalog, "principles", _RULE_ALWAYS_ON)
+    _write_manifest(
+        project / "ai-dotfiles.json", ["rule:principles"], targets=["codex"]
+    )
+
+    code, out, _ = _run(install, project)
+    assert code == 0, out
+
+    agents_md = project / "AGENTS.md"
+    assert agents_md.is_file()
+    text = agents_md.read_text(encoding="utf-8")
+    assert "<!-- ai-dotfiles:rule:principles START -->" in text
+    assert "Always-loaded." in text
+    # No skip message for rules any more.
+    assert "rules have no" not in out
+
+
+def test_path_scoped_rule_lands_in_nested_agents_md(
+    project: Path, catalog: Path
+) -> None:
+    """A path-scoped rule writes a managed block to each <dir>/AGENTS.md."""
+    _make_rule(catalog, "api", _RULE_PATH_SCOPED)
+    _write_manifest(project / "ai-dotfiles.json", ["rule:api"], targets=["codex"])
+
+    code, out, _ = _run(install, project)
+    assert code == 0, out
+
+    nested = project / "src" / "api" / "AGENTS.md"
+    assert nested.is_file()
+    assert "<!-- ai-dotfiles:rule:api START -->" in nested.read_text(encoding="utf-8")
+    # The root AGENTS.md is NOT written for a path-scoped rule.
+    assert not (project / "AGENTS.md").exists()
+
+
+def test_description_only_rule_renders_codex_only_skill(
+    project: Path, catalog: Path
+) -> None:
+    """A description-only rule renders as a Codex-only ``rule-<name>`` skill."""
+    _make_rule(catalog, "commit-style", _RULE_DESC_ONLY)
+    _write_manifest(
+        project / "ai-dotfiles.json",
+        ["rule:commit-style"],
+        targets=["claude", "codex"],
+    )
+
+    code, out, _ = _run(install, project)
+    assert code == 0, out
+
+    skill_md = project / ".agents" / "skills" / "rule-commit-style" / "SKILL.md"
+    assert skill_md.is_file()
+    body = skill_md.read_text(encoding="utf-8")
+    assert body.splitlines()[0] == MANAGED_BY_HEADER
+    assert "name: rule-commit-style" in body
+    # ADR ai-1-2: the synthetic skill is never installed for Claude.
+    assert not (project / ".claude" / "skills" / "rule-commit-style").exists()
+    # The rule still links into the Claude rules tree as a plain rule.
+    assert (project / ".claude" / "rules" / "commit-style.md").is_symlink()
+
+
+def test_remove_strips_owned_agents_md_block_preserving_user_text(
+    project: Path, catalog: Path
+) -> None:
+    """``remove`` strips only the managed block; user AGENTS.md text survives."""
+    _make_rule(catalog, "principles", _RULE_ALWAYS_ON)
+    _write_manifest(
+        project / "ai-dotfiles.json", ["rule:principles"], targets=["codex"]
+    )
+    # A user-authored AGENTS.md already exists.
+    user_text = "# My project\n\nHand-written guidance.\n"
+    _write(project / "AGENTS.md", user_text)
+
+    assert _run(install, project)[0] == 0
+    assert "ai-dotfiles:rule:principles" in (project / "AGENTS.md").read_text(
+        encoding="utf-8"
+    )
+
+    code, _, _ = _run(remove, project, "rule:principles")
+    assert code == 0
+    # The file survives, the managed block is gone, user text is intact.
+    remaining = (project / "AGENTS.md").read_text(encoding="utf-8")
+    assert "ai-dotfiles:rule:principles" not in remaining
+    assert "Hand-written guidance." in remaining
+
+
+def test_remove_deletes_agents_md_that_held_only_managed_block(
+    project: Path, catalog: Path
+) -> None:
+    """An AGENTS.md created solely for a managed block is deleted on remove."""
+    _make_rule(catalog, "api", _RULE_PATH_SCOPED)
+    _write_manifest(project / "ai-dotfiles.json", ["rule:api"], targets=["codex"])
+    assert _run(install, project)[0] == 0
+    nested = project / "src" / "api" / "AGENTS.md"
+    assert nested.is_file()
+
+    code, _, _ = _run(remove, project, "rule:api")
+    assert code == 0
+    # The whitespace-only AGENTS.md is removed entirely.
+    assert not nested.exists()
+
+
+def test_remove_drops_synthetic_rule_skill(project: Path, catalog: Path) -> None:
+    """``remove`` deletes the synthetic ``rule-<name>`` skill of a desc-only rule."""
+    _make_rule(catalog, "commit-style", _RULE_DESC_ONLY)
+    _write_manifest(
+        project / "ai-dotfiles.json", ["rule:commit-style"], targets=["codex"]
+    )
+    assert _run(install, project)[0] == 0
+    skill_dir = project / ".agents" / "skills" / "rule-commit-style"
+    assert skill_dir.is_dir()
+
+    code, _, _ = _run(remove, project, "rule:commit-style")
+    assert code == 0
+    assert not skill_dir.exists()
+
+
+def test_remove_preserves_user_block_in_shared_agents_md(
+    project: Path, catalog: Path
+) -> None:
+    """Removing one rule leaves another rule's block in the same AGENTS.md."""
+    _make_rule(catalog, "principles", _RULE_ALWAYS_ON)
+    _make_rule(
+        catalog,
+        "second",
+        "---\nalways_on: true\n---\n\n# Second\n\nAnother always-on rule.\n",
+    )
+    _write_manifest(
+        project / "ai-dotfiles.json",
+        ["rule:principles", "rule:second"],
+        targets=["codex"],
+    )
+    assert _run(install, project)[0] == 0
+    text = (project / "AGENTS.md").read_text(encoding="utf-8")
+    assert "ai-dotfiles:rule:principles" in text
+    assert "ai-dotfiles:rule:second" in text
+
+    code, _, _ = _run(remove, project, "rule:principles")
+    assert code == 0
+    remaining = (project / "AGENTS.md").read_text(encoding="utf-8")
+    assert "ai-dotfiles:rule:principles" not in remaining
+    assert "ai-dotfiles:rule:second" in remaining
+
+
+def test_install_is_idempotent_for_rules(project: Path, catalog: Path) -> None:
+    """A second install does not duplicate a rule's managed block."""
+    _make_rule(catalog, "principles", _RULE_ALWAYS_ON)
+    _write_manifest(
+        project / "ai-dotfiles.json", ["rule:principles"], targets=["codex"]
+    )
+    assert _run(install, project)[0] == 0
+    first = (project / "AGENTS.md").read_text(encoding="utf-8")
+
+    assert _run(install, project)[0] == 0
+    second = (project / "AGENTS.md").read_text(encoding="utf-8")
+    assert first == second
+    assert second.count("ai-dotfiles:rule:principles START") == 1
