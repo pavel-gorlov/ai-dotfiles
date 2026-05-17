@@ -78,6 +78,22 @@ ai-dotfiles install
   the `depends` closure transitively and writes everything to the manifest
   in topological order; `remove` blocks if other entries still depend on
   the target (override with `--force`).
+- **Multi-target rendering** — the optional `targets` array in `ai-dotfiles.json`
+  declares which agent CLIs the manifest renders to. Absent → `["claude"]`, so
+  every existing manifest keeps working unchanged. Adding `"codex"` makes
+  `install` / `add` / `remove` also render elements for the OpenAI Codex CLI:
+  skills land in `.agents/skills/<name>/` (generated `SKILL.md` with a
+  first-sentence description, symlinked support files); agents land in
+  `.codex/agents/<name>.toml` (generated TOML, committed to the repo).
+  Rules and hooks are skipped for Codex with an explicit message.
+  The Codex target is **project-scoped only** — `-g` commands always use
+  `["claude"]`.
+- **Drift detection** — every generated Codex file carries a
+  `# managed-by: ai-dotfiles` + `# source-sha256: <hex>` header. The hash is
+  of the catalog source file. `ai-dotfiles status` compares it to the current
+  source and reports the artefact as `STALE (source changed)` when they
+  differ. Run `ai-dotfiles install` to regenerate. User-authored files in the
+  same directories (no header) are never touched.
 - **Settings merge** — each domain may ship a `settings.fragment.json`
   (pure Claude Code config — no metadata); `ai-dotfiles` deep-merges
   active fragments into `.claude/settings.json` on every `add` / `remove`
@@ -93,6 +109,38 @@ ai-dotfiles install
   `<project>/.gitignore` listing every vendored symlink under `.claude/`,
   so per-machine paths never land in git history. Opt out with
   `--no-gitignore` or `"manage_gitignore": false` in the manifest.
+
+## Multi-target support (Codex CLI)
+
+Add `"targets": ["claude", "codex"]` to `ai-dotfiles.json` to render the same
+catalog elements for both Claude Code and OpenAI Codex CLI:
+
+```json
+{
+  "packages": ["@gitflow", "skill:commit", "agent:reviewer"],
+  "targets": ["claude", "codex"]
+}
+```
+
+Then `ai-dotfiles install` produces:
+
+| Catalog element | Claude Code | Codex CLI |
+|-----------------|-------------|-----------|
+| `skill:commit` | `.claude/skills/commit/` → symlink | `.agents/skills/commit/` — real dir, generated `SKILL.md` + symlinked support files |
+| `agent:reviewer` | `.claude/agents/reviewer.md` → symlink | `.codex/agents/reviewer.toml` — generated TOML |
+| `rule:*` / domain hooks | `.claude/rules/` / hooks | Skipped (explicit message); rules are Phase 2 |
+
+Every generated Codex file carries `# managed-by: ai-dotfiles` and
+`# source-sha256: <hex>` (hash of the source catalog file). `ai-dotfiles status`
+reports `STALE (source changed)` when the source changes; `ai-dotfiles install`
+regenerates the file. User-authored files in the same directories are never
+touched.
+
+`install --prune` also removes managed Codex artefacts no longer in the manifest.
+
+The Codex target is **project-scoped only** — `install -g`, `add -g`, `remove -g`,
+and `status -g` always target Claude Code (`["claude"]`). The global manifest
+has no `targets` field.
 
 ## Element Format
 
@@ -396,6 +444,9 @@ are enforced via `commitizen`.
   (e.g. `HOME=$TMP/home ai-dotfiles init -g`) or set `$AI_DOTFILES_HOME`
   only and let `~/.claude/` be re-linked.
 - Symlinks only; Windows is not officially supported.
+- Codex target (Phase 1): rules and hooks are not rendered for Codex — the
+  command prints an explicit skip message. Rules-to-Codex mapping and
+  `config.toml` / MCP support are Phases 2–3 and are not yet available.
 
 ## License
 

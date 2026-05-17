@@ -40,6 +40,14 @@ The file `src/ai_dotfiles/scaffold/templates/builtin_ai_dotfiles_skill.md` is sh
 
 **After every user-visible change to the tool** (new command or subcommand, new/renamed flag, changed specifier syntax, new vendor, changed vendor source format, changed workflow), update this file in the same PR. Keep its command reference, vendor table, and workflows in sync with actual CLI behaviour. If behaviour drifts from the skill, users and Claude operating via the skill will give wrong advice.
 
+### Codex artefact drift (ADR ai-1-1)
+
+When a catalog agent `.md` changes (body or frontmatter), the generated `.codex/agents/<name>.toml` in any project that targets Codex goes stale. **Regenerate it** by running `ai-dotfiles install` in the affected project.
+
+`ai-dotfiles status` compares the `# source-sha256` header in each generated file against the current catalog source and reports `STALE (source changed)` for any artefact that needs regeneration. The same drift detection applies to Codex skill `SKILL.md` files generated under `.agents/skills/<name>/`.
+
+This is a manual step today — there is no auto-regeneration hook. A note in the agent's commit message (e.g. "run `ai-dotfiles install` in projects that use this agent") is the recommended signal to consumers.
+
 ## Code style
 
 - **Formatter**: Black (line-length 88)
