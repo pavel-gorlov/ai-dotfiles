@@ -1,7 +1,7 @@
 ---
 id: ai-11
 kind: subtask
-status: wip
+status: done
 created_at: '2026-05-17T10:57:40+00:00'
 parent: ai-1
 context_files:
@@ -38,12 +38,12 @@ Codex-only `rule-<name>` skills — applied and reverted by the commands.
 
 ## Definition of done
 
-- [ ] An always-on rule lands in the root `AGENTS.md`; a path-scoped rule lands in `<dir>/AGENTS.md`.
-- [ ] A description-only rule renders as a Codex-only `rule-<name>` skill, never installed for the Claude target.
-- [ ] `remove` strips owned `AGENTS.md` blocks and synthetic skills; user `AGENTS.md` text untouched.
-- [ ] `rules/` is no longer skipped for the Codex target; the skip message is gone for rules.
-- [ ] Integration + e2e tests cover the three rule classes through `install`/`remove`.
-- [ ] `pytest`, `mypy --strict`, `ruff`, `black` green.
+- [x] An always-on rule lands in the root `AGENTS.md`; a path-scoped rule lands in `<dir>/AGENTS.md`.
+- [x] A description-only rule renders as a Codex-only `rule-<name>` skill, never installed for the Claude target.
+- [x] `remove` strips owned `AGENTS.md` blocks and synthetic skills; user `AGENTS.md` text untouched.
+- [x] `rules/` is no longer skipped for the Codex target; the skip message is gone for rules.
+- [x] Integration + e2e tests cover the three rule classes through `install`/`remove`.
+- [x] `pytest`, `mypy --strict`, `ruff`, `black` green.
 
 ## Notes
 

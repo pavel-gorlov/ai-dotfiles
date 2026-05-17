@@ -104,6 +104,27 @@ Notes for ai-11 (wiring `agents_md.py` into commands):
 - An `AGENTS.md` left whitespace-only after a strip is a deletion
   candidate — ai-11 decides; `agents_md.py` never deletes files.
 
+### ai-11 done (commit `1450d4f`)
+
+Shipped behaviour for ai-12 (docs):
+
+- `targets: ["codex"]` now renders rules. A `rule:` / domain `rules/`
+  member dispatches by `RuleClass`: `always_on: true` → managed block in
+  `<project>/AGENTS.md`; non-empty `paths:` → managed block in
+  `<dir>/AGENTS.md` per path (glob `src/**` → `src/`); neither (the
+  un-migrated default) → synthetic Codex-only skill `rule-<name>` under
+  `.agents/skills/`.
+- Synthetic `rule-<name>` skills are Codex-only (ADR ai-1-2); the rule
+  still symlinks into `.claude/rules/` for the Claude target.
+- `AGENTS.md` ownership is self-describing via
+  `<!-- ai-dotfiles:rule:<name> START/END -->` markers; `remove` strips
+  only those and deletes an `AGENTS.md` left whitespace-only.
+- `install --prune` strips orphaned `AGENTS.md` blocks + synthetic
+  skills. `status` reports `rules/<name>` and `skills/rule-<name>`.
+- New public API to mention: `codex_render.render_rule_skill_md`,
+  `codex_render.split_body`. Rule frontmatter (`always_on:` / `paths:`)
+  is the migration knob — a rule-authoring note should cover it.
+
 ## Anti-patterns
 
 - Starting before Phase 1 (ai-2 / PR #6) is merged — Phase 2 builds on
