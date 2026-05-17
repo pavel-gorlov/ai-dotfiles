@@ -25,13 +25,49 @@ def test_rule_class_values() -> None:
 
 
 def test_path_scoped_inline_list(tmp_path: Path) -> None:
-    path = _write_rule(tmp_path, "scoped", 'paths: ["src/**", "lib/**"]')
+    # All entries are literal, glob-free directories.
+    path = _write_rule(tmp_path, "scoped", 'paths: ["backend", "apps/web/src"]')
     assert classify_rule(path) is RuleClass.PATH_SCOPED
 
 
 def test_path_scoped_block_list(tmp_path: Path) -> None:
-    path = _write_rule(tmp_path, "scoped", "paths:\n  - src/**\n  - tests/**")
+    path = _write_rule(tmp_path, "scoped", "paths:\n  - src\n  - tests")
     assert classify_rule(path) is RuleClass.PATH_SCOPED
+
+
+# --- glob paths: are NOT path-scoped (ai-18) -------------------------
+
+
+def test_all_glob_paths_is_description_only(tmp_path: Path) -> None:
+    # The real catalog shape: a file-type glob. Codex has no
+    # file-glob-scoped AGENTS.md surface — demote to description-only.
+    path = _write_rule(tmp_path, "fastapi", 'paths: ["**/*.py"]')
+    assert classify_rule(path) is RuleClass.DESCRIPTION_ONLY
+
+
+def test_mixed_glob_and_dir_paths_is_description_only(tmp_path: Path) -> None:
+    # All-or-nothing: one glob entry demotes the whole rule. Never
+    # half-apply (some dirs as AGENTS.md, some globs dropped).
+    path = _write_rule(
+        tmp_path, "playwright", "paths:\n  - '**/tests/e2e'\n  - '**/*.spec.ts'"
+    )
+    assert classify_rule(path) is RuleClass.DESCRIPTION_ONLY
+
+
+@pytest.mark.parametrize(
+    "entry",
+    ["**/*.tsx", "**/playwright.config.ts", "src/**", "lib/*", "data/file[0-9].txt"],
+)
+def test_single_glob_entry_demotes_rule(tmp_path: Path, entry: str) -> None:
+    path = _write_rule(tmp_path, "g", f"paths:\n  - '{entry}'")
+    assert classify_rule(path) is RuleClass.DESCRIPTION_ONLY
+
+
+def test_glob_paths_with_always_on_falls_through_to_always_on(tmp_path: Path) -> None:
+    # A glob paths: has no AGENTS.md surface, so it does not win; the
+    # explicit always_on then applies.
+    path = _write_rule(tmp_path, "mix", 'paths: ["**/*.py"]\nalways_on: true')
+    assert classify_rule(path) is RuleClass.ALWAYS_ON
 
 
 def test_always_on_true(tmp_path: Path) -> None:
@@ -69,9 +105,9 @@ def test_empty_paths_with_always_on_is_always_on(tmp_path: Path) -> None:
 
 
 def test_paths_wins_over_always_on(tmp_path: Path) -> None:
-    # Both present and `paths:` non-empty: a path-scoped rule is
-    # inherently conditional, so PATH_SCOPED wins.
-    path = _write_rule(tmp_path, "both", 'paths: ["src/**"]\nalways_on: true')
+    # Both present and `paths:` non-empty *and* all glob-free dirs: a
+    # path-scoped rule is inherently conditional, so PATH_SCOPED wins.
+    path = _write_rule(tmp_path, "both", 'paths: ["src"]\nalways_on: true')
     assert classify_rule(path) is RuleClass.PATH_SCOPED
 
 

@@ -68,6 +68,20 @@ def test_upsert_creates_parent_dirs(tmp_path: Path) -> None:
     assert "Scoped body." in agents.read_text(encoding="utf-8")
 
 
+@pytest.mark.parametrize(
+    "glob_dir",
+    ["**", "*.py", "tests/e2e/**", "file[0-9]", "log?"],
+)
+def test_upsert_refuses_glob_named_directory(tmp_path: Path, glob_dir: str) -> None:
+    """``upsert_rule_block`` must never ``mkdir`` a glob-named directory (ai-18)."""
+    agents = tmp_path / glob_dir / AGENTS_FILENAME
+    with pytest.raises(ElementError, match="glob-named directory"):
+        upsert_rule_block(agents, "scoped", "Scoped body.")
+    # Nothing was created.
+    assert not agents.exists()
+    assert not agents.parent.exists()
+
+
 # --- idempotency ------------------------------------------------------
 
 
@@ -207,19 +221,35 @@ def test_rule_block_targets_path_scoped_nested_dirs(tmp_path: Path) -> None:
     ]
 
 
-def test_rule_block_targets_path_scoped_strips_glob_suffix(tmp_path: Path) -> None:
-    rule = _write_rule(tmp_path, "scoped", 'paths: ["src/**", "lib/*"]', "Scoped rule.")
-    targets = rule_block_targets(rule, tmp_path, "path_scoped")
-    assert targets == [
-        (tmp_path / "src" / AGENTS_FILENAME).resolve(),
-        (tmp_path / "lib" / AGENTS_FILENAME).resolve(),
-    ]
-
-
 def test_rule_block_targets_path_scoped_dedupes(tmp_path: Path) -> None:
-    rule = _write_rule(tmp_path, "scoped", 'paths: ["src/**", "src/*"]', "Scoped rule.")
+    # Two literal entries resolving to the same directory dedupe.
+    rule = _write_rule(tmp_path, "scoped", 'paths: ["src", "./src"]', "Scoped rule.")
     targets = rule_block_targets(rule, tmp_path, "path_scoped")
     assert targets == [(tmp_path / "src" / AGENTS_FILENAME).resolve()]
+
+
+# --- rule_block_targets: glob entries are rejected (ai-18) -----------
+
+
+@pytest.mark.parametrize(
+    "paths_fm",
+    [
+        'paths: ["**/*.py"]',  # all-glob, real catalog shape
+        'paths: ["src/**", "lib/*"]',  # trailing-glob — used to be "stripped"
+        'paths: ["backend", "**/*.spec.ts"]',  # mixed dir + glob
+        'paths: ["data/file[0-9].txt"]',  # bracket glob
+    ],
+)
+def test_rule_block_targets_rejects_glob_entry(tmp_path: Path, paths_fm: str) -> None:
+    """A glob ``paths:`` entry has no AGENTS.md surface — reject, never mkdir.
+
+    Defence in depth: the classifier already demotes such rules to
+    description-only, but ``rule_block_targets`` must refuse a glob entry
+    even if mis-called, so it can never resolve a literal-glob directory.
+    """
+    rule = _write_rule(tmp_path, "scoped", paths_fm, "Scoped rule.")
+    with pytest.raises(ElementError, match="no AGENTS.md surface"):
+        rule_block_targets(rule, tmp_path, "path_scoped")
 
 
 def test_rule_block_targets_path_scoped_missing_paths_raises(tmp_path: Path) -> None:

@@ -9,7 +9,10 @@ Codex CLI has no ``.claude/rules/`` directory — instead it reads an
   a managed block in the project-root ``AGENTS.md``;
 * a :data:`~ai_dotfiles.core.rule_classify.RuleClass.PATH_SCOPED` rule ->
   a managed block in ``<dir>/AGENTS.md`` for every directory listed in
-  the rule's ``paths:`` frontmatter field.
+  the rule's ``paths:`` frontmatter field. Those entries are guaranteed
+  glob-free literal directories — a rule whose ``paths:`` carries any
+  glob is classified ``DESCRIPTION_ONLY`` instead, so it never reaches
+  this module.
 
 (:data:`~ai_dotfiles.core.rule_classify.RuleClass.DESCRIPTION_ONLY`
 rules are *not* handled here — they become Codex-only skills, wired in
@@ -42,6 +45,7 @@ from pathlib import Path
 
 from ai_dotfiles.core.errors import ElementError
 from ai_dotfiles.core.frontmatter import parse_frontmatter
+from ai_dotfiles.core.rule_classify import GLOB_METACHARS, is_glob_free_dir
 
 __all__ = [
     "AGENTS_FILENAME",
@@ -191,6 +195,18 @@ def upsert_rule_block(agents_md: Path, name: str, body: str) -> bool:
     if _existing_block_sha(name, existing) == new_sha:
         return False
 
+    # Defence in depth: a glob metacharacter anywhere in the directory
+    # chain means a caller mis-resolved a file glob into an AGENTS.md
+    # path. Refuse rather than ``mkdir`` a literal-glob directory tree
+    # (the ai-18 bug). Classification keeps such rules off this path;
+    # this guard ensures it can never regress silently.
+    for part in agents_md.parent.parts:
+        if any(ch in GLOB_METACHARS for ch in part):
+            raise ElementError(
+                f"refusing to create glob-named directory {part!r} "
+                f"for AGENTS.md target {agents_md}"
+            )
+
     block = _render_block(name, body)
 
     if name in iter_rule_block_names(existing):
@@ -214,22 +230,6 @@ def _append_block(text: str, block: str) -> str:
     return f"{text.rstrip()}\n\n{block}"
 
 
-def _glob_to_dir(raw: str) -> str:
-    """Reduce a ``paths:`` glob entry to the directory holding ``AGENTS.md``.
-
-    Codex activates a nested ``AGENTS.md`` by directory, so a glob entry
-    is normalised to its containing directory: a trailing ``/**``,
-    ``/*`` or ``/`` is stripped (``src/**`` -> ``src``). A bare path
-    (``src/api``) is used verbatim.
-    """
-    cleaned = raw.strip()
-    for suffix in ("/**", "/*", "/"):
-        if cleaned.endswith(suffix):
-            cleaned = cleaned[: -len(suffix)]
-            break
-    return cleaned or "."
-
-
 def rule_block_targets(
     md_path: Path,
     project_root: Path,
@@ -247,9 +247,19 @@ def rule_block_targets(
     classifier. ``DESCRIPTION_ONLY`` is rejected: it has no ``AGENTS.md``
     surface.
 
+    A ``path_scoped`` rule's ``paths:`` entries must every one be a
+    *literal, glob-free directory path*. The classifier
+    (:func:`~ai_dotfiles.core.rule_classify.classify_rule`) already
+    enforces this — a rule with any glob entry is demoted to
+    ``description_only`` and never reaches here — but this function
+    re-checks defensively: a glob entry raises :class:`ElementError`
+    rather than being silently turned into a literal-glob directory name
+    (the ai-18 bug).
+
     Raises :class:`ElementError` for an unknown class, for
-    ``description_only``, or for a ``path_scoped`` rule whose ``paths:``
-    field is missing or empty.
+    ``description_only``, for a ``path_scoped`` rule whose ``paths:``
+    field is missing or empty, or for any ``paths:`` entry that contains
+    a glob metacharacter.
     """
     if rule_class == "always_on":
         return [project_root / AGENTS_FILENAME]
@@ -263,7 +273,14 @@ def rule_block_targets(
             )
         targets: list[Path] = []
         for raw in paths:
-            directory = (project_root / _glob_to_dir(str(raw))).resolve()
+            entry = str(raw).strip()
+            if not is_glob_free_dir(entry):
+                raise ElementError(
+                    f"path-scoped rule {md_path} has a non-directory "
+                    f"'paths:' entry {entry!r}: a glob has no AGENTS.md "
+                    f"surface (it should classify as description_only)"
+                )
+            directory = (project_root / entry).resolve()
             target = directory / AGENTS_FILENAME
             if target not in targets:
                 targets.append(target)
