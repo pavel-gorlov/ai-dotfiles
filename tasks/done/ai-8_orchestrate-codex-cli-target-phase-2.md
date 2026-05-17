@@ -1,7 +1,7 @@
 ---
 id: ai-8
 kind: task
-status: wip
+status: done
 created_at: '2026-05-17T10:57:40+00:00'
 parent: ai-1
 dependencies:
@@ -62,7 +62,8 @@ No read-only subtasks — all write, sequential per the Cognition rule.
       (covered by ai-11 integration + e2e tests).
 - [x] `remove` strips only ai-dotfiles-owned `AGENTS.md` blocks; user
       text in `AGENTS.md` is untouched (covered by ai-11 tests).
-- [ ] PR `feat: Codex CLI target — rules support` opened against `main`.
+- [x] PR `feat: Codex CLI target — rules support` opened against `main`
+      — [#7](https://github.com/pavel-gorlov/ai-dotfiles/pull/7), merged.
 
 ## Execution log
 
