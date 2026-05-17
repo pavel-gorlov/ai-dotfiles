@@ -56,6 +56,27 @@ No read-only subtasks — all write, sequential per the Cognition rule.
       section of `.codex/config.toml`.
 - [ ] PR `feat: Codex CLI target — config.toml + MCP` opened against `main`.
 
+## Execution log
+
+### ai-14 done (commit `f7646c5`)
+
+Notes for ai-15 (MCP) — `.codex/config.toml` is a shared file:
+
+- `core/codex_config.py` owns ONLY the top-level `[ai_dotfiles]` table
+  (`MANAGED_TABLE`). ai-15 must write MCP under a DIFFERENT top-level
+  table — `[mcp_servers]`. Never touch `ai_dotfiles`.
+- Mirror the round-trip discipline: parse with `tomllib` → modify only
+  your table → serialise with `tomli-w`. `render_config_toml(existing,
+  managed)` already preserves any non-`ai_dotfiles` table.
+- `write_codex_config` deletes the file only when no managed content
+  AND no other tables remain — an MCP-only file survives a settings
+  strip, and vice versa.
+- Wire point: `install.py` `_install_codex_target` calls
+  `_write_codex_config`; `remove.py` calls `_rebuild_codex_config`.
+  ai-15 hooks in adjacently and must be idempotent.
+- API: `write_codex_config(project_root, fragment_paths)`,
+  `strip_managed(project_root)`, `config_path(project_root)`.
+
 ## Anti-patterns
 
 - Starting before Phase 1 (ai-2 / PR #6) is merged.

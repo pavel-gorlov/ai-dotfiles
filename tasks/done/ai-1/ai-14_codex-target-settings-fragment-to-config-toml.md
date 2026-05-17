@@ -1,7 +1,7 @@
 ---
 id: ai-14
 kind: subtask
-status: wip
+status: done
 created_at: '2026-05-17T10:57:41+00:00'
 parent: ai-1
 context_files:
@@ -36,11 +36,11 @@ the TOML; hooks are skipped with an explicit message (ADR ai-1-5).
 
 ## Definition of done
 
-- [ ] `codex_config.py` writes translatable `settings.fragment.json` keys (permissions, sandbox) into `.codex/config.toml`.
-- [ ] Keys with no Codex equivalent (hooks) are skipped with an explicit fail-loud message in command output.
-- [ ] The managed region is marker/header-delimited; `remove` strips only ai-dotfiles content, user `config.toml` text survives.
-- [ ] Unit tests cover translation, the hooks skip, and ownership/strip.
-- [ ] `pytest`, `mypy --strict`, `ruff`, `black` green.
+- [x] `codex_config.py` writes translatable `settings.fragment.json` keys (permissions, sandbox) into `.codex/config.toml`.
+- [x] Keys with no Codex equivalent (hooks) are skipped with an explicit fail-loud message in command output.
+- [x] The managed region is marker/header-delimited; `remove` strips only ai-dotfiles content, user `config.toml` text survives.
+- [x] Unit tests cover translation, the hooks skip, and ownership/strip.
+- [x] `pytest`, `mypy --strict`, `ruff`, `black` green.
 
 ## Notes
 
