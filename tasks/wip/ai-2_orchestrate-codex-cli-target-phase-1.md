@@ -103,6 +103,30 @@ Notes for ai-5 (consuming the render layer):
 - ai-5 picks which render function to call from `RENDER_POLICY` /
   `RenderMode.RENDER`; `codex_render.py` itself is policy-agnostic.
 
+### ai-5 done (commit `d715a70`)
+
+Shipped behaviour — input for ai-6 (tests) and ai-7 (docs):
+
+- An extra internal module `core/codex_targets.py` was added (not in
+  ai-5's listed `context_files`) — `iter_codex_pairs()` +
+  `codex_skipped_domain_subdirs()`, shared by the four command modules
+  to avoid duplicating expansion logic. Internal; no doc surface.
+- `targets` controls which targets a manifest renders to; absent →
+  `["claude"]`. **Codex is project-scoped only** — `install -g` /
+  `add -g` / `remove -g` / `status -g` force `["claude"]`.
+- Codex skill → `.agents/skills/<name>/` (real dir, generated
+  `SKILL.md`, symlinked support files). Codex agent →
+  `.codex/agents/<name>.toml` (generated, committed).
+- `install --prune` also prunes managed Codex artefacts no longer in
+  the manifest. `status` adds a per-project `Codex target` block
+  (`OK` / `NOT INSTALLED` / `STALE`). rules/hooks emit
+  `! ... skipped for the Codex target (...)`.
+- A garbled/missing `# source-sha256` header is treated as stale
+  (fail-loud).
+- Known behaviour change: domain runtime teardown (`bin/` shims) in
+  `remove` fires regardless of target — runtimes are provisioned
+  unconditionally. ai-7 should not document remove as Claude-only.
+
 ## Anti-patterns
 
 - Dispatching ai-4 before ai-3 is `done` — the render layer imports the
