@@ -1,7 +1,7 @@
 ---
 id: ai-15
 kind: subtask
-status: wip
+status: done
 created_at: '2026-05-17T10:57:41+00:00'
 parent: ai-1
 context_files:
@@ -33,11 +33,11 @@ section of the project `.codex/config.toml`.
 
 ## Definition of done
 
-- [ ] A domain's `mcp.fragment.json` servers land in `[mcp_servers]` of `.codex/config.toml`.
-- [ ] `remove` strips ai-dotfiles-owned servers; user-defined `[mcp_servers]` entries survive.
-- [ ] The `config.toml` from ai-14 (settings) and ai-15 (MCP) coexist — neither overwrites the other's region.
-- [ ] Unit + integration tests cover merge, coexistence with ai-14 output, and ownership/strip.
-- [ ] `pytest`, `mypy --strict`, `ruff`, `black` green.
+- [x] A domain's `mcp.fragment.json` servers land in `[mcp_servers]` of `.codex/config.toml`.
+- [x] `remove` strips ai-dotfiles-owned servers; user-defined `[mcp_servers]` entries survive.
+- [x] The `config.toml` from ai-14 (settings) and ai-15 (MCP) coexist — neither overwrites the other's region.
+- [x] Unit + integration tests cover merge, coexistence with ai-14 output, and ownership/strip.
+- [x] `pytest`, `mypy --strict`, `ruff`, `black` green.
 
 ## Notes
 
