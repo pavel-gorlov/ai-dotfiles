@@ -35,7 +35,7 @@ def test_claude_policy_is_all_symlink() -> None:
     [
         (ElementType.SKILL, RenderMode.RENDER, "skills"),
         (ElementType.AGENT, RenderMode.RENDER, "agents"),
-        (ElementType.RULE, RenderMode.SKIP, None),
+        (ElementType.RULE, RenderMode.DISPATCH, None),
         (ElementType.DOMAIN, RenderMode.SYMLINK, None),
     ],
 )
@@ -56,6 +56,14 @@ def test_skip_policy_has_no_subdir() -> None:
             policy = render_policy_for(target, element_type)
             if policy.mode is RenderMode.SKIP:
                 assert policy.subdir is None
+
+
+def test_codex_rule_policy_is_dispatch_not_skip() -> None:
+    # Phase 2: rules are no longer a blanket skip for Codex — the
+    # command layer dispatches per RuleClass.
+    policy = render_policy_for(Target.CODEX, ElementType.RULE)
+    assert policy.mode is RenderMode.DISPATCH
+    assert policy.mode is not RenderMode.SKIP
 
 
 def test_policy_objects_are_frozen() -> None:
