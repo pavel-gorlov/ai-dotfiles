@@ -111,15 +111,23 @@ def iter_codex_pairs(
 
     A domain is expanded into its skill/agent members (rules/hooks
     skipped — see :func:`codex_skipped_domain_subdirs`). A standalone
-    skill/agent yields a single pair. A standalone rule has no Phase-1
-    Codex surface and yields an empty list — the command layer reports
-    the skip.
+    skill/agent yields a single pair. A standalone rule does not map
+    onto a skill/agent pair (its Codex policy is
+    :data:`~ai_dotfiles.core.targets.RenderMode.DISPATCH`; the
+    per-:class:`~ai_dotfiles.core.rule_classify.RuleClass` dispatch is
+    wired by ai-11), so it yields an empty list here.
     """
     if element.type is ElementType.DOMAIN:
         return list(_domain_codex_pairs(element, project_root, catalog))
 
     policy = render_policy_for(Target.CODEX, element.type)
     if policy.mode is RenderMode.SKIP:
+        return []
+    # A rule's Codex policy is RenderMode.DISPATCH (Phase 2): it splits
+    # three ways by RuleClass and does not produce a skill/agent pair.
+    # The dispatch is wired into the command layer by ai-11; until then
+    # a standalone rule yields no Codex pairs here.
+    if element.type is not ElementType.SKILL and element.type is not ElementType.AGENT:
         return []
 
     # Imported lazily for the same reason as above.

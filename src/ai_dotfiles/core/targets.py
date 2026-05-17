@@ -42,17 +42,24 @@ class Target(Enum):
 class RenderMode(Enum):
     """How an element is materialised into a target's directory tree.
 
-    ``SYMLINK`` — the catalog source is symlinked into place unchanged.
-    ``RENDER``  — a new file is generated from the catalog source
+    ``SYMLINK``  — the catalog source is symlinked into place unchanged.
+    ``RENDER``   — a new file is generated from the catalog source
     (format conversion or content trimming); the result is a real
     artefact, not a symlink, and is drift-tracked.
-    ``SKIP``    — the target has no surface for this element type; the
+    ``SKIP``     — the target has no surface for this element type; the
     command layer logs the skip rather than failing.
+    ``DISPATCH`` — the materialisation strategy is not fixed by the
+    ``(Target, ElementType)`` pair alone; the command layer must inspect
+    the individual element to decide. Codex rules use this: a rule maps
+    onto a root ``AGENTS.md`` block, a nested ``AGENTS.md`` block, or a
+    synthetic skill depending on its
+    :class:`~ai_dotfiles.core.rule_classify.RuleClass`.
     """
 
     SYMLINK = "symlink"
     RENDER = "render"
     SKIP = "skip"
+    DISPATCH = "dispatch"
 
 
 @dataclass(frozen=True)
@@ -87,8 +94,11 @@ RENDER_POLICY: dict[Target, dict[ElementType, ElementRenderPolicy]] = {
         ElementType.SKILL: ElementRenderPolicy(RenderMode.RENDER, "skills"),
         # Codex agents: catalog .md is converted to .toml — RENDER.
         ElementType.AGENT: ElementRenderPolicy(RenderMode.RENDER, "agents"),
-        # Rules have no Phase-1 Codex surface; Phase 2 handles them.
-        ElementType.RULE: ElementRenderPolicy(RenderMode.SKIP, None),
+        # Codex rules split three ways by RuleClass (always-on -> root
+        # AGENTS.md, path-scoped -> nested AGENTS.md, description-only ->
+        # synthetic skill); the command layer classifies each rule and
+        # dispatches. No single subdir applies, hence ``None``.
+        ElementType.RULE: ElementRenderPolicy(RenderMode.DISPATCH, None),
     },
 }
 
