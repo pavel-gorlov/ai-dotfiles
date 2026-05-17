@@ -127,6 +127,29 @@ def _make_rule(catalog: Path, name: str, text: str) -> Path:
     return path
 
 
+def _make_mcp_domain(
+    catalog: Path,
+    name: str,
+    servers: dict[str, object],
+    *,
+    settings: dict[str, object] | None = None,
+) -> Path:
+    """Create a catalog domain with ``mcp.fragment.json`` (+ optional settings)."""
+    domain = catalog / name
+    domain.mkdir(parents=True, exist_ok=True)
+    _write(
+        domain / "domain.json",
+        json.dumps({"name": name, "description": f"{name} domain"}) + "\n",
+    )
+    _write(
+        domain / "mcp.fragment.json",
+        json.dumps({"mcpServers": servers}) + "\n",
+    )
+    if settings is not None:
+        _write(domain / "settings.fragment.json", json.dumps(settings) + "\n")
+    return domain
+
+
 def _write_manifest(
     path: Path, packages: list[str], *, targets: list[str] | None = None
 ) -> None:
@@ -555,3 +578,104 @@ def test_install_is_idempotent_for_rules(project: Path, catalog: Path) -> None:
     second = (project / "AGENTS.md").read_text(encoding="utf-8")
     assert first == second
     assert second.count("ai-dotfiles:rule:principles START") == 1
+
+
+# ── MCP: mcp.fragment.json -> [mcp_servers] (ai-15) ───────────────────────
+
+
+def _read_codex_config(project: Path) -> dict[str, object]:
+    import tomllib
+
+    with (project / ".codex" / "config.toml").open("rb") as handle:
+        return tomllib.load(handle)
+
+
+def test_install_writes_mcp_servers_table(project: Path, catalog: Path) -> None:
+    """A domain's mcp.fragment.json lands in [mcp_servers] of config.toml."""
+    _make_mcp_domain(
+        catalog,
+        "playwright-e2e",
+        {"playwright": {"command": "npx", "args": ["@playwright/mcp@latest"]}},
+    )
+    _write_manifest(
+        project / "ai-dotfiles.json", ["@playwright-e2e"], targets=["codex"]
+    )
+
+    code, _, _ = _run(install, project)
+    assert code == 0
+
+    parsed = _read_codex_config(project)
+    assert parsed["mcp_servers"]["playwright"] == {
+        "command": "npx",
+        "args": ["@playwright/mcp@latest"],
+    }
+
+
+def test_install_mcp_and_settings_coexist_in_one_config(
+    project: Path, catalog: Path
+) -> None:
+    """The ai-14 [ai_dotfiles] region and the ai-15 [mcp_servers] region
+    share one config.toml — neither overwrites the other."""
+    _make_mcp_domain(
+        catalog,
+        "tooling",
+        {"fs": {"command": "fs-server"}},
+        settings={"permissions": {"allow": ["Bash(git diff:*)"]}},
+    )
+    _write_manifest(project / "ai-dotfiles.json", ["@tooling"], targets=["codex"])
+
+    code, _, _ = _run(install, project)
+    assert code == 0
+
+    parsed = _read_codex_config(project)
+    assert parsed["ai_dotfiles"]["permissions"]["allow"] == ["Bash(git diff:*)"]
+    assert parsed["mcp_servers"]["fs"] == {"command": "fs-server"}
+
+
+def test_install_is_idempotent_for_mcp(project: Path, catalog: Path) -> None:
+    """A second install does not duplicate the [mcp_servers] table."""
+    _make_mcp_domain(catalog, "tooling", {"fs": {"command": "x"}})
+    _write_manifest(project / "ai-dotfiles.json", ["@tooling"], targets=["codex"])
+
+    assert _run(install, project)[0] == 0
+    first = (project / ".codex" / "config.toml").read_text(encoding="utf-8")
+    assert _run(install, project)[0] == 0
+    second = (project / ".codex" / "config.toml").read_text(encoding="utf-8")
+    assert first == second
+
+
+def test_remove_strips_domain_mcp_servers(project: Path, catalog: Path) -> None:
+    """remove drops a domain's MCP servers from [mcp_servers]."""
+    _make_mcp_domain(catalog, "tooling", {"fs": {"command": "x"}})
+    _write_manifest(project / "ai-dotfiles.json", ["@tooling"], targets=["codex"])
+    assert _run(install, project)[0] == 0
+    assert "mcp_servers" in _read_codex_config(project)
+
+    code, _, _ = _run(remove, project, "@tooling")
+    assert code == 0
+    # The whole config is gone — nothing else was in it.
+    assert not (project / ".codex" / "config.toml").exists()
+
+
+def test_remove_preserves_user_authored_mcp_server(
+    project: Path, catalog: Path
+) -> None:
+    """A user-defined [mcp_servers] entry survives removing a domain."""
+    _make_mcp_domain(catalog, "tooling", {"fs": {"command": "x"}})
+    _write_manifest(project / "ai-dotfiles.json", ["@tooling"], targets=["codex"])
+    assert _run(install, project)[0] == 0
+
+    # User hand-adds their own server into the same table.
+    cfg = project / ".codex" / "config.toml"
+    cfg.write_text(
+        cfg.read_text(encoding="utf-8")
+        + '\n[mcp_servers.my-own]\ncommand = "user-cmd"\n',
+        encoding="utf-8",
+    )
+
+    code, _, _ = _run(remove, project, "@tooling")
+    assert code == 0
+
+    parsed = _read_codex_config(project)
+    assert "fs" not in parsed["mcp_servers"]
+    assert parsed["mcp_servers"]["my-own"] == {"command": "user-cmd"}

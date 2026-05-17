@@ -414,6 +414,7 @@ def _install_codex_target(
             _apply_codex_rule_plan(plan, project_root, wanted_rule_blocks)
 
     _write_codex_config(packages, project_root, catalog)
+    _write_codex_mcp(packages, project_root, catalog)
 
     if prune:
         _prune_codex_target(project_root, wanted_skills, wanted_agents)
@@ -451,6 +452,31 @@ def _write_codex_config(packages: list[str], project_root: Path, catalog: Path) 
             f"@{domain_name}: settings.fragment.json '{joined}' skipped for "
             f"the Codex target (no config.toml equivalent — Codex has no "
             f"hook harness)."
+        )
+
+
+def _write_codex_mcp(packages: list[str], project_root: Path, catalog: Path) -> None:
+    """Translate domain ``mcp.fragment.json`` files into ``[mcp_servers]``.
+
+    The Codex-target counterpart of the ``.mcp.json`` rebuild — domain
+    MCP servers land in the ``[mcp_servers]`` table of
+    ``.codex/config.toml``, sharing the file with the ``[ai_dotfiles]``
+    settings region. A server name a domain declares but the user has
+    already hand-authored is left as the user's and reported.
+    """
+    from ai_dotfiles.core.mcp_merge import collect_mcp_fragments
+
+    result = codex_config.write_codex_mcp(
+        project_root, collect_mcp_fragments(packages, catalog)
+    )
+    if result.status == "created":
+        ui.success("config.toml ([mcp_servers] created)")
+    elif result.status == "updated":
+        ui.success("config.toml ([mcp_servers] updated)")
+    for name in sorted(result.collisions):
+        ui.warn(
+            f"MCP server '{name}' already exists in .codex/config.toml "
+            f"(user-owned). Keeping user version."
         )
 
 
