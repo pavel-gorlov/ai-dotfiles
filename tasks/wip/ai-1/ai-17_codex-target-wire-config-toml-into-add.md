@@ -1,7 +1,7 @@
 ---
 id: ai-17
 kind: subtask
-status: to_do
+status: wip
 created_at: '2026-05-17T13:32:13+00:00'
 parent: ai-1
 context_files:
