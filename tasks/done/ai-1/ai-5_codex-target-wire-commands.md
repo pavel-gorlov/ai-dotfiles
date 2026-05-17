@@ -1,7 +1,7 @@
 ---
 id: ai-5
 kind: subtask
-status: wip
+status: done
 created_at: '2026-05-17T07:09:43+00:00'
 parent: ai-1
 context_files:
@@ -42,12 +42,12 @@ written, support files symlinked, drift detected.
 
 ## Definition of done
 
-- [ ] `core/codex_install.py` installs Codex skills (generated `SKILL.md` + symlinked support files) and agents (rendered `.toml`).
-- [ ] `install` / `add` / `remove` iterate `targets`; a Claude-only manifest behaves byte-identically to before.
-- [ ] `remove` and `install --prune` clean managed Codex files via the `# managed-by` header; user-authored files untouched.
-- [ ] `status` flags a Codex agent as stale when its `# source-sha256` no longer matches the source.
-- [ ] Hooks skipped for the Codex target with an explicit message in `install` output.
-- [ ] `pytest`, `mypy --strict`, `ruff`, `black` green (subtask-level tests; full coverage is ai-6).
+- [x] `core/codex_install.py` installs Codex skills (generated `SKILL.md` + symlinked support files) and agents (rendered `.toml`).
+- [x] `install` / `add` / `remove` iterate `targets`; a Claude-only manifest behaves byte-identically to before.
+- [x] `remove` and `install --prune` clean managed Codex files via the `# managed-by` header; user-authored files untouched.
+- [x] `status` flags a Codex agent as stale when its `# source-sha256` no longer matches the source.
+- [x] Hooks skipped for the Codex target with an explicit message in `install` output.
+- [x] `pytest`, `mypy --strict`, `ruff`, `black` green (subtask-level tests; full coverage is ai-6).
 
 ## Notes
 
