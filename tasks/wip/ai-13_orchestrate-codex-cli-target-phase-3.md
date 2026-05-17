@@ -30,10 +30,11 @@ Dispatch the three subtasks in dependency order.
 ### Dispatch order
 
 ```
-ai-14  ─▶  ai-15  ─▶  ai-16
+ai-14  ─▶  ai-15  ─▶  ai-17  ─▶  ai-16
 ```
 
-Strictly sequential — ai-15 writes into the `config.toml` file ai-14 owns.
+Strictly sequential — they share the `core/codex_config.py` surface and
+the `config.toml` file. ai-17 was added mid-execution (see Execution log).
 
 ## Subtask classification
 
@@ -41,6 +42,7 @@ Strictly sequential — ai-15 writes into the `config.toml` file ai-14 owns.
 |-------|--------------------------------------|-------|--------------------------------|
 | ai-14 | Codex target: settings.fragment to config.toml | write | `core/codex_config.py`, `commands/{install,remove}.py` |
 | ai-15 | Codex target: mcp.fragment to config.toml      | write | `core/codex_config.py` |
+| ai-17 | Codex target: wire config.toml into add        | write | `commands/add.py` |
 | ai-16 | Codex target: Phase 3 docs                     | write | `scaffold/templates/builtin_ai_dotfiles_skill.md`, `README.md` |
 
 No read-only subtasks — all write, sequential per the Cognition rule.
@@ -76,6 +78,18 @@ Notes for ai-15 (MCP) — `.codex/config.toml` is a shared file:
   ai-15 hooks in adjacently and must be idempotent.
 - API: `write_codex_config(project_root, fragment_paths)`,
   `strip_managed(project_root)`, `config_path(project_root)`.
+
+### ai-15 done (commit `3948dd8`) + ai-17 added
+
+- `mcp.fragment.json` → `[mcp_servers]` table in `.codex/config.toml`;
+  ownership sidecar `.codex/.ai-dotfiles-mcp-ownership.json`. The
+  `[ai_dotfiles]` (settings) and `[mcp_servers]` (MCP) regions coexist.
+- **Gap found:** ai-14/ai-15 wired `.codex/config.toml` into
+  `install`/`remove` only — **not `add`**. For consistency with
+  skills/agents/rules (where `add` works), subtask **ai-17** was added
+  to wire `codex_config` into `add`. Dispatched before ai-16 so the
+  docs reflect the complete behaviour.
+- `null` MCP server keys are dropped (TOML has no null) — docs note.
 
 ## Anti-patterns
 

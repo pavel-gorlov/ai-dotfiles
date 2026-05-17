@@ -8,7 +8,7 @@ context_files:
 - src/ai_dotfiles/scaffold/templates/builtin_ai_dotfiles_skill.md
 - README.md
 dependencies:
-- ai-15
+- ai-17
 executor_agent: claude
 ---
 
