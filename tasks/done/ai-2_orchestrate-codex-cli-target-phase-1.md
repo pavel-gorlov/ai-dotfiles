@@ -1,7 +1,7 @@
 ---
 id: ai-2
 kind: task
-status: wip
+status: done
 created_at: '2026-05-17T07:09:43+00:00'
 parent: ai-1
 dependencies: []
@@ -65,7 +65,8 @@ core-module surface and **must** be sequential.
       (covered by `tests/integration/test_codex_target.py` + e2e).
 - [x] A manifest without `targets` installs byte-identically to pre-change behaviour
       (covered by the ai-6 regression tests).
-- [ ] PR `feat: Codex CLI target support (skills + agents)` opened against `main`.
+- [x] PR `feat: Codex CLI target support (skills + agents)` opened against `main`
+      — [#6](https://github.com/pavel-gorlov/ai-dotfiles/pull/6).
 
 ## Execution log
 
