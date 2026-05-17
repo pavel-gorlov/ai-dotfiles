@@ -162,7 +162,59 @@ Absent `targets` field → `["claude"]`. Every existing manifest keeps working u
 |---------|------------|--------|
 | `skill:name` or domain skill | `.agents/skills/<name>/` | Real directory with a generated `SKILL.md` (first-sentence `description`) + symlinked support files (`scripts/`, `references/`, `assets/`, …) |
 | `agent:name` or domain agent | `.codex/agents/<name>.toml` | Generated TOML (`name`, `description`, `developer_instructions`, optional `model`) — a committed project artefact |
-| `rule:name` or domain `rules/` and `hooks/` | — | Skipped in Phase 1; the command prints an explicit `! ... skipped for the Codex target` message |
+| `rule:name` or domain `rules/` member | See rule classes below | Dispatched by rule frontmatter — three possible outputs |
+| Domain `hooks/` members | — | Skipped; the command prints an explicit `! ... skipped for the Codex target` message (Codex has no hook harness) |
+
+#### Rule classes for the Codex target
+
+A catalog rule has no single Codex equivalent. `install` classifies each rule by its frontmatter and dispatches to one of three surfaces:
+
+| Frontmatter | Classification | Output |
+|-------------|---------------|--------|
+| `always_on: true` | Always-on | Managed block appended to the project-root `AGENTS.md` (Codex always reads the root `AGENTS.md`) |
+| `paths:` — non-empty list of directory globs | Path-scoped | Managed block written to `<dir>/AGENTS.md` for each directory in the list; Codex activates it via its root→cwd walk. Glob `src/**` normalises to `src/` |
+| Neither field (the default for un-migrated catalog rules) | Description-only | Synthetic Codex-only skill named `rule-<name>` under `.agents/skills/rule-<name>/` (ADR ai-1-2) |
+
+**Classification priority**: a non-empty `paths:` list wins over `always_on: true` — a path-scoped rule is inherently conditional.
+
+Managed `AGENTS.md` blocks are delimited by HTML-comment markers that ai-dotfiles owns:
+
+```
+<!-- ai-dotfiles:rule:<name> START -->
+<!-- ai-dotfiles:rule:<name> sha256:<hex> -->
+<rule body>
+<!-- ai-dotfiles:rule:<name> END -->
+```
+
+`remove` strips only those markers; surrounding user-authored text in `AGENTS.md` is preserved. An `AGENTS.md` left whitespace-only after the strip is deleted. `install --prune` removes orphaned managed blocks and orphaned `rule-<name>` synthetic skills.
+
+`status` reports:
+- `rules/<name> -> AGENTS.md` (or `src/AGENTS.md` etc.) for always-on and path-scoped rules — OK when the managed block is present, NOT INSTALLED otherwise.
+- `skills/rule-<name>` for description-only rules — OK / STALE / NOT INSTALLED like any other skill.
+
+The synthetic `rule-<name>` skill is **Codex-only**: a description-only rule also symlinks into `.claude/rules/` for the Claude target as usual. The two are independent.
+
+#### Rule-authoring note
+
+Add `always_on:` or `paths:` to a rule's YAML frontmatter to control where it lands for the Codex target:
+
+```yaml
+---
+# Rule is always active — lands in the project-root AGENTS.md
+always_on: true
+---
+```
+
+```yaml
+---
+# Rule applies only inside src/ and tests/ — lands in src/AGENTS.md and tests/AGENTS.md
+paths:
+  - src/**
+  - tests/**
+---
+```
+
+Without either field the rule becomes a `rule-<name>` skill, which Codex loads on demand via its description (progressive disclosure). This is a sensible default for rules that are not universally relevant.
 
 Every generated Codex file starts with:
 
