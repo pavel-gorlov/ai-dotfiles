@@ -1,7 +1,7 @@
 ---
 id: ai-13
 kind: task
-status: wip
+status: done
 created_at: '2026-05-17T10:57:40+00:00'
 parent: ai-1
 dependencies:
@@ -58,7 +58,8 @@ No read-only subtasks — all write, sequential per the Cognition rule.
       skipped with an explicit logged message (ADR ai-1-5).
 - [x] A domain's `mcp.fragment.json` lands in the `[mcp_servers]`
       section of `.codex/config.toml`.
-- [ ] PR `feat: Codex CLI target — config.toml + MCP` opened against `main`.
+- [x] PR `feat: Codex CLI target — config.toml + MCP` opened against `main`
+      — [#8](https://github.com/pavel-gorlov/ai-dotfiles/pull/8), merged.
 
 ## Execution log
 
