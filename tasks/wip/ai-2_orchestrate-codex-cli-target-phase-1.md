@@ -57,11 +57,14 @@ core-module surface and **must** be sequential.
 
 ## Acceptance criteria
 
-- [ ] All five subtasks (ai-3…ai-7) are `done` with their own acceptance met.
-- [ ] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green.
-- [ ] A scratch project with `"targets": ["codex"]` produces working
-      `.agents/skills/` and `.codex/agents/*.toml` after `ai-dotfiles install`.
-- [ ] A manifest without `targets` installs byte-identically to pre-change behaviour.
+- [x] All five subtasks (ai-3…ai-7) are `done` with their own acceptance met.
+- [x] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green
+      (802 passed; mypy 54 files clean; ruff + black clean).
+- [x] A scratch project with `"targets": ["codex"]` produces working
+      `.agents/skills/` and `.codex/agents/*.toml` after `ai-dotfiles install`
+      (covered by `tests/integration/test_codex_target.py` + e2e).
+- [x] A manifest without `targets` installs byte-identically to pre-change behaviour
+      (covered by the ai-6 regression tests).
 - [ ] PR `feat: Codex CLI target support (skills + agents)` opened against `main`.
 
 ## Execution log
