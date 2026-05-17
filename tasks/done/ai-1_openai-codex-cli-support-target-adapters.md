@@ -1,20 +1,29 @@
 ---
 id: ai-1
 kind: epic
-status: backlog
+status: done
 created_at: '2026-05-16T19:37:06+00:00'
 success_metrics:
-- 'A manifest with `"targets": ["codex"]` produces a working `.agents/skills/` (generated `SKILL.md` + symlinked support files) and committed `.codex/agents/*.toml` after `ai-dotfiles install`.'
-- Every existing Claude-only manifest (no `targets` field) installs byte-identically — zero regression.
-- '`ai-dotfiles status` flags a generated Codex agent as stale when its source `.md` changed.'
+- 'A manifest with `"targets": ["codex"]` produces a working `.agents/skills/` (generated
+  `SKILL.md` + symlinked support files) and committed `.codex/agents/*.toml` after
+  `ai-dotfiles install`.'
+- Every existing Claude-only manifest (no `targets` field) installs byte-identically
+  — zero regression.
+- '`ai-dotfiles status` flags a generated Codex agent as stale when its source `.md`
+  changed.'
 - Codex-target code carries test coverage at or above the project threshold (>= 80%).
 out_of_scope:
-- Codex custom prompts (`~/.codex/prompts/`) — global-only in Codex, no per-project surface, no catalog element maps to them.
+- Codex custom prompts (`~/.codex/prompts/`) — global-only in Codex, no per-project
+  surface, no catalog element maps to them.
 - Codex hooks — Codex has no hook harness.
-- A standalone `migrate` command porting an existing `.claude/` tree to `.agents/` — the catalog is the source of truth, rendering is enough.
-- Gemini CLI / Cursor / other targets — the adapter layer is built so they can be added later, but they are not in this epic.
-- Bidirectional sync (editing `.codex/agents/*.toml` and propagating back to the catalog) — generation is one-way, catalog -> target.
-- Multi-target global install — the Codex target is project-scoped only; `~/.ai-dotfiles/global.json` and `install -g` stay Claude-only.
+- A standalone `migrate` command porting an existing `.claude/` tree to `.agents/`
+  — the catalog is the source of truth, rendering is enough.
+- Gemini CLI / Cursor / other targets — the adapter layer is built so they can be
+  added later, but they are not in this epic.
+- Bidirectional sync (editing `.codex/agents/*.toml` and propagating back to the catalog)
+  — generation is one-way, catalog -> target.
+- Multi-target global install — the Codex target is project-scoped only; `~/.ai-dotfiles/global.json`
+  and `install -g` stay Claude-only.
 ---
 
 # OpenAI Codex CLI support (target adapters)
@@ -202,3 +211,21 @@ partial settings map with logged skips (ADR ai-1-5); Codex render always
 trims skill descriptions (ADR ai-1-4); global stays project-scoped /
 Claude-only (ADR ai-1-3, `out_of_scope`); synthetic skills named
 `rule-<name>` (ADR ai-1-2). The epic is ready for `breakdown-feature`.
+
+## Outcome (2026-05-17)
+
+All three phases delivered and merged into `main`:
+
+- **Phase 1** — skills + agents for the Codex target (orchestrator ai-2;
+  ai-3…ai-7). PR [#6](https://github.com/pavel-gorlov/ai-dotfiles/pull/6).
+- **Phase 2** — rules → Codex: `AGENTS.md` assembly + `rule-<name>`
+  Codex-only skills (orchestrator ai-8; ai-9…ai-12).
+  PR [#7](https://github.com/pavel-gorlov/ai-dotfiles/pull/7).
+- **Phase 3** — `.codex/config.toml` (settings) + `[mcp_servers]` (MCP),
+  wired into `install`/`add`/`remove` (orchestrator ai-13; ai-14, ai-15,
+  ai-17, ai-16). PR [#8](https://github.com/pavel-gorlov/ai-dotfiles/pull/8).
+
+One subtask (ai-17) was added mid-execution to give `add` config.toml
+parity with `install`. Final state: 933 tests passing; mypy / ruff /
+black clean. Success metrics met. Global Codex install (`install -g`)
+remains out of scope as planned.
