@@ -1,7 +1,7 @@
 ---
 id: ai-4
 kind: subtask
-status: to_do
+status: done
 created_at: '2026-05-17T07:09:43+00:00'
 parent: ai-1
 context_files:
@@ -41,11 +41,11 @@ on-disk form: a catalog agent `.md` → Codex `.toml`, and a catalog
 
 ## Definition of done
 
-- [ ] `render_agent_toml` produces valid TOML (`name`, `description`, `developer_instructions`, optional `model`) with the managed-by + source-sha256 header.
-- [ ] `render_skill_md` trims `description` to the first sentence and carries the same header.
-- [ ] `tomli-w` added to `pyproject.toml`; `poetry.lock` regenerated.
-- [ ] String escaping is correct for multi-line bodies and bodies containing quotes / backticks.
-- [ ] Unit tests (`tests/unit/test_codex_render.py`) cover agent + skill render, header presence, hash stability; `pytest`, `mypy --strict`, `ruff`, `black` green.
+- [x] `render_agent_toml` produces valid TOML (`name`, `description`, `developer_instructions`, optional `model`) with the managed-by + source-sha256 header.
+- [x] `render_skill_md` trims `description` to the first sentence and carries the same header.
+- [x] `tomli-w` added to `pyproject.toml`; `poetry.lock` regenerated.
+- [x] String escaping is correct for multi-line bodies and bodies containing quotes / backticks.
+- [x] Unit tests (`tests/unit/test_codex_render.py`) cover agent + skill render, header presence, hash stability; `pytest`, `mypy --strict`, `ruff`, `black` green.
 
 ## Notes
 

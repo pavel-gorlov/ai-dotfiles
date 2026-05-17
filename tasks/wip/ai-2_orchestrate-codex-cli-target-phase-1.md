@@ -87,6 +87,22 @@ Constraints for ai-4 / ai-5 surfaced during ai-3:
 - **`get_targets`.** Absent `targets` key → `["claude"]`; an explicit
   `targets: []` is honoured as `[]`. Raises `ConfigError` if not a list.
 
+### ai-4 done (commit `3b1b458`)
+
+Notes for ai-5 (consuming the render layer):
+
+- `core/codex_render.py` exposes two pure functions:
+  `render_agent_toml(md_path) -> str`, `render_skill_md(md_path) -> str`.
+- Output header is raw-prepended text: line 1 `# managed-by: ai-dotfiles`,
+  line 2 `# source-sha256: <hex>`. The hash is of the **source `.md`
+  content** (UTF-8), not the rendered output — for drift detection,
+  re-read the catalog source and hash it, compare to line 2.
+- Both raise `ElementError` (an `AiDotfilesError`) when `name`/
+  `description` frontmatter is missing — the command layer must catch
+  and format.
+- ai-5 picks which render function to call from `RENDER_POLICY` /
+  `RenderMode.RENDER`; `codex_render.py` itself is policy-agnostic.
+
 ## Anti-patterns
 
 - Dispatching ai-4 before ai-3 is `done` — the render layer imports the
