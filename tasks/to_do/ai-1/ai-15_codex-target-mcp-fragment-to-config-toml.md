@@ -1,7 +1,7 @@
 ---
 id: ai-15
 kind: subtask
-status: backlog
+status: to_do
 created_at: '2026-05-17T10:57:41+00:00'
 parent: ai-1
 context_files:
