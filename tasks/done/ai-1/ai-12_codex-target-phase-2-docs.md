@@ -1,7 +1,7 @@
 ---
 id: ai-12
 kind: subtask
-status: wip
+status: done
 created_at: '2026-05-17T10:57:40+00:00'
 parent: ai-1
 context_files:
@@ -31,9 +31,9 @@ get correct advice for Phase 2 behaviour.
 
 ## Definition of done
 
-- [ ] `builtin_ai_dotfiles_skill.md` documents the three rule classes, `paths:`, `AGENTS.md` assembly, and `rule-<name>` skills.
-- [ ] `README.md` covers the `paths:` field and Codex rule support; the stale Phase 1 limitation note is removed.
-- [ ] No doc claims behaviour beyond Phase 2 (`config.toml` / MCP are Phase 3 — do not document as available).
+- [x] `builtin_ai_dotfiles_skill.md` documents the three rule classes, `paths:`, `AGENTS.md` assembly, and `rule-<name>` skills.
+- [x] `README.md` covers the `paths:` field and Codex rule support; the stale Phase 1 limitation note is removed.
+- [x] No doc claims behaviour beyond Phase 2 (`config.toml` / MCP are Phase 3 — do not document as available).
 
 ## Notes
 

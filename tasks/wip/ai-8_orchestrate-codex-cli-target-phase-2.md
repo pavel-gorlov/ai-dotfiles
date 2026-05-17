@@ -53,13 +53,15 @@ No read-only subtasks — all write, sequential per the Cognition rule.
 
 ## Acceptance criteria
 
-- [ ] All four subtasks (ai-9…ai-12) are `done`.
-- [ ] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green.
-- [ ] An always-on rule lands in the project-root `AGENTS.md`; a
+- [x] All four subtasks (ai-9…ai-12) are `done`.
+- [x] `poetry run pytest`, `mypy src/`, `ruff check`, `black --check` all green
+      (862 passed; mypy 56 files clean; ruff + black clean).
+- [x] An always-on rule lands in the project-root `AGENTS.md`; a
       path-scoped rule lands in `<dir>/AGENTS.md`; a description-only
-      rule renders as a Codex-only `rule-<name>` skill.
-- [ ] `remove` strips only ai-dotfiles-owned `AGENTS.md` blocks; user
-      text in `AGENTS.md` is untouched.
+      rule renders as a Codex-only `rule-<name>` skill
+      (covered by ai-11 integration + e2e tests).
+- [x] `remove` strips only ai-dotfiles-owned `AGENTS.md` blocks; user
+      text in `AGENTS.md` is untouched (covered by ai-11 tests).
 - [ ] PR `feat: Codex CLI target — rules support` opened against `main`.
 
 ## Execution log
