@@ -20,7 +20,6 @@ No I/O happens here beyond reading catalog files — keep CLI concerns out.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -36,6 +35,7 @@ from ai_dotfiles.core.errors import (
     DependencyCycleError,
     MissingDependencyError,
 )
+from ai_dotfiles.core.frontmatter import parse_frontmatter
 
 __all__ = [
     "read_depends",
@@ -53,72 +53,14 @@ def _read_domain_depends(catalog: Path, element: Element) -> list[str]:
 # Standalone-element frontmatter parsing
 # --------------------------------------------------------------------------
 #
-# We don't ship PyYAML as a runtime dep, so we extract just enough YAML to
-# cover ``depends:`` declarations. Two shapes are supported:
+# The YAML-frontmatter parser is shared via ``core.frontmatter``. We only
+# need the ``depends:`` key here; two shapes are supported by the parser:
 #
 #   depends: ["@python", "skill:x"]
 #
 #   depends:
 #     - "@python"
 #     - skill:x
-#
-# Anything more elaborate (anchors, multi-line strings, nested mappings)
-# is not supported here — frontmatter parsing for any other field still
-# happens elsewhere via whatever consumer needs it.
-
-_FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.DOTALL)
-_INLINE_LIST_RE = re.compile(
-    r"^depends\s*:\s*\[(.*?)\]\s*$",
-    re.MULTILINE,
-)
-_BLOCK_HEADER_RE = re.compile(r"^depends\s*:\s*$", re.MULTILINE)
-_BLOCK_ITEM_RE = re.compile(r"^\s+-\s*(.+?)\s*$")
-_TOP_LEVEL_KEY_RE = re.compile(r"^\S")
-
-
-def _strip_yaml_quotes(token: str) -> str:
-    token = token.strip()
-    if len(token) >= 2 and token[0] == token[-1] and token[0] in ("'", '"'):
-        return token[1:-1]
-    return token
-
-
-def _parse_frontmatter_depends(text: str) -> list[str]:
-    """Extract ``depends:`` from a markdown YAML frontmatter block.
-
-    Returns an empty list if the file has no frontmatter or no
-    ``depends`` key. Raises ``ConfigError`` on a malformed block we
-    actively detect (e.g. inline list with mismatched brackets).
-    """
-    match = _FRONTMATTER_RE.match(text)
-    if match is None:
-        return []
-    block = match.group(1)
-
-    inline = _INLINE_LIST_RE.search(block)
-    if inline is not None:
-        items_raw = inline.group(1)
-        if not items_raw.strip():
-            return []
-        return [_strip_yaml_quotes(s) for s in items_raw.split(",") if s.strip()]
-
-    header = _BLOCK_HEADER_RE.search(block)
-    if header is None:
-        return []
-
-    rest = block[header.end() :]
-    items: list[str] = []
-    for line in rest.splitlines():
-        if not line.strip():
-            continue
-        item_match = _BLOCK_ITEM_RE.match(line)
-        if item_match is not None:
-            items.append(_strip_yaml_quotes(item_match.group(1)))
-            continue
-        if _TOP_LEVEL_KEY_RE.match(line):
-            # Reached the next top-level key — stop scanning.
-            break
-    return items
 
 
 def _read_standalone_depends(catalog: Path, element: Element) -> list[str]:
@@ -130,7 +72,12 @@ def _read_standalone_depends(catalog: Path, element: Element) -> list[str]:
         text = md_path.read_text(encoding="utf-8")
     except OSError as exc:
         raise ConfigError(f"Cannot read {md_path}: {exc}") from exc
-    return _parse_frontmatter_depends(text)
+    depends = parse_frontmatter(text).get("depends", [])
+    if not isinstance(depends, list):
+        raise ConfigError(
+            f"Element {element.raw!r} ({md_path}): 'depends' must be a list."
+        )
+    return depends
 
 
 def read_depends(catalog: Path, element: Element) -> list[Element]:

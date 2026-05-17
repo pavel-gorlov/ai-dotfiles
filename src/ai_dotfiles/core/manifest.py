@@ -69,6 +69,25 @@ def get_packages(path: Path) -> list[str]:
     return list(packages)
 
 
+def get_targets(path: Path) -> list[str]:
+    """Return the ``targets`` list from the manifest.
+
+    A manifest with no ``targets`` field resolves to ``["claude"]`` —
+    every pre-existing Claude-only manifest keeps working unchanged
+    (ADR ai-1-3). Raises :class:`ConfigError` if ``targets`` is present
+    but not a list of strings.
+    """
+    data = read_manifest(path)
+    if "targets" not in data:
+        return ["claude"]
+    targets = data["targets"]
+    if not isinstance(targets, list) or not all(
+        isinstance(item, str) for item in targets
+    ):
+        raise ConfigError(f"Manifest {path} 'targets' must be a list of strings")
+    return list(targets)
+
+
 def get_flag(path: Path, key: str, default: bool) -> bool:
     """Return a top-level boolean flag from the manifest.
 

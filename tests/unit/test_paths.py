@@ -149,3 +149,19 @@ def test_project_manifest_path(tmp_path: Path) -> None:
 
 def test_project_claude_dir(tmp_path: Path) -> None:
     assert paths.project_claude_dir(tmp_path) == tmp_path / ".claude"
+
+
+def test_project_codex_skills_dir(tmp_path: Path) -> None:
+    assert paths.project_codex_skills_dir(tmp_path) == tmp_path / ".agents" / "skills"
+
+
+def test_project_codex_agents_dir(tmp_path: Path) -> None:
+    assert paths.project_codex_agents_dir(tmp_path) == tmp_path / ".codex" / "agents"
+
+
+def test_project_codex_resolvers_create_no_directories(tmp_path: Path) -> None:
+    # paths is computation-only — resolvers must not touch the filesystem.
+    paths.project_codex_skills_dir(tmp_path)
+    paths.project_codex_agents_dir(tmp_path)
+    assert not (tmp_path / ".agents").exists()
+    assert not (tmp_path / ".codex").exists()
