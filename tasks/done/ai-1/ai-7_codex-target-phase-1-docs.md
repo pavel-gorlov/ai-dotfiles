@@ -1,7 +1,7 @@
 ---
 id: ai-7
 kind: subtask
-status: wip
+status: done
 created_at: '2026-05-17T07:09:43+00:00'
 parent: ai-1
 context_files:
@@ -35,10 +35,10 @@ Phase 1 behaviour.
 
 ## Definition of done
 
-- [ ] `builtin_ai_dotfiles_skill.md` documents `targets` and Codex render behaviour, consistent with shipped Phase 1.
-- [ ] `README.md` covers the `targets` field and Codex support.
-- [ ] `CLAUDE.md` carries the regenerate-on-change maintenance note.
-- [ ] No doc claims behaviour beyond Phase 1 (rules / config.toml / MCP / global are Phases 2–3 — do not document as available).
+- [x] `builtin_ai_dotfiles_skill.md` documents `targets` and Codex render behaviour, consistent with shipped Phase 1.
+- [x] `README.md` covers the `targets` field and Codex support.
+- [x] `CLAUDE.md` carries the regenerate-on-change maintenance note.
+- [x] No doc claims behaviour beyond Phase 1 (rules / config.toml / MCP / global are Phases 2–3 — do not document as available).
 
 ## Notes
 
