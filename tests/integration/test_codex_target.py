@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from ai_dotfiles.commands.add import add
 from ai_dotfiles.commands.install import install
 from ai_dotfiles.commands.remove import remove
 from ai_dotfiles.commands.status import status
@@ -679,3 +680,102 @@ def test_remove_preserves_user_authored_mcp_server(
     parsed = _read_codex_config(project)
     assert "fs" not in parsed["mcp_servers"]
     assert parsed["mcp_servers"]["my-own"] == {"command": "user-cmd"}
+
+
+# ── add wires config.toml (settings + MCP) (ai-17) ────────────────────────
+
+
+def test_add_writes_settings_into_config(project: Path, catalog: Path) -> None:
+    """`add @domain` translates settings.fragment.json into config.toml."""
+    _make_mcp_domain(
+        catalog,
+        "tooling",
+        {},
+        settings={"permissions": {"allow": ["Bash(git diff:*)"]}},
+    )
+    _write_manifest(project / "ai-dotfiles.json", [], targets=["codex"])
+
+    code, _, _ = _run(add, project, "@tooling")
+    assert code == 0
+
+    parsed = _read_codex_config(project)
+    assert parsed["ai_dotfiles"]["permissions"]["allow"] == ["Bash(git diff:*)"]
+
+
+def test_add_writes_mcp_into_config(project: Path, catalog: Path) -> None:
+    """`add @domain` translates mcp.fragment.json into [mcp_servers]."""
+    _make_mcp_domain(catalog, "tooling", {"fs": {"command": "fs-server"}})
+    _write_manifest(project / "ai-dotfiles.json", [], targets=["codex"])
+
+    code, _, _ = _run(add, project, "@tooling")
+    assert code == 0
+
+    parsed = _read_codex_config(project)
+    assert parsed["mcp_servers"]["fs"] == {"command": "fs-server"}
+
+
+def test_add_reports_skipped_hooks_key(project: Path, catalog: Path) -> None:
+    """`add` prints the hooks-skipped message, consistent with install."""
+    _make_mcp_domain(
+        catalog,
+        "tooling",
+        {},
+        settings={"hooks": {"PreToolUse": []}},
+    )
+    _write_manifest(project / "ai-dotfiles.json", [], targets=["codex"])
+
+    code, _, err = _run(add, project, "@tooling")
+    assert code == 0
+    assert "hooks" in err
+    assert "skipped for the Codex target" in err
+
+
+def test_add_second_domain_preserves_first(project: Path, catalog: Path) -> None:
+    """Adding a second domain keeps the first domain's managed regions.
+
+    The codex_config writers round-trip the whole managed region — `add`
+    must feed them the full manifest, not just the new domain, or the
+    first domain's [ai_dotfiles] / [mcp_servers] content is dropped.
+    """
+    _make_mcp_domain(
+        catalog,
+        "first",
+        {"fs": {"command": "fs-server"}},
+        settings={"permissions": {"allow": ["Bash(git diff:*)"]}},
+    )
+    _make_mcp_domain(
+        catalog,
+        "second",
+        {"net": {"command": "net-server"}},
+        settings={"permissions": {"allow": ["Bash(curl:*)"]}},
+    )
+    _write_manifest(project / "ai-dotfiles.json", [], targets=["codex"])
+
+    assert _run(add, project, "@first")[0] == 0
+    assert _run(add, project, "@second")[0] == 0
+
+    parsed = _read_codex_config(project)
+    # Both domains' permissions survive (concat+dedup, topo order).
+    allow = parsed["ai_dotfiles"]["permissions"]["allow"]
+    assert "Bash(git diff:*)" in allow
+    assert "Bash(curl:*)" in allow
+    # Both domains' MCP servers survive.
+    assert parsed["mcp_servers"]["fs"] == {"command": "fs-server"}
+    assert parsed["mcp_servers"]["net"] == {"command": "net-server"}
+
+
+def test_add_does_not_write_config_for_claude_target(
+    project: Path, catalog: Path
+) -> None:
+    """A Claude-only manifest never grows a .codex/config.toml on `add`."""
+    _make_mcp_domain(
+        catalog,
+        "tooling",
+        {"fs": {"command": "fs-server"}},
+        settings={"permissions": {"allow": ["Bash(git diff:*)"]}},
+    )
+    _write_manifest(project / "ai-dotfiles.json", [], targets=["claude"])
+
+    code, _, _ = _run(add, project, "@tooling")
+    assert code == 0
+    assert not (project / ".codex" / "config.toml").exists()

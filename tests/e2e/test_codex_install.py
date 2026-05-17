@@ -287,6 +287,83 @@ def test_add_touches_only_that_elements_codex_artefact(
     assert skill_md.read_text(encoding="utf-8") == before
 
 
+# ── add: codex config.toml (settings + MCP) (ai-17) ───────────────────────
+
+
+def _make_config_domain(
+    catalog: Path,
+    name: str,
+    *,
+    servers: dict[str, object],
+    settings: dict[str, object],
+) -> None:
+    """Create a catalog domain with settings + mcp fragments."""
+    domain = catalog / name
+    domain.mkdir(parents=True, exist_ok=True)
+    _write(
+        domain / "domain.json",
+        json.dumps({"name": name, "description": f"{name} domain"}) + "\n",
+    )
+    _write(domain / "settings.fragment.json", json.dumps(settings) + "\n")
+    _write(
+        domain / "mcp.fragment.json",
+        json.dumps({"mcpServers": servers}) + "\n",
+    )
+
+
+def _read_codex_config(project: Path) -> dict[str, object]:
+    import tomllib
+
+    with (project / ".codex" / "config.toml").open("rb") as handle:
+        return tomllib.load(handle)
+
+
+def test_cli_add_writes_config_toml(project: Path, catalog: Path) -> None:
+    """`ai-dotfiles add @domain` writes settings + MCP into config.toml."""
+    _make_config_domain(
+        catalog,
+        "tooling",
+        servers={"fs": {"command": "fs-server"}},
+        settings={"permissions": {"allow": ["Bash(git diff:*)"]}},
+    )
+    _write_manifest(project / "ai-dotfiles.json", [], targets=["codex"])
+
+    code, out, _ = _run(project, "add", "@tooling")
+    assert code == 0, out
+
+    parsed = _read_codex_config(project)
+    assert parsed["ai_dotfiles"]["permissions"]["allow"] == ["Bash(git diff:*)"]
+    assert parsed["mcp_servers"]["fs"] == {"command": "fs-server"}
+
+
+def test_cli_add_second_domain_preserves_first_config(
+    project: Path, catalog: Path
+) -> None:
+    """Adding a second domain keeps the first domain's config.toml regions."""
+    _make_config_domain(
+        catalog,
+        "first",
+        servers={"fs": {"command": "fs-server"}},
+        settings={"permissions": {"allow": ["Bash(git diff:*)"]}},
+    )
+    _make_config_domain(
+        catalog,
+        "second",
+        servers={"net": {"command": "net-server"}},
+        settings={"permissions": {"allow": ["Bash(curl:*)"]}},
+    )
+    _write_manifest(project / "ai-dotfiles.json", [], targets=["codex"])
+
+    assert _run(project, "add", "@first")[0] == 0
+    assert _run(project, "add", "@second")[0] == 0
+
+    parsed = _read_codex_config(project)
+    allow = parsed["ai_dotfiles"]["permissions"]["allow"]
+    assert "Bash(git diff:*)" in allow and "Bash(curl:*)" in allow
+    assert parsed["mcp_servers"]["fs"] == {"command": "fs-server"}
+    assert parsed["mcp_servers"]["net"] == {"command": "net-server"}
+
+
 # ── remove: codex and multi-target ────────────────────────────────────────
 
 
