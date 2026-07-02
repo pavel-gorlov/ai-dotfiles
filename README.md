@@ -1,5 +1,10 @@
 # ai-dotfiles
 
+> [!WARNING]
+> **🚧 This package is not published yet.** `pipx install ai-dotfiles` does not work
+> yet — run the tool **locally in dev mode** from source instead.
+> See the [Development](#development) section.
+
 Package manager for Claude Code configuration. Like `npm` for your AI coding setup.
 
 Keep a small `ai-dotfiles.json` in each project, `install` on a new machine, and the
