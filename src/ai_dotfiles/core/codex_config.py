@@ -63,10 +63,12 @@ __all__ = [
     "MCP_TABLE",
     "ConfigResult",
     "McpResult",
+    "add_mcp_servers",
     "build_managed_table",
     "build_mcp_table",
     "config_path",
     "config_state",
+    "ensure_project_doc_fallback",
     "render_config_toml",
     "strip_codex_mcp",
     "strip_managed",
@@ -381,6 +383,47 @@ def config_state(
     return "stale"
 
 
+def ensure_project_doc_fallback(
+    project_root: Path, filename: str = "CLAUDE.md"
+) -> bool:
+    """Ensure Codex reads ``filename`` as a project-doc fallback.
+
+    Adds ``filename`` to the top-level ``project_doc_fallback_filenames``
+    array of ``.codex/config.toml`` so Codex reads it (e.g. ``CLAUDE.md``)
+    in any directory that has no ``AGENTS.md`` — keeping the canonical
+    instructions in ``CLAUDE.md`` with no rendered copy or symlink. The
+    managed ``[ai_dotfiles]`` block and every other table are preserved.
+    Returns ``True`` if the file was changed, ``False`` if the entry was
+    already present.
+
+    Note: Codex honours a project-scoped ``.codex/config.toml`` only once
+    the project is *trusted*; on a fresh checkout the fallback takes effect
+    after the user accepts the trust prompt.
+
+    Raises:
+        ConfigError: if the existing ``config.toml`` is malformed.
+        LinkError: if the file cannot be written.
+    """
+    path = config_path(project_root)
+    existing = _parse_existing(path)
+    current = existing.get("project_doc_fallback_filenames")
+    items = [str(x) for x in current] if isinstance(current, list) else []
+    if filename in items:
+        return False
+
+    items.append(filename)
+    existing["project_doc_fallback_filenames"] = items
+    managed_raw = existing.get(MANAGED_TABLE, {})
+    managed = managed_raw if isinstance(managed_raw, dict) else {}
+    text = render_config_toml(existing, managed)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    except OSError as exc:
+        raise LinkError(f"Failed to write Codex config {path}: {exc}") from exc
+    return True
+
+
 def strip_managed(project_root: Path) -> bool:
     """Remove only the managed ``[ai_dotfiles]`` table from ``config.toml``.
 
@@ -580,6 +623,54 @@ def write_codex_mcp(
     else:
         status = "updated"
     return McpResult(status, collisions)
+
+
+def add_mcp_servers(
+    project_root: Path, servers: dict[str, dict[str, Any]]
+) -> tuple[list[str], list[str]]:
+    """Add user-authored MCP servers to ``[mcp_servers]`` of config.toml.
+
+    Used by ``ai-dotfiles migrate`` to carry a project's own ``.mcp.json``
+    servers (those not owned by any domain) to the Codex target. Existing
+    entries — domain-owned or user — are never overwritten: a name already in
+    ``[mcp_servers]`` is skipped. These servers are deliberately **not**
+    recorded in the domain ownership sidecar, so from Codex's side they look
+    user-authored and a later :func:`write_codex_mcp`/:func:`strip_codex_mcp`
+    preserves them. The managed ``[ai_dotfiles]`` block is kept.
+
+    Returns ``(added, skipped)``.
+
+    Raises:
+        ConfigError: if the existing config.toml is malformed.
+        LinkError: if the file cannot be written.
+    """
+    path = config_path(project_root)
+    existing = _parse_existing(path)
+    mcp_raw = existing.get(MCP_TABLE, {})
+    mcp = dict(mcp_raw) if isinstance(mcp_raw, dict) else {}
+
+    added: list[str] = []
+    skipped: list[str] = []
+    for name, cfg in servers.items():
+        if name in mcp:
+            skipped.append(name)
+            continue
+        mcp[name] = cfg
+        added.append(name)
+
+    if not added:
+        return added, skipped
+
+    existing[MCP_TABLE] = mcp
+    managed_raw = existing.get(MANAGED_TABLE, {})
+    managed = managed_raw if isinstance(managed_raw, dict) else {}
+    text = render_config_toml(existing, managed)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    except OSError as exc:
+        raise LinkError(f"Failed to write Codex MCP config {path}: {exc}") from exc
+    return added, skipped
 
 
 def strip_codex_mcp(project_root: Path) -> bool:
