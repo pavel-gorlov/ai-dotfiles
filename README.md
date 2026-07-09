@@ -91,10 +91,14 @@ ai-dotfiles install
   first-sentence description, symlinked support files); agents land in
   `.codex/agents/<name>.toml` (generated TOML, committed to the repo). Rules
   dispatch to one of three Codex surfaces depending on their frontmatter (see
-  [Codex rule support](#codex-rule-support) below). Domain hooks are skipped
-  with an explicit message — Codex has no hook harness.
+  [Codex rule support](#codex-rule-support) below). Domain hooks are translated
+  to Codex's lifecycle-hook harness and emitted to `.codex/hooks.json`.
   The Codex target is **project-scoped only** — `-g` commands always use
   `["claude"]`.
+- **Local elements & migration** — a project's own hand-authored `.claude/`
+  skills/agents/rules (not from the catalog) are carried to Codex by
+  `ai-dotfiles migrate`; `ai-dotfiles reconcile` regenerates any Codex artefact
+  that goes stale. See [Migrating local elements](#migrating-local-elements-to-codex).
 - **Drift detection** — every generated Codex file carries a
   `# managed-by: ai-dotfiles` + `# source-sha256: <hex>` header. The hash is
   of the catalog source file. `ai-dotfiles status` compares it to the current
@@ -136,8 +140,8 @@ Then `ai-dotfiles install` produces:
 | `skill:commit` | `.claude/skills/commit/` → symlink | `.agents/skills/commit/` — real dir, generated `SKILL.md` + symlinked support files |
 | `agent:reviewer` | `.claude/agents/reviewer.md` → symlink | `.codex/agents/reviewer.toml` — generated TOML |
 | `rule:*` / domain `rules/` | `.claude/rules/<name>.md` → symlink | Dispatched by rule frontmatter — see [Codex rule support](#codex-rule-support) |
-| Domain `hooks/` | `.claude/settings.json` hooks | Skipped (explicit message) — Codex has no hook harness |
-| Domain `settings.fragment.json` | Deep-merged into `.claude/settings.json` | `permissions` and `sandbox` keys land in the managed `[ai_dotfiles]` table of `.codex/config.toml`; `hooks` is skipped with an explicit message |
+| Domain `hooks/` + `settings.fragment.json` `hooks` | `.claude/settings.json` hooks | Translated to Codex's hook harness → `.codex/hooks.json` (twin events only; `if` guard dropped) |
+| Domain `settings.fragment.json` | Deep-merged into `.claude/settings.json` | `permissions` and `sandbox` keys land in the managed `[ai_dotfiles]` table of `.codex/config.toml`; `hooks` → `.codex/hooks.json` |
 | Domain `mcp.fragment.json` | Merged into `<project>/.mcp.json` | Servers land in the `[mcp_servers]` table of `.codex/config.toml`; ownership tracked in `.codex/.ai-dotfiles-mcp-ownership.json` |
 
 Every generated Codex file carries `# managed-by: ai-dotfiles` and
@@ -261,8 +265,10 @@ network = false
   under `[ai_dotfiles.permissions]`, concat-deduped across all installed domains.
 - `sandbox` — the fragment's `sandbox` object lands under `[ai_dotfiles.sandbox]`
   (last installed domain wins on conflict).
-- `hooks` — Codex has no hook harness. Hooks are **not** written; the CLI prints
-  an explicit skip message naming each domain whose fragment contained hooks.
+- `hooks` — emitted to `.codex/hooks.json` (Codex's lifecycle-hook harness), a
+  separate file from `config.toml`. Only events with a Codex twin are written;
+  Claude's per-handler `if` command-glob guard is dropped (Codex matches on the
+  tool name via `matcher`) and `$CLAUDE_PROJECT_DIR` → `$CODEX_PROJECT_DIR`.
 
 **MCP — `[mcp_servers]` table**
 
@@ -286,6 +292,38 @@ tables, including user-authored ones, survive untouched.
 
 `remove` rebuilds both regions from the remaining installed domains, and deletes
 the file entirely if it would be left empty.
+
+## Migrating local elements to Codex
+
+`install` renders only **catalog** elements for Codex. A project's own
+hand-authored `.claude/` skills/agents/rules — real files, not catalog
+symlinks, not in the manifest — are invisible to it. `ai-dotfiles migrate`
+carries them to Codex, following "symlink where the format is unchanged, render
+where it changes":
+
+- **skill** → relative symlink `.agents/skills/<name>` → `../../.claude/skills/<name>`
+  (auto-fresh) when the raw `SKILL.md` is within Codex's 1024-char `description`
+  cap and the name is valid hyphen-case; otherwise rendered with the
+  first-sentence trim;
+- **agent** → `.codex/agents/<name>.toml`; **rule** → synthetic `rule-<name>`
+  skill or `AGENTS.md` block;
+- **`CLAUDE.md`** stays canonical — Codex reads it via
+  `project_doc_fallback_filenames = ["CLAUDE.md"]` (no rendered copy). Codex
+  honours a project-scoped `.codex/config.toml` only once the project is
+  *trusted*;
+- user-authored `.mcp.json` servers → `[mcp_servers]`.
+
+```bash
+ai-dotfiles migrate --dry-run   # plan + classify (MECHANICAL/REFACTOR); list Claude-only surfaces
+ai-dotfiles migrate             # apply
+ai-dotfiles reconcile --check   # CI gate: exit non-zero on any stale/missing Codex artefact
+ai-dotfiles reconcile           # regenerate stale/missing artefacts
+```
+
+Migrated artefacts are recorded in `.codex/.ai-dotfiles-local.json` so
+`install --prune` keeps them; `ai-dotfiles status` lists local elements and
+whether each is migrated. Surfaces with no Codex home (`.claude/workflows/`,
+`.claude/commands/`) are reported, not silently dropped.
 
 ## Element Format
 
@@ -320,7 +358,9 @@ Run `ai-dotfiles <command> --help` for full options.
 | `list`                           | List installed packages (project) |
 | `list -g`                        | List installed packages (global) |
 | `list --available`               | List everything available in the catalog |
-| `status`                         | Show symlink health and merged settings summary |
+| `status`                         | Show symlink health, merged settings, local (non-catalog) elements, and Claude-only surfaces |
+| `migrate [--to codex] [--dry-run]` | Carry local (hand-authored) `.claude/` elements to the Codex target |
+| `reconcile [--check]`            | Regenerate stale/missing Codex artefacts (`--check` gates CI) |
 | `update`                         | Refresh CLI-managed files inside storage (today: the built-in `ai-dotfiles` skill) |
 | `completion install [--shell bash\|zsh] [--print]` | Install tab completion into `~/.bashrc` / `~/.zshrc` (auto-detects shell from `$SHELL`) |
 | `completion uninstall [--shell bash\|zsh]` | Remove the completion block and delete the cached script |

@@ -44,9 +44,13 @@ The file `src/ai_dotfiles/scaffold/templates/builtin_ai_dotfiles_skill.md` is sh
 
 When a catalog agent `.md` changes (body or frontmatter), the generated `.codex/agents/<name>.toml` in any project that targets Codex goes stale. **Regenerate it** by running `ai-dotfiles install` in the affected project.
 
-`ai-dotfiles status` compares the `# source-sha256` header in each generated file against the current catalog source and reports `STALE (source changed)` for any artefact that needs regeneration. The same drift detection applies to Codex skill `SKILL.md` files generated under `.agents/skills/<name>/`.
+`ai-dotfiles status` compares the `# source-sha256` header in each generated file against the current catalog source and reports `STALE (source changed)` for any artefact that needs regeneration — now including always-on/path-scoped rule blocks (sha-compared, not just presence) and `.codex/config.toml` (recomputed from the current fragments). The same drift detection applies to Codex skill `SKILL.md` files generated under `.agents/skills/<name>/`.
 
-This is a manual step today — there is no auto-regeneration hook. A note in the agent's commit message (e.g. "run `ai-dotfiles install` in projects that use this agent") is the recommended signal to consumers.
+**`ai-dotfiles reconcile`** regenerates the stale/missing artefacts in one pass (`reconcile --check` writes nothing and exits non-zero on drift — a CI / pre-commit gate); `ai-dotfiles install` also regenerates. A note in the agent's commit message (e.g. "run `ai-dotfiles reconcile` in projects that use this agent") is the recommended signal to consumers.
+
+### Local elements → Codex (`migrate`)
+
+`install` renders only catalog elements. A project's own hand-authored `.claude/` skills/agents/rules are carried to Codex by **`ai-dotfiles migrate`** (symlink where the format is unchanged, render where it changes; `CLAUDE.md` bridged via `project_doc_fallback_filenames`; domain hooks emitted to `.codex/hooks.json`). Provenance is tracked in `.codex/.ai-dotfiles-local.json` so `install --prune` keeps migrated artefacts. Core modules: `core/local_discovery.py`, `core/codex_migrate.py`, `core/codex_local_registry.py`, `core/codex_reconcile.py`, `core/codex_hooks.py`.
 
 ## Code style
 
