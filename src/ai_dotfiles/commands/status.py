@@ -19,6 +19,7 @@ import click
 
 from ai_dotfiles import ui
 from ai_dotfiles.core import (
+    codex_config,
     codex_install,
     elements,
     manifest,
@@ -30,6 +31,7 @@ from ai_dotfiles.core.codex_targets import iter_codex_pairs, iter_codex_rule_pla
 from ai_dotfiles.core.copy_ownership import load_copy_ownership, relative_label
 from ai_dotfiles.core.elements import Element, ElementType
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
+from ai_dotfiles.core.mcp_merge import collect_mcp_fragments
 
 # ── Status indicators ────────────────────────────────────────────────────
 
@@ -247,7 +249,7 @@ def _domain_specs(packages: list[str]) -> list[str]:
 
 
 def _print_codex_target(
-    parsed: list[Element], project_root: Path, catalog: Path
+    parsed: list[Element], packages: list[str], project_root: Path, catalog: Path
 ) -> int:
     """Print Codex-target status. Return the count of issues found.
 
@@ -259,7 +261,9 @@ def _print_codex_target(
     path-scoped rule is OK when its managed block is present in every
     target ``AGENTS.md`` and matches the rule body, STALE when the block
     is present but the source changed, and MISSING (NOT INSTALLED)
-    otherwise. Each issue counts as one.
+    otherwise. The managed ``config.toml`` regions (``[ai_dotfiles]`` +
+    domain-owned ``[mcp_servers]``) are reported STALE when they no
+    longer match the current domain fragments. Each issue counts as one.
     """
     ui.info("")
     ui.info("  Codex target")
@@ -274,9 +278,37 @@ def _print_codex_target(
             found_any = True
             issues += _print_codex_rule_plan_status(plan, project_root)
 
+    issues += _print_codex_config_status(packages, project_root, catalog)
+
     if not found_any:
         ui.info("    (no Codex-renderable elements in the manifest)")
     return issues
+
+
+def _print_codex_config_status(
+    packages: list[str], project_root: Path, catalog: Path
+) -> int:
+    """Print the managed ``.codex/config.toml`` drift status. Return issues.
+
+    Recomputes the expected managed ``[ai_dotfiles]`` table and
+    domain-owned ``[mcp_servers]`` from the current domain fragments and
+    compares them to the on-disk file (:func:`codex_config.config_state`).
+    Prints nothing (and returns 0) when there is no managed config to
+    report; STALE counts as one issue.
+    """
+    settings_pairs = [
+        (path.parent.name, path)
+        for path in settings_merge.collect_domain_fragments(packages, catalog)
+    ]
+    mcp_pairs = collect_mcp_fragments(packages, catalog)
+    state = codex_config.config_state(project_root, settings_pairs, mcp_pairs)
+    if state == "absent":
+        return 0
+    if state == "ok":
+        ui.info(f"    {_OK} {'config.toml'.ljust(28)} OK")
+        return 0
+    ui.info(f"    {_BROKEN} {'config.toml'.ljust(28)} STALE (fragments changed)")
+    return 1
 
 
 def _print_codex_pair_status(pair: Any) -> int:
@@ -395,7 +427,7 @@ def status(is_global: bool) -> None:
     if "codex" in targets and not is_global:
         project_root = paths.find_project_root()
         if project_root is not None:
-            total_issues += _print_codex_target(parsed, project_root, catalog)
+            total_issues += _print_codex_target(parsed, packages, project_root, catalog)
 
     ui.info("")
     if total_issues:
