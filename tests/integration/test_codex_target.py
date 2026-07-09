@@ -751,20 +751,43 @@ def test_add_writes_mcp_into_config(project: Path, catalog: Path) -> None:
     assert parsed["mcp_servers"]["fs"] == {"command": "fs-server"}
 
 
-def test_add_reports_skipped_hooks_key(project: Path, catalog: Path) -> None:
-    """`add` prints the hooks-skipped message, consistent with install."""
+def test_add_emits_domain_hooks_to_codex(project: Path, catalog: Path) -> None:
+    """`add` emits domain hooks to .codex/hooks.json and reports untwinned events."""
     _make_mcp_domain(
         catalog,
         "tooling",
         {},
-        settings={"hooks": {"PreToolUse": []}},
+        settings={
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "Bash",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "if": "Bash(git *)",
+                                "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/x.sh",
+                            }
+                        ],
+                    }
+                ],
+                "Notification": [{"hooks": [{"type": "command", "command": "y"}]}],
+            }
+        },
     )
     _write_manifest(project / "ai-dotfiles.json", [], targets=["codex"])
 
-    code, _, err = _run(add, project, "@tooling")
+    code, out, err = _run(add, project, "@tooling")
     assert code == 0
-    assert "hooks" in err
-    assert "skipped for the Codex target" in err
+
+    hooks_file = project / ".codex" / "hooks.json"
+    assert hooks_file.is_file()
+    data = json.loads(hooks_file.read_text(encoding="utf-8"))
+    handler = data["hooks"]["PreToolUse"][0]["hooks"][0]
+    assert "if" not in handler  # Claude-only guard dropped
+    assert "$CODEX_PROJECT_DIR" in handler["command"]  # var rewritten
+    # An event with no Codex twin is reported, not silently emitted.
+    assert "Notification" in (out + err)
 
 
 def test_add_second_domain_preserves_first(project: Path, catalog: Path) -> None:
