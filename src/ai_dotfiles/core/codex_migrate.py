@@ -54,6 +54,7 @@ __all__ = [
     "SKILL_DESCRIPTION_MAX",
     "MigrateAction",
     "MigrateReport",
+    "claude_only_surfaces",
     "migrate_to_codex",
 ]
 
@@ -129,7 +130,7 @@ def migrate_to_codex(
 
     _migrate_instructions(project_root, report, dry_run)
     _migrate_user_mcp(project_root, report, dry_run)
-    report.claude_only.extend(_claude_only_surfaces(project_root))
+    report.claude_only.extend(claude_only_surfaces(project_root))
 
     if not dry_run:
         save_local_registry(project_root, registry)
@@ -420,7 +421,7 @@ def _rellabel(path: Path, project_root: Path) -> str:
         return path.name
 
 
-def _claude_only_surfaces(project_root: Path) -> list[tuple[str, str]]:
+def claude_only_surfaces(project_root: Path) -> list[tuple[str, str]]:
     """List project surfaces that have no Codex home (reported, not migrated).
 
     Workflows and custom slash commands are Claude Code harness features

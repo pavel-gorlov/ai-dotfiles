@@ -21,16 +21,19 @@ from ai_dotfiles import ui
 from ai_dotfiles.core import (
     codex_config,
     codex_install,
+    codex_migrate,
     elements,
     manifest,
     paths,
     settings_merge,
     symlinks,
 )
+from ai_dotfiles.core.codex_local_registry import load_local_registry
 from ai_dotfiles.core.codex_targets import iter_codex_pairs, iter_codex_rule_plans
 from ai_dotfiles.core.copy_ownership import load_copy_ownership, relative_label
 from ai_dotfiles.core.elements import Element, ElementType
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
+from ai_dotfiles.core.local_discovery import LocalElement, iter_local_elements
 from ai_dotfiles.core.mcp_merge import collect_mcp_fragments
 
 # ── Status indicators ────────────────────────────────────────────────────
@@ -366,6 +369,57 @@ def _print_codex_rule_plan_status(plan: Any, project_root: Path) -> int:
     return issues
 
 
+def _print_local_status(project_root: Path, packages: list[str]) -> None:
+    """Print LOCAL (non-catalog) elements and Claude-only surfaces.
+
+    Local hand-authored ``.claude/`` elements are invisible to the
+    manifest-driven checks above; this surfaces them and whether each has
+    been carried to Codex by ``ai-dotfiles migrate`` (tracked in the local
+    registry). Claude-only surfaces (workflows, custom commands) with no Codex
+    home are listed so a Codex switch does not silently drop them. Purely
+    informational — none of this counts as an install issue.
+    """
+    local_elements = list(iter_local_elements(project_root, manifest_packages=packages))
+    claude_only = codex_migrate.claude_only_surfaces(project_root)
+    if not local_elements and not claude_only:
+        return
+
+    registry = load_local_registry(project_root)
+    ui.info("")
+    ui.info("  Local (non-catalog) elements")
+    if not local_elements:
+        ui.info("    (none)")
+    for element in local_elements:
+        migrated = _local_is_migrated(element, registry)
+        mark = _OK if migrated else _MISSING
+        state = (
+            "migrated to Codex"
+            if migrated
+            else "not migrated (run 'ai-dotfiles migrate')"
+        )
+        ui.info(f"    {mark} {element.raw.ljust(28)} {state}")
+
+    if claude_only:
+        ui.info("")
+        ui.info("  Claude-only (no Codex target)")
+        for label, reason in claude_only:
+            ui.info(f"    - {label}: {reason}")
+
+
+def _local_is_migrated(element: LocalElement, registry: dict[str, Any]) -> bool:
+    if element.type is ElementType.SKILL:
+        return element.name in registry.get("skills", {})
+    if element.type is ElementType.AGENT:
+        return element.name in registry.get("agents", {})
+    if element.type is ElementType.RULE:
+        if f"rule-{element.name}" in registry.get("skills", {}):
+            return True
+        return any(
+            element.name in names for names in registry.get("rule_blocks", {}).values()
+        )
+    return False
+
+
 @click.command("status")
 @click.option(
     "-g",
@@ -388,6 +442,10 @@ def status(is_global: bool) -> None:
     packages = manifest.get_packages(manifest_path)
     if not packages:
         ui.info("  No packages installed.")
+        if not is_global:
+            local_root = paths.find_project_root()
+            if local_root is not None:
+                _print_local_status(local_root, [])
         raise SystemExit(0)
 
     catalog = paths.catalog_dir()
@@ -428,6 +486,11 @@ def status(is_global: bool) -> None:
         project_root = paths.find_project_root()
         if project_root is not None:
             total_issues += _print_codex_target(parsed, packages, project_root, catalog)
+
+    if not is_global:
+        local_root = paths.find_project_root()
+        if local_root is not None:
+            _print_local_status(local_root, packages)
 
     ui.info("")
     if total_issues:
