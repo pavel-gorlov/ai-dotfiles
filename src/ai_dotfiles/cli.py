@@ -10,6 +10,7 @@ from ai_dotfiles.commands.install import install
 from ai_dotfiles.commands.list_cmd import list_cmd
 from ai_dotfiles.commands.migrate import migrate
 from ai_dotfiles.commands.pull import pull
+from ai_dotfiles.commands.reconcile import reconcile
 from ai_dotfiles.commands.remove import remove
 from ai_dotfiles.commands.status import status
 from ai_dotfiles.commands.update import update
@@ -29,6 +30,7 @@ cli.add_command(remove)
 cli.add_command(list_cmd)
 cli.add_command(status)
 cli.add_command(migrate)
+cli.add_command(reconcile)
 cli.add_command(update)
 cli.add_command(vendor)
 cli.add_command(create)
