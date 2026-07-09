@@ -458,8 +458,49 @@ def _install_codex_target(
     write_codex_mcp(packages, project_root, catalog)
 
     if prune:
-        _prune_codex_target(project_root, wanted_skills, wanted_agents)
-        _prune_codex_rule_blocks(project_root, wanted_rule_blocks)
+        # Local-origin artefacts (created by `ai-dotfiles migrate`) are not
+        # backed by the manifest; protect them so prune keeps them.
+        keep_skills, keep_agents, keep_blocks = _codex_local_protected(project_root)
+        _prune_codex_target(
+            project_root, wanted_skills | keep_skills, wanted_agents | keep_agents
+        )
+        _prune_codex_rule_blocks(
+            project_root, _merge_block_maps(wanted_rule_blocks, keep_blocks)
+        )
+
+
+def _codex_local_protected(
+    project_root: Path,
+) -> tuple[set[Path], set[Path], dict[Path, set[str]]]:
+    """Return local-origin Codex artefacts ``--prune`` must keep.
+
+    Reads the local-provenance registry (:mod:`codex_local_registry`) written
+    by ``ai-dotfiles migrate`` and maps its recorded names back to the skill
+    directories, agent ``.toml`` files, and ``AGENTS.md`` rule blocks that
+    prune should treat as wanted rather than orphaned.
+    """
+    from ai_dotfiles.core.codex_local_registry import load_local_registry
+
+    registry = load_local_registry(project_root)
+    skills_dir = paths.project_codex_skills_dir(project_root)
+    agents_dir = paths.project_codex_agents_dir(project_root)
+    skills = {skills_dir / name for name in registry.get("skills", {})}
+    agents = {agents_dir / f"{name}.toml" for name in registry.get("agents", {})}
+    blocks: dict[Path, set[str]] = {
+        project_root / rel: set(names)
+        for rel, names in registry.get("rule_blocks", {}).items()
+    }
+    return skills, agents, blocks
+
+
+def _merge_block_maps(
+    base: dict[Path, set[str]], extra: dict[Path, set[str]]
+) -> dict[Path, set[str]]:
+    """Union two ``AGENTS.md`` path -> rule-name maps."""
+    merged: dict[Path, set[str]] = {k: set(v) for k, v in base.items()}
+    for path, names in extra.items():
+        merged.setdefault(path, set()).update(names)
+    return merged
 
 
 def _apply_codex_rule_plan(

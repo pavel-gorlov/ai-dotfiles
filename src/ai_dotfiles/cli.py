@@ -8,6 +8,7 @@ from ai_dotfiles.commands.domain import domain
 from ai_dotfiles.commands.init import init
 from ai_dotfiles.commands.install import install
 from ai_dotfiles.commands.list_cmd import list_cmd
+from ai_dotfiles.commands.migrate import migrate
 from ai_dotfiles.commands.pull import pull
 from ai_dotfiles.commands.remove import remove
 from ai_dotfiles.commands.status import status
@@ -27,6 +28,7 @@ cli.add_command(add)
 cli.add_command(remove)
 cli.add_command(list_cmd)
 cli.add_command(status)
+cli.add_command(migrate)
 cli.add_command(update)
 cli.add_command(vendor)
 cli.add_command(create)
