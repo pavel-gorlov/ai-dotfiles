@@ -50,6 +50,7 @@ from ai_dotfiles.core.rule_classify import GLOB_METACHARS, is_glob_free_dir
 __all__ = [
     "AGENTS_FILENAME",
     "block_markers",
+    "block_matches",
     "iter_rule_block_names",
     "rule_block_targets",
     "rule_name_of",
@@ -132,6 +133,21 @@ def _existing_block_sha(name: str, text: str) -> str | None:
     )
     match = pattern.search(text)
     return match.group("sha") if match else None
+
+
+def block_matches(name: str, body: str, text: str) -> bool:
+    """Return True when ``text`` has a managed block for ``name`` that is current.
+
+    "Current" means the block's recorded ``sha256`` line equals the hash of
+    ``body`` (a frontmatter-stripped rule body) — the exact idempotence
+    condition :func:`upsert_rule_block` uses to skip a rewrite. ``body`` is
+    stripped the same way the writer strips it, so callers pass the raw
+    :func:`~ai_dotfiles.core.codex_render.split_body` output. Returns False
+    when the rule has no block, a block without a parsable sha line, or a
+    block whose sha no longer matches — i.e. the block is stale.
+    """
+    recorded = _existing_block_sha(name, text)
+    return recorded is not None and recorded == _content_sha(body.strip())
 
 
 def iter_rule_block_names(text: str) -> list[str]:

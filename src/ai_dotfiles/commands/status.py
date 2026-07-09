@@ -257,7 +257,9 @@ def _print_codex_target(
     and STALE when its ``# source-sha256`` header no longer matches the
     catalog source (ADR ai-1-1 drift detection). An always-on /
     path-scoped rule is OK when its managed block is present in every
-    target ``AGENTS.md``, MISSING otherwise. Each issue counts as one.
+    target ``AGENTS.md`` and matches the rule body, STALE when the block
+    is present but the source changed, and MISSING (NOT INSTALLED)
+    otherwise. Each issue counts as one.
     """
     ui.info("")
     ui.info("  Codex target")
@@ -305,10 +307,12 @@ def _print_codex_pair_status(pair: Any) -> int:
 def _print_codex_rule_plan_status(plan: Any, project_root: Path) -> int:
     """Print one always-on / path-scoped rule's ``AGENTS.md`` block status.
 
-    Returns the number of target ``AGENTS.md`` files whose managed block
-    for the rule is missing.
+    Each target ``AGENTS.md`` is OK when its managed block is present and its
+    recorded sha still matches the rule body, STALE when the block is present
+    but the rule source changed, and NOT INSTALLED when the block is absent.
+    Returns the number of target files that are stale or missing.
     """
-    from ai_dotfiles.core.agents_md import iter_rule_block_names, rule_name_of
+    from ai_dotfiles.core.agents_md import rule_name_of
 
     name = rule_name_of(plan.source)
     issues = 0
@@ -318,12 +322,13 @@ def _print_codex_rule_plan_status(plan: Any, project_root: Path) -> int:
         except ValueError:
             rel = agents_md_path.name
         label = f"rules/{name} -> {rel}"
-        present = agents_md_path.is_file() and name in iter_rule_block_names(
-            agents_md_path.read_text(encoding="utf-8")
-        )
-        if present:
+        state = codex_install.rule_block_state(plan.source, agents_md_path)
+        if state == "ok":
             ui.info(f"    {_OK} {label}")
-        else:
+        elif state == "stale":
+            ui.info(f"    {_BROKEN} {label.ljust(28)} STALE (source changed)")
+            issues += 1
+        else:  # missing
             ui.info(f"    {_MISSING} {label.ljust(28)} NOT INSTALLED")
             issues += 1
     return issues

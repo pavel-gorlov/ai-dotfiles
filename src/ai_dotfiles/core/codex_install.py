@@ -61,6 +61,7 @@ __all__ = [
     "remove_codex_agent",
     "remove_codex_rule_blocks",
     "remove_codex_skill",
+    "rule_block_state",
 ]
 
 # The marker line every generated Codex agent ``.toml`` starts with.
@@ -432,6 +433,39 @@ def apply_codex_rule_blocks(rule_md: Path, agents_md_paths: list[Path]) -> list[
         except OSError as exc:
             raise LinkError(f"Failed to write rule block to {path}: {exc}") from exc
     return written
+
+
+def rule_block_state(rule_md: Path, agents_md_path: Path) -> str:
+    """Return the drift state of a rule's managed block in one ``AGENTS.md``.
+
+    The read-only counterpart of :func:`apply_codex_rule_blocks`, and the
+    ``AGENTS.md`` analogue of :func:`is_stale` for skills/agents. One of:
+
+    * ``"missing"`` — the file is absent/unreadable, or holds no managed
+      block for the rule (never installed, or the block was removed);
+    * ``"stale"``   — a block exists but its recorded ``sha256`` no longer
+      matches the current rule body (the source changed since install);
+    * ``"ok"``      — a block exists and matches the current rule body.
+
+    The body is stripped exactly as the apply path strips it
+    (:func:`~ai_dotfiles.core.codex_render.split_body`), so the comparison
+    is byte-for-byte what :func:`~ai_dotfiles.core.agents_md.upsert_rule_block`
+    would compute.
+    """
+    if not agents_md_path.is_file():
+        return "missing"
+    try:
+        text = agents_md_path.read_text(encoding="utf-8")
+    except OSError:
+        return "missing"
+    name = agents_md.rule_name_of(rule_md)
+    if name not in agents_md.iter_rule_block_names(text):
+        return "missing"
+    try:
+        body = split_body(rule_md.read_text(encoding="utf-8"))
+    except OSError:
+        return "stale"
+    return "ok" if agents_md.block_matches(name, body, text) else "stale"
 
 
 def remove_codex_rule_blocks(agents_md_path: Path, rule_name: str) -> bool:
