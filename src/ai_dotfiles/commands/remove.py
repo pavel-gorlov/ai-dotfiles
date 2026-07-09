@@ -11,6 +11,7 @@ from ai_dotfiles import ui
 from ai_dotfiles.core import (
     claude_copy,
     codex_config,
+    codex_hooks,
     codex_install,
     manifest,
     symlinks,
@@ -194,6 +195,12 @@ def _rebuild_codex_config(
         ui.info("Codex: stripped [mcp_servers] from .codex/config.toml")
     elif mcp_result.status in ("created", "updated"):
         ui.info("Codex: rebuilt .codex/config.toml [mcp_servers]")
+
+    hooks_result = codex_hooks.write_codex_hooks(project_root, fragment_pairs)
+    if hooks_result.status == "removed":
+        ui.info("Codex: stripped managed hooks from .codex/hooks.json")
+    elif hooks_result.status in ("created", "updated"):
+        ui.info("Codex: rebuilt .codex/hooks.json managed hooks")
 
 
 def _rebuild_settings(manifest_path: Path, claude_dir: Path, catalog: Path) -> None:

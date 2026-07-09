@@ -18,6 +18,7 @@ import click
 from ai_dotfiles import ui
 from ai_dotfiles.commands._codex_config_writer import (
     write_codex_config,
+    write_codex_hooks,
     write_codex_mcp,
 )
 from ai_dotfiles.core import claude_copy, codex_install, manifest, symlinks
@@ -258,6 +259,7 @@ def add(packages: tuple[str, ...], is_global: bool, no_gitignore: bool) -> None:
             all_packages = manifest.get_packages(manifest_path)
             write_codex_config(all_packages, project_root, catalog)
             write_codex_mcp(all_packages, project_root, catalog)
+            write_codex_hooks(all_packages, project_root, catalog)
 
         has_domain = any(el.type is ElementType.DOMAIN for el in expanded)
         if "claude" in targets:

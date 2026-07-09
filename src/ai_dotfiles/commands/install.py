@@ -19,6 +19,7 @@ import click
 from ai_dotfiles import ui
 from ai_dotfiles.commands._codex_config_writer import (
     write_codex_config,
+    write_codex_hooks,
     write_codex_mcp,
 )
 from ai_dotfiles.core import (
@@ -432,9 +433,10 @@ def _install_codex_target(
 
     for element in parsed:
         for sub in codex_skipped_domain_subdirs(element, catalog):
-            ui.warn(
-                f"@{element.name}: {sub}/ skipped for the Codex target "
-                f"(Codex has no hook harness)."
+            ui.info(
+                f"@{element.name}: {sub}/ scripts are referenced by "
+                f".codex/hooks.json but not copied — keep the Claude target "
+                f"(.claude/{sub}/) installed so they resolve."
             )
         for pair in iter_codex_pairs(element, project_root, catalog):
             if pair.element_type is ElementType.SKILL:
@@ -456,6 +458,7 @@ def _install_codex_target(
 
     write_codex_config(packages, project_root, catalog)
     write_codex_mcp(packages, project_root, catalog)
+    write_codex_hooks(packages, project_root, catalog)
 
     if prune:
         # Local-origin artefacts (created by `ai-dotfiles migrate`) are not

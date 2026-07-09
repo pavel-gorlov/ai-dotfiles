@@ -19,7 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ai_dotfiles import ui
-from ai_dotfiles.core import codex_config, settings_merge
+from ai_dotfiles.core import codex_config, codex_hooks, settings_merge
 from ai_dotfiles.core.mcp_merge import collect_mcp_fragments
 
 
@@ -48,12 +48,31 @@ def write_codex_config(packages: list[str], project_root: Path, catalog: Path) -
         ui.success("config.toml (managed region created)")
     elif result.status == "updated":
         ui.success("config.toml (managed region updated)")
-    for domain_name, keys in sorted(result.skipped_keys.items()):
-        joined = ", ".join(keys)
+    # ``hooks`` have no place in config.toml's [ai_dotfiles] table, but they
+    # are no longer dropped — write_codex_hooks emits them to
+    # .codex/hooks.json. See :func:`write_codex_hooks`.
+
+
+def write_codex_hooks(packages: list[str], project_root: Path, catalog: Path) -> None:
+    """Emit domain hooks into ``.codex/hooks.json`` (Codex hook harness).
+
+    Domain ``settings.fragment.json`` ``hooks`` are translated to Codex's
+    lifecycle-hook format. Events with no Codex twin are reported.
+    """
+    result = codex_hooks.write_codex_hooks(
+        project_root, _codex_fragment_pairs(packages, catalog)
+    )
+    if result.status == "created":
+        ui.success("hooks.json (managed hooks created)")
+    elif result.status == "updated":
+        ui.success("hooks.json (managed hooks updated)")
+    elif result.status == "removed":
+        ui.info("hooks.json (managed hooks removed)")
+    for domain_name, events in sorted(result.skipped_events.items()):
+        joined = ", ".join(events)
         ui.warn(
-            f"@{domain_name}: settings.fragment.json '{joined}' skipped for "
-            f"the Codex target (no config.toml equivalent — Codex has no "
-            f"hook harness)."
+            f"@{domain_name}: hook event(s) '{joined}' have no Codex twin — "
+            f"skipped for the Codex target."
         )
 
 
