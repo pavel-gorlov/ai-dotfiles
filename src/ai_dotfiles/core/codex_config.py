@@ -66,6 +66,7 @@ __all__ = [
     "build_managed_table",
     "build_mcp_table",
     "config_path",
+    "config_state",
     "render_config_toml",
     "strip_codex_mcp",
     "strip_managed",
@@ -321,6 +322,63 @@ def write_codex_config(
     else:
         status = "updated"
     return ConfigResult(status, skipped)
+
+
+def config_state(
+    project_root: Path,
+    settings_fragment_paths: list[tuple[str, Path]],
+    mcp_fragment_paths: list[tuple[str, Path]],
+) -> str:
+    """Return the drift state of the managed ``config.toml`` regions.
+
+    The ``config.toml`` analogue of
+    :func:`ai_dotfiles.core.codex_install.is_stale` — but ``config.toml``
+    carries no source-sha header, so drift is detected by *recomputing* the
+    expected managed content from the current fragments and comparing it to
+    what is on disk. Two regions are checked:
+
+    * the managed ``[ai_dotfiles]`` table vs
+      :func:`build_managed_table` over the settings fragments;
+    * the domain-owned ``[mcp_servers.*]`` entries (those recorded in the
+      ownership sidecar) vs :func:`build_mcp_table` over the MCP fragments.
+
+    Returns one of:
+
+    * ``"absent"`` — nothing is expected and nothing managed is on disk
+      (the manifest contributes no Codex config; nothing to report);
+    * ``"stale"``  — an on-disk managed region differs from the freshly
+      computed expectation (a fragment changed, or a manual edit drifted);
+    * ``"ok"``     — every managed region matches the current fragments.
+
+    Raises:
+        ConfigError: if the on-disk ``config.toml`` is malformed.
+    """
+    expected_managed, _ = build_managed_table(settings_fragment_paths)
+    expected_servers, _ = build_mcp_table(mcp_fragment_paths)
+
+    existing = _parse_existing(config_path(project_root))
+
+    actual_managed_raw = existing.get(MANAGED_TABLE, {})
+    actual_managed = actual_managed_raw if isinstance(actual_managed_raw, dict) else {}
+
+    ownership = load_mcp_ownership(project_root)
+    existing_mcp_raw = existing.get(MCP_TABLE, {})
+    existing_mcp = existing_mcp_raw if isinstance(existing_mcp_raw, dict) else {}
+    actual_owned = {
+        name: existing_mcp[name] for name in ownership if name in existing_mcp
+    }
+
+    if (
+        not expected_managed
+        and not expected_servers
+        and not actual_managed
+        and not ownership
+    ):
+        return "absent"
+
+    if expected_managed == actual_managed and expected_servers == actual_owned:
+        return "ok"
+    return "stale"
 
 
 def strip_managed(project_root: Path) -> bool:
