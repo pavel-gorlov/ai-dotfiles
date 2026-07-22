@@ -69,6 +69,19 @@ def claude_global_dir() -> Path:
     return Path.home() / ".claude"
 
 
+def codex_home() -> Path:
+    """Return OpenAI Codex CLI's user-scope config directory.
+
+    Defaults to ``~/.codex``; may be overridden via the ``CODEX_HOME``
+    environment variable (the same override Codex itself honours) —
+    mirroring how :func:`storage_root` respects ``AI_DOTFILES_HOME``.
+    """
+    override = os.environ.get("CODEX_HOME")
+    if override:
+        return Path(override)
+    return Path.home() / ".codex"
+
+
 def backup_dir() -> Path:
     """Location where conflicting files are moved (``~/.dotfiles-backup``)."""
     return Path.home() / ".dotfiles-backup"
@@ -148,6 +161,16 @@ def project_claude_dir(root: Path) -> Path:
     return root / ".claude"
 
 
+def project_codex_dir(root: Path) -> Path:
+    """Project-level Codex config directory (``<root>/.codex``).
+
+    Holds ``config.toml``, ``hooks.json``, ``agents/`` and the
+    ai-dotfiles ownership sidecars. The user-scope equivalent is
+    :func:`codex_home`.
+    """
+    return root / ".codex"
+
+
 def project_codex_skills_dir(root: Path) -> Path:
     """Project-level Codex skills directory (``<root>/.agents/skills``)."""
     return root / ".agents" / "skills"
@@ -155,4 +178,4 @@ def project_codex_skills_dir(root: Path) -> Path:
 
 def project_codex_agents_dir(root: Path) -> Path:
     """Project-level Codex agents directory (``<root>/.codex/agents``)."""
-    return root / ".codex" / "agents"
+    return project_codex_dir(root) / "agents"

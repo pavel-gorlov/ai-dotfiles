@@ -7,7 +7,9 @@ Thin wrapper over the ``core`` modules. Two modes:
   ``<root>/.claude/settings.json`` from domain fragments.
 * ``ai-dotfiles install -g`` — global install: links ``~/.ai-dotfiles/global/``
   files into ``~/.claude/``, then reads ``global.json`` and links its
-  packages into ``~/.claude/``.
+  packages into ``~/.claude/``. With ``"codex"`` in ``global.json``'s
+  ``targets`` the packages are also rendered into Codex's user scope
+  (``$CODEX_HOME``).
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from ai_dotfiles.commands._codex_config_writer import (
 )
 from ai_dotfiles.core import (
     claude_copy,
+    codex_global,
     codex_install,
     elements,
     manifest,
@@ -31,9 +34,12 @@ from ai_dotfiles.core import (
     settings_merge,
     symlinks,
 )
+from ai_dotfiles.core.codex_config import ensure_project_doc_fallback
+from ai_dotfiles.core.codex_layout import CodexLayout, global_layout, project_layout
 from ai_dotfiles.core.codex_targets import (
     CodexRulePlan,
     codex_skipped_domain_subdirs,
+    global_demoted_rules,
     iter_codex_pairs,
     iter_codex_rule_plans,
 )
@@ -239,20 +245,26 @@ def _install_global(*, prune: bool = False, strict_deps: bool = False) -> None:
             f"Storage not found: {storage}. Run 'ai-dotfiles init -g' first."
         )
 
+    manifest_path = paths.global_manifest_path()
+    # An absent `targets` field resolves to ["claude"], so the default
+    # global install stays byte-identical; `"targets": ["claude","codex"]`
+    # in global.json opts the user scope into the Codex target too.
+    targets = manifest.get_targets(manifest_path)
+
     claude_dir = paths.claude_global_dir()
-    claude_dir.mkdir(parents=True, exist_ok=True)
     backup = paths.backup_dir()
     global_dir = paths.global_dir()
 
     ui.info("Installing global configuration...")
 
     global_messages: list[str] = []
-    if global_dir.is_dir():
-        global_messages = symlinks.link_global_files(global_dir, claude_dir, backup)
-        for msg in global_messages:
-            ui.success(msg)
+    if "claude" in targets:
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        if global_dir.is_dir():
+            global_messages = symlinks.link_global_files(global_dir, claude_dir, backup)
+            for msg in global_messages:
+                ui.success(msg)
 
-    manifest_path = paths.global_manifest_path()
     packages = _expand_manifest_deps(
         manifest_path, paths.catalog_dir(), strict_deps=strict_deps
     )
@@ -269,39 +281,44 @@ def _install_global(*, prune: bool = False, strict_deps: bool = False) -> None:
         for element in parsed:
             elements.validate_element_exists(element, catalog)
 
-        for element in parsed:
-            linked_items.extend(
-                _link_element(element, claude_dir, catalog, backup, "symlink")
-            )
+        if "claude" in targets:
+            for element in parsed:
+                linked_items.extend(
+                    _link_element(element, claude_dir, catalog, backup, "symlink")
+                )
 
         any_shim = _provision_runtimes(parsed, catalog)
 
         fragments = settings_merge.collect_domain_fragments(packages, catalog)
         fragment_count = len(fragments)
-        # Always rebuild settings.json with ownership-aware merge so
-        # stale entries from prior installs get cleaned up and user
-        # edits are preserved.
-        settings_path = claude_dir / "settings.json"
-        existing: dict[str, object] = {}
-        if settings_path.is_file() and not settings_path.is_symlink():
-            existing = settings_merge.load_fragment(settings_path)
-        prev_ownership = load_settings_ownership(claude_dir)
-        user_base = settings_merge.strip_owned(existing, prev_ownership)
-        assembled = settings_merge.assemble_settings(fragments, base=user_base)
-        new_ownership = settings_merge.collect_fragment_contributions(fragments)
-        if assembled:
-            if settings_path.is_symlink():
+        if "claude" in targets:
+            # Always rebuild settings.json with ownership-aware merge so
+            # stale entries from prior installs get cleaned up and user
+            # edits are preserved.
+            settings_path = claude_dir / "settings.json"
+            existing: dict[str, object] = {}
+            if settings_path.is_file() and not settings_path.is_symlink():
+                existing = settings_merge.load_fragment(settings_path)
+            prev_ownership = load_settings_ownership(claude_dir)
+            user_base = settings_merge.strip_owned(existing, prev_ownership)
+            assembled = settings_merge.assemble_settings(fragments, base=user_base)
+            new_ownership = settings_merge.collect_fragment_contributions(fragments)
+            if assembled:
+                if settings_path.is_symlink():
+                    settings_path.unlink()
+                settings_merge.write_settings(assembled, settings_path)
+                settings_written = True
+            elif settings_path.exists() or settings_path.is_symlink():
                 settings_path.unlink()
-            settings_merge.write_settings(assembled, settings_path)
-            settings_written = True
-        elif settings_path.exists() or settings_path.is_symlink():
-            settings_path.unlink()
-        if settings_ownership_is_empty(new_ownership):
-            delete_settings_ownership(claude_dir)
-        else:
-            save_settings_ownership(claude_dir, new_ownership)
+            if settings_ownership_is_empty(new_ownership):
+                delete_settings_ownership(claude_dir)
+            else:
+                save_settings_ownership(claude_dir, new_ownership)
 
-    if prune:
+    if "codex" in targets:
+        _install_codex_global(parsed, packages, paths.catalog_dir(), prune=prune)
+
+    if prune and "claude" in targets:
         # The global scope is always symlink-mode (the global `.claude/`
         # sits next to the catalog, so symlinks resolve); no copy prune.
         _report_pruned(claude_dir, storage, parsed, paths.catalog_dir(), "symlink")
@@ -427,6 +444,8 @@ def _install_codex_target(
     the manifest are removed.
     """
     ui.info("Codex target:")
+    layout = project_layout(project_root)
+    codex_dir = paths.project_codex_dir(project_root)
     wanted_skills: set[Path] = set()
     wanted_agents: set[Path] = set()
     wanted_rule_blocks: dict[Path, set[str]] = {}
@@ -438,7 +457,7 @@ def _install_codex_target(
                 f".codex/hooks.json but not copied — keep the Claude target "
                 f"(.claude/{sub}/) installed so they resolve."
             )
-        for pair in iter_codex_pairs(element, project_root, catalog):
+        for pair in iter_codex_pairs(element, layout, catalog):
             if pair.element_type is ElementType.SKILL:
                 status = codex_install.install_codex_skill(pair.source, pair.target)
                 wanted_skills.add(pair.target)
@@ -453,12 +472,12 @@ def _install_codex_target(
                 status = codex_install.install_codex_agent(pair.source, pair.target)
                 wanted_agents.add(pair.target)
                 ui.success(f"agents/{pair.target.name} ({status})")
-        for plan in iter_codex_rule_plans(element, project_root, catalog):
+        for plan in iter_codex_rule_plans(element, layout, catalog):
             _apply_codex_rule_plan(plan, project_root, wanted_rule_blocks)
 
-    write_codex_config(packages, project_root, catalog)
-    write_codex_mcp(packages, project_root, catalog)
-    write_codex_hooks(packages, project_root, catalog)
+    write_codex_config(packages, codex_dir, catalog)
+    write_codex_mcp(packages, codex_dir, catalog)
+    write_codex_hooks(packages, codex_dir, catalog)
 
     if prune:
         # Local-origin artefacts (created by `ai-dotfiles migrate`) are not
@@ -470,6 +489,151 @@ def _install_codex_target(
         _prune_codex_rule_blocks(
             project_root, _merge_block_maps(wanted_rule_blocks, keep_blocks)
         )
+
+
+def _install_codex_global(
+    parsed: list[Element],
+    packages: list[str],
+    catalog: Path,
+    *,
+    prune: bool,
+) -> None:
+    """Render the global packages into Codex's user scope (``$CODEX_HOME``).
+
+    The user-scope counterpart of :func:`_install_codex_target`, with the
+    strategy differences the global scope dictates:
+
+    * a catalog **skill** within Codex's limits is *symlinked* into the
+      catalog (absolute link, auto-fresh — the machine-local global scope
+      has no self-containment requirement); an over-cap / bad-name skill
+      is rendered with the first-sentence trim, exactly like a project
+      skill (a bare symlink would silently break it for every project);
+    * a **path-scoped rule** demotes to a synthetic ``rule-<name>`` skill
+      (no project tree, no per-directory ``AGENTS.md``) — warned, not
+      silent;
+    * ``~/.claude/CLAUDE.md`` is bridged into ``$CODEX_HOME/AGENTS.md``
+      as a managed block, sharing the file with always-on rule blocks;
+    * ``config.toml`` / ``hooks.json`` live directly in ``$CODEX_HOME`` —
+      a file the user (and other tools) already own, so the managed-region
+      and signature-sidecar discipline is what keeps their content safe.
+    """
+    layout = global_layout()
+    ui.info("Codex target (global):")
+    wanted_skills: set[Path] = set()
+    wanted_agents: set[Path] = set()
+    wanted_rule_blocks: dict[Path, set[str]] = {}
+
+    for element in parsed:
+        for sub in codex_skipped_domain_subdirs(element, catalog):
+            ui.info(
+                f"@{element.name}: {sub}/ scripts are referenced by "
+                f"hooks.json but not copied — keep the Claude target "
+                f"(~/.claude/{sub}/) installed so they resolve."
+            )
+        for name in global_demoted_rules(element, catalog):
+            ui.warn(
+                f"rule:{name} is path-scoped — the global scope has no "
+                f"per-directory AGENTS.md surface; rendering as "
+                f"skills/rule-{name} instead."
+            )
+        for pair in iter_codex_pairs(element, layout, catalog):
+            if pair.element_type is ElementType.SKILL:
+                can_link, _reason = codex_install.skill_symlink_ok(
+                    pair.source, pair.target.name
+                )
+                if can_link:
+                    status = codex_install.symlink_codex_skill(
+                        pair.source, pair.target, relative=False
+                    )
+                else:
+                    status = codex_install.install_codex_skill(pair.source, pair.target)
+                wanted_skills.add(pair.target)
+                ui.success(f"skills/{pair.target.name} ({status})")
+            elif pair.element_type is ElementType.RULE:
+                status = codex_install.install_codex_rule_skill(
+                    pair.source, pair.target
+                )
+                wanted_skills.add(pair.target)
+                ui.success(f"skills/{pair.target.name} ({status})")
+            else:
+                status = codex_install.install_codex_agent(pair.source, pair.target)
+                wanted_agents.add(pair.target)
+                ui.success(f"agents/{pair.target.name} ({status})")
+        for plan in iter_codex_rule_plans(element, layout, catalog):
+            codex_global.ensure_not_reserved(plan.source)
+            _apply_codex_rule_plan(plan, layout.codex_dir, wanted_rule_blocks)
+
+    bridge = codex_global.upsert_bridge(layout.root_agents_md)
+    if bridge != "absent":
+        wanted_rule_blocks.setdefault(layout.root_agents_md, set()).add(
+            codex_global.GLOBAL_INSTRUCTIONS_NAME
+        )
+        if bridge == "written":
+            ui.success(
+                "AGENTS.md (global instructions bridged from ~/.claude/CLAUDE.md)"
+            )
+
+    write_codex_config(packages, layout.codex_dir, catalog)
+    write_codex_mcp(packages, layout.codex_dir, catalog)
+    write_codex_hooks(packages, layout.codex_dir, catalog)
+    if ensure_project_doc_fallback(layout.codex_dir, "CLAUDE.md"):
+        ui.success("config.toml (project_doc_fallback_filenames += CLAUDE.md)")
+
+    if prune:
+        _prune_codex_global(layout, wanted_skills, wanted_agents, wanted_rule_blocks)
+
+
+def _prune_codex_global(
+    layout: CodexLayout,
+    wanted_skills: set[Path],
+    wanted_agents: set[Path],
+    wanted_rule_blocks: dict[Path, set[str]],
+) -> None:
+    """Prune ai-dotfiles-owned global Codex artefacts not in the wanted sets.
+
+    Touches exactly three places — ``$CODEX_HOME/skills``,
+    ``$CODEX_HOME/agents`` and ``$CODEX_HOME/AGENTS.md`` (never the
+    project-scope ``rglob`` walk: rooted at the home it would crawl the
+    user's whole tree). A skill entry is ours when it is a managed render
+    (``.ai-dotfiles-meta`` sidecar) or a symlink resolving into the
+    catalog; user-authored skills, agents and ``AGENTS.md`` text are
+    never touched. The instructions-bridge block is in the wanted set
+    while its source ``CLAUDE.md`` exists, so it survives.
+    """
+    from ai_dotfiles.core.agents_md import iter_rule_block_names
+
+    catalog_root = paths.catalog_dir()
+    removed: list[str] = []
+
+    if layout.skills_dir.is_dir():
+        for child in sorted(layout.skills_dir.iterdir()):
+            if child in wanted_skills:
+                continue
+            if child.is_symlink():
+                if codex_install.remove_codex_skill_link(child, catalog_root):
+                    removed.append(f"skills/{child.name}")
+            elif child.is_dir() and codex_install.remove_codex_skill(child):
+                removed.append(f"skills/{child.name}")
+    if layout.agents_dir.is_dir():
+        for child in sorted(layout.agents_dir.iterdir()):
+            if (
+                child.suffix == ".toml"
+                and child not in wanted_agents
+                and codex_install.remove_codex_agent(child)
+            ):
+                removed.append(f"agents/{child.name}")
+
+    agents_md_path = layout.root_agents_md
+    if agents_md_path.is_file():
+        wanted = wanted_rule_blocks.get(agents_md_path, set())
+        for name in iter_rule_block_names(agents_md_path.read_text(encoding="utf-8")):
+            if name in wanted:
+                continue
+            if codex_install.remove_codex_rule_blocks(agents_md_path, name):
+                removed.append(f"rule block {name} from AGENTS.md")
+
+    for label in removed:
+        ui.info(f"  - pruned Codex {label}")
 
 
 def _codex_local_protected(
@@ -508,7 +672,7 @@ def _merge_block_maps(
 
 def _apply_codex_rule_plan(
     plan: CodexRulePlan,
-    project_root: Path,
+    label_base: Path,
     wanted_rule_blocks: dict[Path, set[str]],
 ) -> None:
     """Apply one rule's ``AGENTS.md`` block plan and record ownership."""
@@ -518,7 +682,7 @@ def _apply_codex_rule_plan(
     codex_install.apply_codex_rule_blocks(plan.source, plan.agents_md_paths)
     for agents_md_path in plan.agents_md_paths:
         wanted_rule_blocks.setdefault(agents_md_path, set()).add(name)
-        ui.success(f"rules/{name} -> {_codex_label(agents_md_path, project_root)}")
+        ui.success(f"rules/{name} -> {_codex_label(agents_md_path, label_base)}")
 
 
 def _codex_label(path: Path, project_root: Path) -> str:

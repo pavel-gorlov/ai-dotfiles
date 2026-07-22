@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -46,10 +47,12 @@ from ai_dotfiles.core.codex_render import (
     split_body,
 )
 from ai_dotfiles.core.errors import LinkError
+from ai_dotfiles.core.frontmatter import parse_frontmatter
 from ai_dotfiles.core.fs_copy import copy_tree_into
 
 __all__ = [
     "MANAGED_BY_HEADER",
+    "SKILL_DESCRIPTION_MAX",
     "SKILL_META_FILENAME",
     "apply_codex_rule_blocks",
     "install_codex_agent",
@@ -61,7 +64,10 @@ __all__ = [
     "remove_codex_agent",
     "remove_codex_rule_blocks",
     "remove_codex_skill",
+    "remove_codex_skill_link",
     "rule_block_state",
+    "skill_symlink_ok",
+    "symlink_codex_skill",
 ]
 
 # The marker line every generated Codex agent ``.toml`` starts with.
@@ -83,6 +89,17 @@ SKILL_META_FILENAME = ".ai-dotfiles-meta"
 
 # Identifier stored in the sidecar's ``managed_by`` field.
 _MANAGED_BY_VALUE = "ai-dotfiles"
+
+# Codex enforces a hard cap on a skill's frontmatter ``description``; over the
+# limit the whole skill fails to load (openai/codex issue #13941). A raw
+# ``SKILL.md`` whose description exceeds it must be rendered with the
+# first-sentence trim rather than symlinked.
+SKILL_DESCRIPTION_MAX = 1024
+
+# Codex skill ``name``: lowercase letters/digits/hyphens, <= 64 chars, and it
+# must equal the parent folder name (always true for our sources, whose
+# folder *is* the name).
+_SKILL_NAME_MAX = 64
 
 
 def _skill_meta_path(target_dir: Path) -> Path:
@@ -314,6 +331,17 @@ def install_codex_skill(source_dir: Path, target_dir: Path) -> str:
     rendered = render_skill_md(source_skill_md)
     source_text = source_skill_md.read_text(encoding="utf-8")
 
+    # A symlink at the target (a previous gated-symlink install, or a
+    # migrate-created link) must be dropped first — ``mkdir`` /
+    # ``write_text`` would otherwise follow it and write INTO the source.
+    if target_dir.is_symlink():
+        try:
+            target_dir.unlink()
+        except OSError as exc:
+            raise LinkError(
+                f"Failed to replace Codex skill symlink {target_dir}: {exc}"
+            ) from exc
+
     existed = target_dir.exists()
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -331,6 +359,110 @@ def install_codex_skill(source_dir: Path, target_dir: Path) -> str:
         copy_tree_into(source_dir / name, target_dir / name)
 
     return "updated" if existed else "created"
+
+
+def skill_symlink_ok(source_dir: Path, name: str) -> tuple[bool, str]:
+    """Return ``(can_symlink, reason)`` for a raw skill directory.
+
+    A raw ``SKILL.md`` may be symlinked (auto-fresh, no drift tracking)
+    only when Codex will load it unchanged: the ``name`` must be valid
+    hyphen-case and the frontmatter ``description`` must be within
+    Codex's hard :data:`SKILL_DESCRIPTION_MAX` cap. Otherwise the skill
+    must be rendered with the first-sentence description trim.
+    """
+    if not _valid_skill_name(name):
+        return False, f"name {name!r} is not Codex hyphen-case — rendering instead"
+    skill_md = source_dir / _SKILL_FILE
+    try:
+        frontmatter = parse_frontmatter(skill_md.read_text(encoding="utf-8"))
+    except OSError:
+        return False, "SKILL.md unreadable — rendering instead"
+    description = frontmatter.get("description")
+    if isinstance(description, str) and len(description) > SKILL_DESCRIPTION_MAX:
+        return (
+            False,
+            f"description {len(description)} chars > {SKILL_DESCRIPTION_MAX} cap "
+            "— rendering with first-sentence trim",
+        )
+    return True, "symlink (auto-fresh; raw SKILL.md within Codex limits)"
+
+
+def _valid_skill_name(name: str) -> bool:
+    if not name or len(name) > _SKILL_NAME_MAX:
+        return False
+    if name[0] == "-" or name[-1] == "-":
+        return False
+    return all(ch.islower() or ch.isdigit() or ch == "-" for ch in name)
+
+
+def symlink_codex_skill(
+    source_dir: Path, target_dir: Path, *, relative: bool = True
+) -> str:
+    """Create a symlink ``target_dir`` -> ``source_dir`` idempotently.
+
+    With ``relative`` (the project-scope default) the link text is
+    relative so it survives the repo being moved or cloned. The global
+    scope passes ``relative=False``: ``$CODEX_HOME`` and the ai-dotfiles
+    storage move independently (each has its own env override), so an
+    absolute link — the same convention the global Claude symlinks use —
+    is the robust choice there.
+
+    A stale symlink is repointed; a previously *rendered* managed skill
+    at the target is replaced by the link; a user-authored directory is
+    refused. Returns ``"linked"`` or ``"already-linked"``.
+    """
+    try:
+        target_dir.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise LinkError(f"Failed to create {target_dir.parent}: {exc}") from exc
+
+    link_ref = (
+        os.path.relpath(source_dir, target_dir.parent) if relative else str(source_dir)
+    )
+
+    if target_dir.is_symlink():
+        if os.readlink(target_dir) == link_ref:
+            return "already-linked"
+        target_dir.unlink()
+    elif target_dir.exists():
+        if is_managed_skill(target_dir):
+            shutil.rmtree(target_dir)
+        else:
+            raise LinkError(
+                f"{target_dir} exists and is not ai-dotfiles-managed; "
+                "refusing to overwrite a user-authored skill"
+            )
+
+    try:
+        target_dir.symlink_to(link_ref)
+    except OSError as exc:
+        raise LinkError(f"Failed to symlink {target_dir} -> {link_ref}: {exc}") from exc
+    return "linked"
+
+
+def remove_codex_skill_link(link: Path, source_root: Path) -> bool:
+    """Remove a skill symlink if it points under ``source_root``.
+
+    The symlink analogue of :func:`remove_codex_skill` for prune: a link
+    whose (non-strict) resolution lands inside ``source_root`` (e.g. the
+    catalog) is ai-dotfiles-created and safe to drop — dangling links
+    included. A symlink pointing anywhere else is user-authored and left
+    alone. Returns ``True`` if the link was removed.
+    """
+    if not link.is_symlink():
+        return False
+    try:
+        resolved = link.resolve()
+        root = source_root.resolve()
+    except OSError:
+        return False
+    if not resolved.is_relative_to(root):
+        return False
+    try:
+        link.unlink()
+    except OSError as exc:
+        raise LinkError(f"Failed to remove Codex skill link {link}: {exc}") from exc
+    return True
 
 
 def remove_codex_agent(target_toml: Path) -> bool:

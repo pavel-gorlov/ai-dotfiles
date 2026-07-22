@@ -11,8 +11,9 @@ This is the Codex-side analogue of
 servers for the Claude target). The two targets keep separate ownership
 files because their config surfaces are independent.
 
-File location: ``<project>/.codex/.ai-dotfiles-mcp-ownership.json`` — a
-sidecar next to ``config.toml``.
+File location: ``.ai-dotfiles-mcp-ownership.json`` inside the Codex
+config directory (``<project>/.codex`` or ``$CODEX_HOME``) — a sidecar
+next to ``config.toml``.
 """
 
 from __future__ import annotations
@@ -27,18 +28,22 @@ from ai_dotfiles.core.errors import ConfigError
 OWNERSHIP_FILENAME = ".ai-dotfiles-mcp-ownership.json"
 
 
-def mcp_ownership_path(project_root: Path) -> Path:
-    """Return the Codex MCP ownership-file path for ``project_root``."""
-    return project_root / ".codex" / OWNERSHIP_FILENAME
+def mcp_ownership_path(codex_dir: Path) -> Path:
+    """Return the Codex MCP ownership-file path inside ``codex_dir``.
+
+    ``codex_dir`` is the directory holding ``config.toml`` — project
+    scope passes ``<root>/.codex``, the global scope ``$CODEX_HOME``.
+    """
+    return codex_dir / OWNERSHIP_FILENAME
 
 
-def load_mcp_ownership(project_root: Path) -> dict[str, list[str]]:
+def load_mcp_ownership(codex_dir: Path) -> dict[str, list[str]]:
     """Load the ownership map. Returns ``{}`` if the file does not exist.
 
     Raises :class:`ConfigError` on invalid JSON, wrong top-level shape,
     or malformed values.
     """
-    path = mcp_ownership_path(project_root)
+    path = mcp_ownership_path(codex_dir)
     if not path.exists():
         return {}
     try:
@@ -60,9 +65,9 @@ def load_mcp_ownership(project_root: Path) -> dict[str, list[str]]:
     return result
 
 
-def save_mcp_ownership(project_root: Path, data: dict[str, list[str]]) -> None:
+def save_mcp_ownership(codex_dir: Path, data: dict[str, list[str]]) -> None:
     """Write the ownership map atomically with sorted keys."""
-    path = mcp_ownership_path(project_root)
+    path = mcp_ownership_path(codex_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     payload = json.dumps(dict(sorted(data.items())), indent=2) + "\n"
@@ -71,8 +76,8 @@ def save_mcp_ownership(project_root: Path, data: dict[str, list[str]]) -> None:
     os.replace(tmp, path)
 
 
-def delete_mcp_ownership(project_root: Path) -> None:
+def delete_mcp_ownership(codex_dir: Path) -> None:
     """Remove the ownership file if present; silent if already gone."""
-    path = mcp_ownership_path(project_root)
+    path = mcp_ownership_path(codex_dir)
     with contextlib.suppress(FileNotFoundError):
         path.unlink()

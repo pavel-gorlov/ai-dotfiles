@@ -16,6 +16,7 @@ from ai_dotfiles.core import (
     manifest,
     symlinks,
 )
+from ai_dotfiles.core.codex_layout import CodexLayout, global_layout, project_layout
 from ai_dotfiles.core.codex_targets import iter_codex_pairs, iter_codex_rule_plans
 from ai_dotfiles.core.completions import (
     complete_installed_specifiers,
@@ -145,32 +146,34 @@ def _unlink_element(
         symlinks.unlink_standalone(target)
 
 
-def _unlink_codex_element(element: Element, project_root: Path, catalog: Path) -> None:
+def _unlink_codex_element(element: Element, layout: CodexLayout, catalog: Path) -> None:
     """Remove managed Codex artefacts created for ``element``.
 
     Only ai-dotfiles-managed content is removed — a user-authored
     skill/agent of the same name and user-authored ``AGENTS.md`` text are
-    left untouched. Skills/agents drop their generated file; a rule's
-    managed ``AGENTS.md`` block is stripped (and a now-empty ``AGENTS.md``
-    deleted); a description-only rule's synthetic ``rule-<name>`` skill
-    is removed. Domain ``hooks/`` members yield nothing to remove.
+    left untouched. Skills/agents drop their generated file (at global
+    scope a skill may instead be a symlink into the catalog — dropped by
+    the link check); a rule's managed ``AGENTS.md`` block is stripped
+    (and a now-empty ``AGENTS.md`` deleted); a description-only rule's
+    synthetic ``rule-<name>`` skill is removed. Domain ``hooks/`` members
+    yield nothing to remove.
     """
     from ai_dotfiles.core.agents_md import rule_name_of
 
-    for pair in iter_codex_pairs(element, project_root, catalog):
+    for pair in iter_codex_pairs(element, layout, catalog):
         if pair.element_type is ElementType.AGENT:
             codex_install.remove_codex_agent(pair.target)
+        elif pair.target.is_symlink():  # global gated-symlink skill
+            codex_install.remove_codex_skill_link(pair.target, catalog_dir())
         else:  # SKILL or synthetic RULE skill
             codex_install.remove_codex_skill(pair.target)
-    for plan in iter_codex_rule_plans(element, project_root, catalog):
+    for plan in iter_codex_rule_plans(element, layout, catalog):
         name = rule_name_of(plan.source)
         for agents_md_path in plan.agents_md_paths:
             codex_install.remove_codex_rule_blocks(agents_md_path, name)
 
 
-def _rebuild_codex_config(
-    manifest_path: Path, project_root: Path, catalog: Path
-) -> None:
+def _rebuild_codex_config(manifest_path: Path, codex_dir: Path, catalog: Path) -> None:
     """Reassemble ``.codex/config.toml`` from the remaining domain fragments.
 
     The Codex analogue of :func:`_rebuild_settings` — after a removal the
@@ -182,25 +185,25 @@ def _rebuild_codex_config(
     packages = manifest.get_packages(manifest_path)
     fragments = collect_domain_fragments(packages, catalog)
     fragment_pairs = [(path.parent.name, path) for path in fragments]
-    result = codex_config.write_codex_config(project_root, fragment_pairs)
+    result = codex_config.write_codex_config(codex_dir, fragment_pairs)
     if result.status == "removed":
-        ui.info("Codex: stripped managed region from .codex/config.toml")
+        ui.info("Codex: stripped managed region from config.toml")
     elif result.status in ("created", "updated"):
-        ui.info("Codex: rebuilt .codex/config.toml managed region")
+        ui.info("Codex: rebuilt config.toml managed region")
 
     mcp_result = codex_config.write_codex_mcp(
-        project_root, collect_mcp_fragments(packages, catalog)
+        codex_dir, collect_mcp_fragments(packages, catalog)
     )
     if mcp_result.status == "removed":
-        ui.info("Codex: stripped [mcp_servers] from .codex/config.toml")
+        ui.info("Codex: stripped [mcp_servers] from config.toml")
     elif mcp_result.status in ("created", "updated"):
-        ui.info("Codex: rebuilt .codex/config.toml [mcp_servers]")
+        ui.info("Codex: rebuilt config.toml [mcp_servers]")
 
-    hooks_result = codex_hooks.write_codex_hooks(project_root, fragment_pairs)
+    hooks_result = codex_hooks.write_codex_hooks(codex_dir, fragment_pairs)
     if hooks_result.status == "removed":
-        ui.info("Codex: stripped managed hooks from .codex/hooks.json")
+        ui.info("Codex: stripped managed hooks from hooks.json")
     elif hooks_result.status in ("created", "updated"):
-        ui.info("Codex: rebuilt .codex/hooks.json managed hooks")
+        ui.info("Codex: rebuilt hooks.json managed hooks")
 
 
 def _rebuild_settings(manifest_path: Path, claude_dir: Path, catalog: Path) -> None:
@@ -333,11 +336,21 @@ def remove(
 
         catalog = catalog_dir()
         manifest_path, claude_dir, project_root = _resolve_scope(is_global)
-        # The Codex target is project-scoped only (ADR ai-1-3); the global
-        # scope is always symlink-mode (its `.claude/` sits next to the
-        # catalog).
-        targets = ["claude"] if is_global else manifest.get_targets(manifest_path)
+        # Both scopes honour the manifest's `targets` (the global Codex
+        # target superseded ADR ai-1-3's project-only restriction); the
+        # global scope is always symlink-mode (its `.claude/` sits next
+        # to the catalog).
+        targets = manifest.get_targets(manifest_path)
         link_mode = "symlink" if is_global else manifest.get_link_mode(manifest_path)
+        codex_layout = (
+            (
+                project_layout(project_root)
+                if project_root is not None
+                else global_layout()
+            )
+            if "codex" in targets
+            else None
+        )
 
         if not force:
             _check_reverse_deps(manifest_path, catalog, elements)
@@ -357,8 +370,8 @@ def remove(
             if element.raw in removed_set:
                 if "claude" in targets:
                     _unlink_element(element, claude_dir, catalog, link_mode)
-                if "codex" in targets and project_root is not None:
-                    _unlink_codex_element(element, project_root, catalog)
+                if codex_layout is not None:
+                    _unlink_codex_element(element, codex_layout, catalog)
                 ui.info(f"  - {element.raw}")
             else:
                 ui.info(f"  ~ {element.raw} (not installed)")
@@ -366,8 +379,8 @@ def remove(
         had_domain = any(
             el.type is ElementType.DOMAIN for el in elements if el.raw in removed_set
         )
-        if "codex" in targets and project_root is not None:
-            _rebuild_codex_config(manifest_path, project_root, catalog)
+        if codex_layout is not None:
+            _rebuild_codex_config(manifest_path, codex_layout.codex_dir, catalog)
         if "claude" in targets:
             if project_root is not None:
                 rebuild_claude_config(

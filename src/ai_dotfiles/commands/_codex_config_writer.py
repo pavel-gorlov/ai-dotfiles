@@ -34,15 +34,18 @@ def _codex_fragment_pairs(packages: list[str], catalog: Path) -> list[tuple[str,
     return [(path.parent.name, path) for path in fragments]
 
 
-def write_codex_config(packages: list[str], project_root: Path, catalog: Path) -> None:
-    """Translate domain fragments into ``.codex/config.toml`` (ADR ai-1-5).
+def write_codex_config(packages: list[str], codex_dir: Path, catalog: Path) -> None:
+    """Translate domain fragments into ``config.toml`` (ADR ai-1-5).
+
+    ``codex_dir`` is the directory holding ``config.toml`` — project
+    scope passes ``<root>/.codex``, the global scope ``$CODEX_HOME``.
 
     Permissions / sandbox keys land in the managed config region;
     ``hooks`` have no Codex equivalent and are skipped with an explicit
     fail-loud message naming each domain that carried them.
     """
     result = codex_config.write_codex_config(
-        project_root, _codex_fragment_pairs(packages, catalog)
+        codex_dir, _codex_fragment_pairs(packages, catalog)
     )
     if result.status == "created":
         ui.success("config.toml (managed region created)")
@@ -53,14 +56,14 @@ def write_codex_config(packages: list[str], project_root: Path, catalog: Path) -
     # .codex/hooks.json. See :func:`write_codex_hooks`.
 
 
-def write_codex_hooks(packages: list[str], project_root: Path, catalog: Path) -> None:
+def write_codex_hooks(packages: list[str], codex_dir: Path, catalog: Path) -> None:
     """Emit domain hooks into ``.codex/hooks.json`` (Codex hook harness).
 
     Domain ``settings.fragment.json`` ``hooks`` are translated to Codex's
     lifecycle-hook format. Events with no Codex twin are reported.
     """
     result = codex_hooks.write_codex_hooks(
-        project_root, _codex_fragment_pairs(packages, catalog)
+        codex_dir, _codex_fragment_pairs(packages, catalog)
     )
     if result.status == "created":
         ui.success("hooks.json (managed hooks created)")
@@ -76,7 +79,7 @@ def write_codex_hooks(packages: list[str], project_root: Path, catalog: Path) ->
         )
 
 
-def write_codex_mcp(packages: list[str], project_root: Path, catalog: Path) -> None:
+def write_codex_mcp(packages: list[str], codex_dir: Path, catalog: Path) -> None:
     """Translate domain ``mcp.fragment.json`` files into ``[mcp_servers]``.
 
     The Codex-target counterpart of the ``.mcp.json`` rebuild — domain
@@ -86,7 +89,7 @@ def write_codex_mcp(packages: list[str], project_root: Path, catalog: Path) -> N
     already hand-authored is left as the user's and reported.
     """
     result = codex_config.write_codex_mcp(
-        project_root, collect_mcp_fragments(packages, catalog)
+        codex_dir, collect_mcp_fragments(packages, catalog)
     )
     if result.status == "created":
         ui.success("config.toml ([mcp_servers] created)")

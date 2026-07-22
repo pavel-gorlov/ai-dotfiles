@@ -21,12 +21,14 @@ from pathlib import Path
 
 from ai_dotfiles.core import (
     codex_config,
+    codex_global,
     codex_install,
     codex_migrate,
     elements,
     paths,
     settings_merge,
 )
+from ai_dotfiles.core.codex_layout import global_layout, project_layout
 from ai_dotfiles.core.codex_local_registry import load_local_registry
 from ai_dotfiles.core.codex_targets import (
     CodexPair,
@@ -38,7 +40,7 @@ from ai_dotfiles.core.elements import Element, ElementType
 from ai_dotfiles.core.local_discovery import LocalElement, iter_local_elements
 from ai_dotfiles.core.mcp_merge import collect_mcp_fragments
 
-__all__ = ["ReconcileReport", "reconcile_codex"]
+__all__ = ["ReconcileReport", "reconcile_codex", "reconcile_codex_global"]
 
 
 @dataclass
@@ -67,19 +69,57 @@ def reconcile_codex(
     drift a plain ``reconcile`` would repair.
     """
     report = ReconcileReport(check_only=check_only)
+    layout = project_layout(project_root)
 
     if include_catalog:
         for element in elements.parse_elements(packages):
-            for pair in iter_codex_pairs(element, project_root, catalog):
+            for pair in iter_codex_pairs(element, layout, catalog):
                 if _pair_needs_refresh(pair):
                     report.drift.append(_pair_label(pair))
                     if not check_only:
                         _apply_pair(pair)
-            for plan in iter_codex_rule_plans(element, project_root, catalog):
+            for plan in iter_codex_rule_plans(element, layout, catalog):
                 _reconcile_rule_plan(plan, project_root, report, check_only)
-        _reconcile_config(packages, project_root, catalog, report, check_only)
+        _reconcile_config(
+            packages, paths.project_codex_dir(project_root), catalog, report, check_only
+        )
 
     _reconcile_local(project_root, packages, report, check_only)
+    return report
+
+
+def reconcile_codex_global(
+    packages: list[str],
+    catalog: Path,
+    *,
+    check_only: bool = False,
+) -> ReconcileReport:
+    """Refresh every stale/missing *global* Codex artefact.
+
+    The user-scope counterpart of :func:`reconcile_codex`, walking the
+    ``$CODEX_HOME`` layout the global install writes. The desired state
+    per catalog skill follows the gated-symlink rule
+    (:func:`codex_install.skill_symlink_ok`): an eligible skill must be
+    a live symlink into the catalog; an ineligible one (e.g. its
+    description grew over the cap) must be a fresh render — an
+    eligibility flip is repaired by converting between the two. There is
+    no local-registry side: ``migrate`` does not exist at global scope.
+    The instructions bridge (``~/.claude/CLAUDE.md`` block) and the
+    managed ``config.toml`` regions are refreshed too.
+    """
+    report = ReconcileReport(check_only=check_only)
+    layout = global_layout()
+
+    for element in elements.parse_elements(packages):
+        for pair in iter_codex_pairs(element, layout, catalog):
+            if _global_pair_needs_refresh(pair):
+                report.drift.append(_pair_label(pair))
+                if not check_only:
+                    _apply_global_pair(pair)
+        for plan in iter_codex_rule_plans(element, layout, catalog):
+            _reconcile_rule_plan(plan, layout.codex_dir, report, check_only)
+    _reconcile_config(packages, layout.codex_dir, catalog, report, check_only)
+    _reconcile_global_bridge(layout.root_agents_md, report, check_only)
     return report
 
 
@@ -115,9 +155,44 @@ def _apply_pair(pair: CodexPair) -> None:
         codex_install.install_codex_rule_skill(pair.source, pair.target)
 
 
+def _global_wants_symlink(pair: CodexPair) -> bool:
+    """True when the global desired state for ``pair`` is a catalog symlink."""
+    return (
+        pair.element_type is ElementType.SKILL
+        and codex_install.skill_symlink_ok(pair.source, pair.target.name)[0]
+    )
+
+
+def _global_pair_needs_refresh(pair: CodexPair) -> bool:
+    if _global_wants_symlink(pair):
+        return not _symlink_ok(pair.target, pair.source)
+    if pair.target.is_symlink():
+        # Rendered is the desired state (eligibility flipped, e.g. the
+        # description grew over the cap) but a symlink is on disk.
+        return True
+    return _pair_needs_refresh(pair)
+
+
+def _apply_global_pair(pair: CodexPair) -> None:
+    if _global_wants_symlink(pair):
+        codex_install.symlink_codex_skill(pair.source, pair.target, relative=False)
+    else:
+        _apply_pair(pair)
+
+
+def _reconcile_global_bridge(
+    agents_md_path: Path, report: ReconcileReport, check_only: bool
+) -> None:
+    """Refresh the global instructions bridge block when it drifted."""
+    if codex_global.bridge_state(agents_md_path) in ("missing", "stale"):
+        report.drift.append("AGENTS.md (global instructions)")
+        if not check_only:
+            codex_global.upsert_bridge(agents_md_path)
+
+
 def _reconcile_rule_plan(
     plan: CodexRulePlan,
-    project_root: Path,
+    label_base: Path,
     report: ReconcileReport,
     check_only: bool,
 ) -> None:
@@ -126,7 +201,7 @@ def _reconcile_rule_plan(
     name = rule_name_of(plan.source)
     for agents_md_path in plan.agents_md_paths:
         if codex_install.rule_block_state(plan.source, agents_md_path) != "ok":
-            report.drift.append(f"rules/{name} -> {_rel(agents_md_path, project_root)}")
+            report.drift.append(f"rules/{name} -> {_rel(agents_md_path, label_base)}")
             if not check_only:
                 codex_install.apply_codex_rule_blocks(plan.source, [agents_md_path])
 
@@ -147,17 +222,17 @@ def _fragment_pairs(
 
 def _reconcile_config(
     packages: list[str],
-    project_root: Path,
+    codex_dir: Path,
     catalog: Path,
     report: ReconcileReport,
     check_only: bool,
 ) -> None:
     settings_pairs, mcp_pairs = _fragment_pairs(packages, catalog)
-    if codex_config.config_state(project_root, settings_pairs, mcp_pairs) == "stale":
+    if codex_config.config_state(codex_dir, settings_pairs, mcp_pairs) == "stale":
         report.drift.append("config.toml")
         if not check_only:
-            codex_config.write_codex_config(project_root, settings_pairs)
-            codex_config.write_codex_mcp(project_root, mcp_pairs)
+            codex_config.write_codex_config(codex_dir, settings_pairs)
+            codex_config.write_codex_mcp(codex_dir, mcp_pairs)
 
 
 # ── local (migrate-origin) artefacts ──────────────────────────────────
@@ -218,11 +293,12 @@ def _local_rule_drift(
     element: LocalElement, project_root: Path, claude_dir: Path
 ) -> list[str]:
     parsed = Element(ElementType.RULE, element.name, element.raw)
+    layout = project_layout(project_root)
     out: list[str] = []
-    for pair in iter_codex_pairs(parsed, project_root, claude_dir):
+    for pair in iter_codex_pairs(parsed, layout, claude_dir):
         if _pair_needs_refresh(pair):
             out.append(f"local skills/{pair.target.name}")
-    for plan in iter_codex_rule_plans(parsed, project_root, claude_dir):
+    for plan in iter_codex_rule_plans(parsed, layout, claude_dir):
         for agents_md_path in plan.agents_md_paths:
             if codex_install.rule_block_state(plan.source, agents_md_path) != "ok":
                 rel = _rel(agents_md_path, project_root)

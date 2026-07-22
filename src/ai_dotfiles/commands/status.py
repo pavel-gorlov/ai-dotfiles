@@ -20,6 +20,7 @@ import click
 from ai_dotfiles import ui
 from ai_dotfiles.core import (
     codex_config,
+    codex_global,
     codex_install,
     codex_migrate,
     elements,
@@ -28,6 +29,7 @@ from ai_dotfiles.core import (
     settings_merge,
     symlinks,
 )
+from ai_dotfiles.core.codex_layout import CodexLayout, global_layout, project_layout
 from ai_dotfiles.core.codex_local_registry import load_local_registry
 from ai_dotfiles.core.codex_targets import iter_codex_pairs, iter_codex_rule_plans
 from ai_dotfiles.core.copy_ownership import load_copy_ownership, relative_label
@@ -252,7 +254,7 @@ def _domain_specs(packages: list[str]) -> list[str]:
 
 
 def _print_codex_target(
-    parsed: list[Element], packages: list[str], project_root: Path, catalog: Path
+    parsed: list[Element], packages: list[str], layout: CodexLayout, catalog: Path
 ) -> int:
     """Print Codex-target status. Return the count of issues found.
 
@@ -266,22 +268,33 @@ def _print_codex_target(
     is present but the source changed, and MISSING (NOT INSTALLED)
     otherwise. The managed ``config.toml`` regions (``[ai_dotfiles]`` +
     domain-owned ``[mcp_servers]``) are reported STALE when they no
-    longer match the current domain fragments. Each issue counts as one.
+    longer match the current domain fragments. At global scope a
+    symlinked skill is OK while the link resolves into the catalog *and*
+    the source still fits Codex's limits, and the instructions bridge
+    block is reported too. Each issue counts as one.
     """
     ui.info("")
-    ui.info("  Codex target")
+    ui.info(
+        "  Codex target"
+        if layout.project_root is not None
+        else "  Codex target (global)"
+    )
     issues = 0
     found_any = False
 
     for element in parsed:
-        for pair in iter_codex_pairs(element, project_root, catalog):
+        for pair in iter_codex_pairs(element, layout, catalog):
             found_any = True
             issues += _print_codex_pair_status(pair)
-        for plan in iter_codex_rule_plans(element, project_root, catalog):
+        for plan in iter_codex_rule_plans(element, layout, catalog):
             found_any = True
-            issues += _print_codex_rule_plan_status(plan, project_root)
+            issues += _print_codex_rule_plan_status(
+                plan, layout.project_root or layout.codex_dir
+            )
 
-    issues += _print_codex_config_status(packages, project_root, catalog)
+    if layout.project_root is None:
+        issues += _print_codex_bridge_status(layout)
+    issues += _print_codex_config_status(packages, layout.codex_dir, catalog)
 
     if not found_any:
         ui.info("    (no Codex-renderable elements in the manifest)")
@@ -289,9 +302,9 @@ def _print_codex_target(
 
 
 def _print_codex_config_status(
-    packages: list[str], project_root: Path, catalog: Path
+    packages: list[str], codex_dir: Path, catalog: Path
 ) -> int:
-    """Print the managed ``.codex/config.toml`` drift status. Return issues.
+    """Print the managed ``config.toml`` drift status. Return issues.
 
     Recomputes the expected managed ``[ai_dotfiles]`` table and
     domain-owned ``[mcp_servers]`` from the current domain fragments and
@@ -304,7 +317,7 @@ def _print_codex_config_status(
         for path in settings_merge.collect_domain_fragments(packages, catalog)
     ]
     mcp_pairs = collect_mcp_fragments(packages, catalog)
-    state = codex_config.config_state(project_root, settings_pairs, mcp_pairs)
+    state = codex_config.config_state(codex_dir, settings_pairs, mcp_pairs)
     if state == "absent":
         return 0
     if state == "ok":
@@ -314,10 +327,36 @@ def _print_codex_config_status(
     return 1
 
 
+def _print_codex_bridge_status(layout: CodexLayout) -> int:
+    """Print the global instructions-bridge block status. Return issues.
+
+    Silent when there is no ``~/.claude/CLAUDE.md`` to bridge. STALE
+    means the user edited ``CLAUDE.md`` since the last ``install -g`` /
+    ``reconcile -g``.
+    """
+    state = codex_global.bridge_state(layout.root_agents_md)
+    if state == "absent":
+        return 0
+    label = "AGENTS.md (global instructions)"
+    if state == "ok":
+        ui.info(f"    {_OK} {label}")
+        return 0
+    if state == "stale":
+        ui.info(f"    {_BROKEN} {label.ljust(28)} STALE (source changed)")
+        return 1
+    ui.info(f"    {_MISSING} {label.ljust(28)} NOT INSTALLED")
+    return 1
+
+
 def _print_codex_pair_status(pair: Any) -> int:
     """Print one skill/agent/synthetic-rule-skill artefact line.
 
-    Returns 1 if the artefact is missing or stale, 0 if OK.
+    Returns 1 if the artefact is missing or stale, 0 if OK. A symlinked
+    skill (the global gated-symlink strategy) is OK while the link
+    resolves to its catalog source *and* the source still satisfies
+    Codex's skill limits — a description that has since grown over the
+    1024-char cap would silently break the skill in every Codex session,
+    so it is surfaced as STALE (re-render needed).
     """
     if pair.element_type is ElementType.AGENT:
         kind, generated, source = "agents", pair.target, pair.source
@@ -329,6 +368,24 @@ def _print_codex_pair_status(pair: Any) -> int:
         generated, source = pair.target / "SKILL.md", pair.source
 
     label = f"{kind}/{pair.target.name}"
+
+    if pair.element_type is ElementType.SKILL and pair.target.is_symlink():
+        try:
+            resolves = pair.target.resolve() == pair.source.resolve()
+        except OSError:
+            resolves = False
+        if not resolves or not pair.source.is_dir():
+            ui.info(f"    {_BROKEN} {label.ljust(28)} BROKEN (dangling symlink)")
+            return 1
+        if not codex_install.skill_symlink_ok(pair.source, pair.target.name)[0]:
+            ui.info(
+                f"    {_BROKEN} {label.ljust(28)} STALE "
+                "(source exceeds Codex skill limits — re-render needed)"
+            )
+            return 1
+        ui.info(_format_line(_OK, label, source, "OK (symlink)"))
+        return 0
+
     if not generated.is_file():
         ui.info(f"    {_MISSING} {label.ljust(28)} NOT INSTALLED")
         return 1
@@ -457,9 +514,10 @@ def status(is_global: bool) -> None:
         ui.error(str(exc))
         raise SystemExit(exc.exit_code) from exc
 
-    # The Codex target is project-scoped only (ADR ai-1-3); the global
-    # scope is always symlink-mode.
-    targets = ["claude"] if is_global else manifest.get_targets(manifest_path)
+    # Both scopes honour the manifest's `targets` (the global Codex target
+    # superseded ADR ai-1-3's project-only restriction); the global scope
+    # is always symlink-mode.
+    targets = manifest.get_targets(manifest_path)
     link_mode = "symlink" if is_global else manifest.get_link_mode(manifest_path)
     copy_mode = link_mode == "copy"
 
@@ -482,10 +540,17 @@ def status(is_global: bool) -> None:
             )
         _print_settings_summary(packages, catalog, claude_dir)
 
-    if "codex" in targets and not is_global:
-        project_root = paths.find_project_root()
-        if project_root is not None:
-            total_issues += _print_codex_target(parsed, packages, project_root, catalog)
+    if "codex" in targets:
+        if is_global:
+            total_issues += _print_codex_target(
+                parsed, packages, global_layout(), catalog
+            )
+        else:
+            project_root = paths.find_project_root()
+            if project_root is not None:
+                total_issues += _print_codex_target(
+                    parsed, packages, project_layout(project_root), catalog
+                )
 
     if not is_global:
         local_root = paths.find_project_root()

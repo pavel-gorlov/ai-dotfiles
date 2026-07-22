@@ -135,9 +135,15 @@ class ConfigResult:
         return self.status == other.status and self.skipped_keys == other.skipped_keys
 
 
-def config_path(project_root: Path) -> Path:
-    """Return the project Codex config path (``<root>/.codex/config.toml``)."""
-    return project_root / ".codex" / CONFIG_FILENAME
+def config_path(codex_dir: Path) -> Path:
+    """Return the Codex config path inside ``codex_dir``.
+
+    ``codex_dir`` is the directory holding ``config.toml`` — project
+    scope passes :func:`ai_dotfiles.core.paths.project_codex_dir`
+    (``<root>/.codex``), the global scope passes
+    :func:`ai_dotfiles.core.paths.codex_home` (``$CODEX_HOME``).
+    """
+    return codex_dir / CONFIG_FILENAME
 
 
 def _concat_dedup(values: list[Any]) -> list[str]:
@@ -281,7 +287,7 @@ def render_config_toml(existing: dict[str, Any], managed: dict[str, Any]) -> str
 
 
 def write_codex_config(
-    project_root: Path,
+    codex_dir: Path,
     fragment_paths: list[tuple[str, Path]],
 ) -> ConfigResult:
     """Write the managed Codex config region from domain fragments.
@@ -301,7 +307,7 @@ def write_codex_config(
         LinkError: if the file cannot be written.
     """
     managed, skipped = build_managed_table(fragment_paths)
-    path = config_path(project_root)
+    path = config_path(codex_dir)
     existing = _parse_existing(path)
     had_managed = MANAGED_TABLE in existing
     existed = path.is_file()
@@ -327,7 +333,7 @@ def write_codex_config(
 
 
 def config_state(
-    project_root: Path,
+    codex_dir: Path,
     settings_fragment_paths: list[tuple[str, Path]],
     mcp_fragment_paths: list[tuple[str, Path]],
 ) -> str:
@@ -358,12 +364,12 @@ def config_state(
     expected_managed, _ = build_managed_table(settings_fragment_paths)
     expected_servers, _ = build_mcp_table(mcp_fragment_paths)
 
-    existing = _parse_existing(config_path(project_root))
+    existing = _parse_existing(config_path(codex_dir))
 
     actual_managed_raw = existing.get(MANAGED_TABLE, {})
     actual_managed = actual_managed_raw if isinstance(actual_managed_raw, dict) else {}
 
-    ownership = load_mcp_ownership(project_root)
+    ownership = load_mcp_ownership(codex_dir)
     existing_mcp_raw = existing.get(MCP_TABLE, {})
     existing_mcp = existing_mcp_raw if isinstance(existing_mcp_raw, dict) else {}
     actual_owned = {
@@ -383,9 +389,7 @@ def config_state(
     return "stale"
 
 
-def ensure_project_doc_fallback(
-    project_root: Path, filename: str = "CLAUDE.md"
-) -> bool:
+def ensure_project_doc_fallback(codex_dir: Path, filename: str = "CLAUDE.md") -> bool:
     """Ensure Codex reads ``filename`` as a project-doc fallback.
 
     Adds ``filename`` to the top-level ``project_doc_fallback_filenames``
@@ -404,7 +408,7 @@ def ensure_project_doc_fallback(
         ConfigError: if the existing ``config.toml`` is malformed.
         LinkError: if the file cannot be written.
     """
-    path = config_path(project_root)
+    path = config_path(codex_dir)
     existing = _parse_existing(path)
     current = existing.get("project_doc_fallback_filenames")
     items = [str(x) for x in current] if isinstance(current, list) else []
@@ -424,7 +428,7 @@ def ensure_project_doc_fallback(
     return True
 
 
-def strip_managed(project_root: Path) -> bool:
+def strip_managed(codex_dir: Path) -> bool:
     """Remove only the managed ``[ai_dotfiles]`` table from ``config.toml``.
 
     The ``remove``-side analogue of :func:`write_codex_config`. User
@@ -436,7 +440,7 @@ def strip_managed(project_root: Path) -> bool:
         ConfigError: if the existing ``config.toml`` is malformed.
         LinkError: if the file cannot be rewritten.
     """
-    path = config_path(project_root)
+    path = config_path(codex_dir)
     if not path.is_file():
         return False
     existing = _parse_existing(path)
@@ -550,7 +554,7 @@ def _merge_mcp_servers(
 
 
 def write_codex_mcp(
-    project_root: Path,
+    codex_dir: Path,
     fragment_paths: list[tuple[str, Path]],
 ) -> McpResult:
     """Write the domain-owned servers into ``[mcp_servers]`` of config.toml.
@@ -573,9 +577,9 @@ def write_codex_mcp(
         LinkError: if the file cannot be written.
     """
     domain_servers, new_ownership = build_mcp_table(fragment_paths)
-    path = config_path(project_root)
+    path = config_path(codex_dir)
     existing = _parse_existing(path)
-    previous_ownership = load_mcp_ownership(project_root)
+    previous_ownership = load_mcp_ownership(codex_dir)
 
     existing_mcp_raw = existing.get(MCP_TABLE, {})
     existing_mcp: dict[str, Any] = (
@@ -612,9 +616,9 @@ def write_codex_mcp(
         if name in merged and name not in collisions
     }
     if effective_ownership:
-        save_mcp_ownership(project_root, effective_ownership)
+        save_mcp_ownership(codex_dir, effective_ownership)
     else:
-        delete_mcp_ownership(project_root)
+        delete_mcp_ownership(codex_dir)
 
     if not merged.keys() & domain_servers.keys():
         status = "removed" if had_mcp and previous_ownership else "updated"
@@ -626,7 +630,7 @@ def write_codex_mcp(
 
 
 def add_mcp_servers(
-    project_root: Path, servers: dict[str, dict[str, Any]]
+    codex_dir: Path, servers: dict[str, dict[str, Any]]
 ) -> tuple[list[str], list[str]]:
     """Add user-authored MCP servers to ``[mcp_servers]`` of config.toml.
 
@@ -644,7 +648,7 @@ def add_mcp_servers(
         ConfigError: if the existing config.toml is malformed.
         LinkError: if the file cannot be written.
     """
-    path = config_path(project_root)
+    path = config_path(codex_dir)
     existing = _parse_existing(path)
     mcp_raw = existing.get(MCP_TABLE, {})
     mcp = dict(mcp_raw) if isinstance(mcp_raw, dict) else {}
@@ -673,7 +677,7 @@ def add_mcp_servers(
     return added, skipped
 
 
-def strip_codex_mcp(project_root: Path) -> bool:
+def strip_codex_mcp(codex_dir: Path) -> bool:
     """Drop only domain-owned servers from ``[mcp_servers]`` of config.toml.
 
     The ``remove``-side analogue of :func:`write_codex_mcp`. User-authored
@@ -687,10 +691,10 @@ def strip_codex_mcp(project_root: Path) -> bool:
             malformed.
         LinkError: if the file cannot be rewritten.
     """
-    path = config_path(project_root)
-    previous_ownership = load_mcp_ownership(project_root)
+    path = config_path(codex_dir)
+    previous_ownership = load_mcp_ownership(codex_dir)
     if not path.is_file() or not previous_ownership:
-        delete_mcp_ownership(project_root)
+        delete_mcp_ownership(codex_dir)
         return False
 
     existing = _parse_existing(path)
@@ -719,5 +723,5 @@ def strip_codex_mcp(project_root: Path) -> bool:
         raise LinkError(
             f"Failed to strip managed MCP servers from {path}: {exc}"
         ) from exc
-    delete_mcp_ownership(project_root)
+    delete_mcp_ownership(codex_dir)
     return True

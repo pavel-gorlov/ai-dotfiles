@@ -28,3 +28,12 @@ def tmp_claude_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Override HOME so ~/.claude/ points to temp."""
     monkeypatch.setenv("HOME", str(tmp_path))
     return tmp_path
+
+
+@pytest.fixture
+def tmp_codex_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Set CODEX_HOME to a temp dir so tests never touch the real ~/.codex."""
+    codex = tmp_path / ".codex"
+    codex.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex))
+    return codex
