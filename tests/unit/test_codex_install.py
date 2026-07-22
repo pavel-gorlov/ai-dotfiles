@@ -13,6 +13,7 @@ import pytest
 
 from ai_dotfiles.core.codex_install import (
     MANAGED_BY_HEADER,
+    SKILL_DESCRIPTION_MAX,
     SKILL_META_FILENAME,
     install_codex_agent,
     install_codex_rule_skill,
@@ -22,6 +23,9 @@ from ai_dotfiles.core.codex_install import (
     is_stale,
     remove_codex_agent,
     remove_codex_skill,
+    remove_codex_skill_link,
+    skill_symlink_ok,
+    symlink_codex_skill,
 )
 from ai_dotfiles.core.errors import ElementError
 from ai_dotfiles.core.frontmatter import parse_frontmatter
@@ -375,3 +379,116 @@ def test_remove_skill_leaves_user_authored_directory(tmp_path: Path) -> None:
 
 def test_remove_skill_noop_for_missing_directory(tmp_path: Path) -> None:
     assert remove_codex_skill(tmp_path / "absent") is False
+
+
+# ── gated symlink helpers (shared by migrate + the global scope) ──────────
+
+
+def _raw_skill(tmp_path: Path, name: str, description: str = "Short.") -> Path:
+    skill = tmp_path / "src-skills" / name
+    _write(
+        skill / "SKILL.md",
+        f"---\nname: {name}\ndescription: {description}\n---\n\nbody\n",
+    )
+    return skill
+
+
+def test_skill_symlink_ok_within_limits(tmp_path: Path) -> None:
+    skill = _raw_skill(tmp_path, "commit")
+    ok, reason = skill_symlink_ok(skill, "commit")
+    assert ok is True
+    assert "symlink" in reason
+
+
+def test_skill_symlink_ok_rejects_over_cap_description(tmp_path: Path) -> None:
+    skill = _raw_skill(
+        tmp_path, "verbose", description="x" * (SKILL_DESCRIPTION_MAX + 1)
+    )
+    ok, reason = skill_symlink_ok(skill, "verbose")
+    assert ok is False
+    assert "cap" in reason
+
+
+def test_skill_symlink_ok_rejects_bad_name(tmp_path: Path) -> None:
+    skill = _raw_skill(tmp_path, "BadName")
+    ok, reason = skill_symlink_ok(skill, "BadName")
+    assert ok is False
+    assert "hyphen-case" in reason
+
+
+def test_symlink_codex_skill_relative_and_absolute(tmp_path: Path) -> None:
+    skill = _raw_skill(tmp_path, "commit")
+    rel_target = tmp_path / "proj" / ".agents" / "skills" / "commit"
+    abs_target = tmp_path / "codex" / "skills" / "commit"
+
+    assert symlink_codex_skill(skill, rel_target) == "linked"
+    assert symlink_codex_skill(skill, rel_target) == "already-linked"
+    assert not os.path.isabs(os.readlink(rel_target))
+
+    assert symlink_codex_skill(skill, abs_target, relative=False) == "linked"
+    assert os.path.isabs(os.readlink(abs_target))
+    assert abs_target.resolve() == skill.resolve()
+
+
+def test_symlink_codex_skill_replaces_managed_render(tmp_path: Path) -> None:
+    skill = _raw_skill(tmp_path, "commit")
+    target = tmp_path / "codex" / "skills" / "commit"
+    install_codex_skill(skill, target)
+    assert target.is_dir() and not target.is_symlink()
+
+    assert symlink_codex_skill(skill, target, relative=False) == "linked"
+    assert target.is_symlink()
+
+
+def test_symlink_codex_skill_refuses_user_authored_dir(tmp_path: Path) -> None:
+    skill = _raw_skill(tmp_path, "commit")
+    target = tmp_path / "codex" / "skills" / "commit"
+    _write(target / "SKILL.md", "---\nname: commit\n---\n\nuser body\n")
+    from ai_dotfiles.core.errors import LinkError
+
+    with pytest.raises(LinkError, match="user-authored"):
+        symlink_codex_skill(skill, target, relative=False)
+
+
+def test_install_codex_skill_replaces_symlink_without_writing_source(
+    tmp_path: Path,
+) -> None:
+    """Rendering over a symlink must not write through it into the source."""
+    skill = _raw_skill(tmp_path, "commit")
+    target = tmp_path / "codex" / "skills" / "commit"
+    symlink_codex_skill(skill, target, relative=False)
+
+    install_codex_skill(skill, target)
+
+    assert target.is_dir() and not target.is_symlink()
+    # The source stayed a raw skill — no sidecar leaked into it.
+    assert not (skill / SKILL_META_FILENAME).exists()
+    assert (target / SKILL_META_FILENAME).is_file()
+
+
+def test_remove_codex_skill_link_only_removes_links_into_root(tmp_path: Path) -> None:
+    catalog_root = tmp_path / "catalog"
+    ours = _raw_skill(catalog_root, "commit")
+    foreign = _raw_skill(tmp_path / "elsewhere", "other")
+    skills = tmp_path / "codex" / "skills"
+    symlink_codex_skill(ours, skills / "commit", relative=False)
+    symlink_codex_skill(foreign, skills / "other", relative=False)
+
+    assert remove_codex_skill_link(skills / "commit", catalog_root) is True
+    assert not (skills / "commit").exists()
+    # A user symlink pointing elsewhere is never touched.
+    assert remove_codex_skill_link(skills / "other", catalog_root) is False
+    assert (skills / "other").is_symlink()
+    # A non-symlink and a missing path are no-ops.
+    assert remove_codex_skill_link(skills / "missing", catalog_root) is False
+
+
+def test_remove_codex_skill_link_removes_dangling_catalog_link(tmp_path: Path) -> None:
+    catalog_root = tmp_path / "catalog"
+    ours = _raw_skill(catalog_root, "gone")
+    skills = tmp_path / "codex" / "skills"
+    symlink_codex_skill(ours, skills / "gone", relative=False)
+    shutil.rmtree(ours)
+
+    assert remove_codex_skill_link(skills / "gone", catalog_root) is True
+    assert not (skills / "gone").is_symlink()

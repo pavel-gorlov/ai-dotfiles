@@ -19,6 +19,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from ai_dotfiles.core.codex_layout import CodexLayout
 from ai_dotfiles.core.elements import Element, ElementType, resolve_source_path
 from ai_dotfiles.core.rule_classify import RuleClass, classify_rule
 from ai_dotfiles.core.targets import RenderMode, Target, render_policy_for
@@ -27,6 +28,7 @@ __all__ = [
     "CodexPair",
     "CodexRulePlan",
     "codex_skipped_domain_subdirs",
+    "global_demoted_rules",
     "iter_codex_pairs",
     "iter_codex_rule_plans",
 ]
@@ -138,24 +140,29 @@ def _iter_rule_sources(element: Element, catalog: Path) -> Iterator[Path]:
                 yield entry
 
 
-def _rule_skill_pair(rule_md: Path, project_root: Path) -> CodexPair:
-    """Build the synthetic ``rule-<name>`` skill pair for a rule (ADR ai-1-2)."""
-    # Imported lazily so this module does not depend on the path layer
-    # at import time (path layer imports ElementType from elements).
-    from ai_dotfiles.core import paths
+def _renders_as_rule_skill(rule_class: RuleClass, layout: CodexLayout) -> bool:
+    """True when a rule of ``rule_class`` becomes a synthetic skill.
 
-    target = paths.project_codex_skills_dir(project_root) / f"rule-{rule_md.stem}"
+    Description-only rules always do (ADR ai-1-2). At global scope a
+    path-scoped rule joins them: without a project tree there is no
+    per-directory ``AGENTS.md`` surface, so the rule demotes to a
+    ``rule-<name>`` skill (available on demand instead of path-triggered).
+    """
+    if rule_class is RuleClass.DESCRIPTION_ONLY:
+        return True
+    return layout.project_root is None and rule_class is RuleClass.PATH_SCOPED
+
+
+def _rule_skill_pair(rule_md: Path, layout: CodexLayout) -> CodexPair:
+    """Build the synthetic ``rule-<name>`` skill pair for a rule (ADR ai-1-2)."""
+    target = layout.skills_dir / f"rule-{rule_md.stem}"
     return CodexPair(ElementType.RULE, rule_md, target)
 
 
 def _domain_codex_pairs(
-    element: Element, project_root: Path, catalog: Path
+    element: Element, layout: CodexLayout, catalog: Path
 ) -> Iterator[CodexPair]:
     """Yield Codex pairs for every skill/agent member of a domain."""
-    # Imported lazily so this module does not depend on the path layer
-    # at import time (path layer imports ElementType from elements).
-    from ai_dotfiles.core import paths
-
     domain_root = catalog / element.name
     for subdir, member_type in _CODEX_DOMAIN_SUBDIRS:
         source_dir = domain_root / subdir
@@ -165,16 +172,14 @@ def _domain_codex_pairs(
             if entry.name in _DOMAIN_SKIP_FILES or entry.name.startswith("."):
                 continue
             if member_type is ElementType.SKILL:
-                target = paths.project_codex_skills_dir(project_root) / entry.name
+                target = layout.skills_dir / entry.name
             else:
-                target = (
-                    paths.project_codex_agents_dir(project_root) / f"{entry.stem}.toml"
-                )
+                target = layout.agents_dir / f"{entry.stem}.toml"
             yield CodexPair(member_type, entry, target)
 
 
 def iter_codex_pairs(
-    element: Element, project_root: Path, catalog: Path
+    element: Element, layout: CodexLayout, catalog: Path
 ) -> list[CodexPair]:
     """Return the Codex skill/agent artefacts ``element`` produces.
 
@@ -187,13 +192,15 @@ def iter_codex_pairs(
     :class:`CodexPair` of type :data:`ElementType.RULE` — the synthetic
     ``rule-<name>`` skill. Always-on / path-scoped rules have no
     skill/agent pair; they are returned by :func:`iter_codex_rule_plans`
-    instead, so they contribute nothing here.
+    instead — except a path-scoped rule at **global** scope
+    (``layout.project_root is None``), which demotes to a rule-skill
+    pair here (see :func:`_renders_as_rule_skill`).
     """
     if element.type is ElementType.DOMAIN:
-        pairs = list(_domain_codex_pairs(element, project_root, catalog))
+        pairs = list(_domain_codex_pairs(element, layout, catalog))
         for rule_md in _iter_rule_sources(element, catalog):
-            if classify_rule(rule_md) is RuleClass.DESCRIPTION_ONLY:
-                pairs.append(_rule_skill_pair(rule_md, project_root))
+            if _renders_as_rule_skill(classify_rule(rule_md), layout):
+                pairs.append(_rule_skill_pair(rule_md, layout))
         return pairs
 
     policy = render_policy_for(Target.CODEX, element.type)
@@ -202,31 +209,32 @@ def iter_codex_pairs(
 
     if element.type is ElementType.RULE:
         rule_md = resolve_source_path(element, catalog)
-        if classify_rule(rule_md) is RuleClass.DESCRIPTION_ONLY:
-            return [_rule_skill_pair(rule_md, project_root)]
+        if _renders_as_rule_skill(classify_rule(rule_md), layout):
+            return [_rule_skill_pair(rule_md, layout)]
         return []
-
-    # Imported lazily for the same reason as above.
-    from ai_dotfiles.core import paths
 
     source = resolve_source_path(element, catalog)
     if element.type is ElementType.SKILL:
-        target = paths.project_codex_skills_dir(project_root) / element.name
+        target = layout.skills_dir / element.name
     else:  # AGENT
-        target = paths.project_codex_agents_dir(project_root) / f"{element.name}.toml"
+        target = layout.agents_dir / f"{element.name}.toml"
     return [CodexPair(element.type, source, target)]
 
 
 def iter_codex_rule_plans(
-    element: Element, project_root: Path, catalog: Path
+    element: Element, layout: CodexLayout, catalog: Path
 ) -> list[CodexRulePlan]:
     """Return the ``AGENTS.md`` assembly plans ``element`` produces.
 
     Covers the always-on and path-scoped rules of a standalone ``rule:``
     element or every rule member of a domain. Description-only rules are
     *not* here — they render as synthetic skills via
-    :func:`iter_codex_pairs`. Returns an empty list for skill/agent
-    elements and for domains/rules with no always-on / path-scoped rule.
+    :func:`iter_codex_pairs`. At global scope path-scoped rules are not
+    here either (they demote to rule-skills — see
+    :func:`_renders_as_rule_skill`); an always-on rule's single block
+    target is the global ``AGENTS.md`` (``layout.root_agents_md``).
+    Returns an empty list for skill/agent elements and for domains/rules
+    with no always-on / path-scoped rule.
     """
     from ai_dotfiles.core.agents_md import rule_block_targets
 
@@ -235,6 +243,26 @@ def iter_codex_rule_plans(
         rule_class = classify_rule(rule_md)
         if rule_class is RuleClass.DESCRIPTION_ONLY:
             continue
-        agents_md_paths = rule_block_targets(rule_md, project_root, rule_class.value)
+        if layout.project_root is None:
+            if rule_class is RuleClass.PATH_SCOPED:
+                continue  # demoted to a rule-skill pair at global scope
+            agents_md_paths = [layout.root_agents_md]
+        else:
+            agents_md_paths = rule_block_targets(
+                rule_md, layout.project_root, rule_class.value
+            )
         plans.append(CodexRulePlan(rule_md, rule_class.value, agents_md_paths))
     return plans
+
+
+def global_demoted_rules(element: Element, catalog: Path) -> list[str]:
+    """Names of ``element``'s path-scoped rules that demote at global scope.
+
+    The command layer warns about each: the rule's path scoping is lost
+    when it renders as a ``rule-<name>`` skill in ``$CODEX_HOME/skills``.
+    """
+    return [
+        rule_md.stem
+        for rule_md in _iter_rule_sources(element, catalog)
+        if classify_rule(rule_md) is RuleClass.PATH_SCOPED
+    ]

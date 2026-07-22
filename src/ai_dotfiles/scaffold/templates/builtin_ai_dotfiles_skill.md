@@ -43,6 +43,7 @@ After installing completion, arguments themselves tab-complete too:
 - `ai-dotfiles list` / `list -g` — show installed packages (project / global). Each entry is colour-coded: **green** for direct installs, **yellow** for entries pulled in transitively (the parent specifiers are appended in parens, space-separated). The project block additionally tags entries that also live in `global.json` with a trailing `(g)` suffix; the global block omits the suffix because every line is global by definition.
 - `ai-dotfiles list --available` — list everything present in the catalog. Same colour scheme; `(g)` is shown on every globally-installed entry.
 - `ai-dotfiles status` — report symlink health and a settings summary. In a project it also lists **LOCAL (non-catalog) elements** and whether each has been migrated to Codex, plus **Claude-only** surfaces (workflows, custom commands) that have no Codex home.
+- `ai-dotfiles status -g` — same for the global scope. When `codex` is in `global.json`'s `targets`, a `Codex target (global)` section reports every `$CODEX_HOME` artefact as OK / STALE / NOT INSTALLED — including symlinked skills (flagged when the source description outgrows Codex's 1024-char cap), the `AGENTS.md` instructions bridge, and `config.toml` drift.
 
 ### Codex migration
 
@@ -50,6 +51,7 @@ These commands carry a project's own hand-authored config to the Codex target an
 
 - `ai-dotfiles migrate [--to codex] [--dry-run]` — migrate **LOCAL** (hand-authored, non-catalog) `.claude/` skills/agents/rules to Codex. A skill is a relative symlink `.agents/skills/<name>` → `../../.claude/skills/<name>` when its raw `SKILL.md` is within Codex's 1024-char `description` cap and the name is valid hyphen-case (auto-fresh, no drift); otherwise it is rendered with the first-sentence trim. Agents render to `.codex/agents/<name>.toml`; rules dispatch like catalog rules (synthetic `rule-<name>` skill or `AGENTS.md` block). `CLAUDE.md` stays the canonical instruction file — migrate points Codex at it via `project_doc_fallback_filenames` in `.codex/config.toml` (no rendered copy, no symlink). User-authored `.mcp.json` servers (not domain-owned) are copied to `[mcp_servers]`. Provenance is recorded in `.codex/.ai-dotfiles-local.json` so `install --prune` keeps migrated artefacts. `--dry-run` plans and classifies (MECHANICAL / REFACTOR) and lists Claude-only surfaces, writing nothing.
 - `ai-dotfiles reconcile [--check]` — regenerate stale or missing Codex artefacts (catalog **and** migrate-origin), the missing feedback loop after the first `install`. Reuses the drift checks (`is_stale`, rule-block sha, `config.toml` recompute) plus local-source freshness; symlinked local skills are auto-fresh, so only a broken link counts as drift. `--check` writes nothing and exits non-zero on any drift — a CI / pre-commit gate.
+- `ai-dotfiles reconcile -g [--check]` — same for the **global** Codex scope (`$CODEX_HOME`): refreshes stale renders, the `~/.claude/CLAUDE.md` instructions bridge, the managed `config.toml` regions, and converts a symlinked skill to a render when its source outgrows Codex's 1024-char description cap (and back). No-op with a hint when `codex` is not in `global.json`'s `targets`.
 
 > `migrate` works whether or not `codex` is in `targets` (it is a project-local action); `reconcile` refreshes catalog artefacts only when `codex` is in `targets`, and always refreshes migrate-origin local artefacts.
 
@@ -163,7 +165,27 @@ The `targets` array in `ai-dotfiles.json` declares which agent CLIs the project 
 
 Absent `targets` field → `["claude"]`. Every existing manifest keeps working unchanged.
 
-**Codex is project-scoped only.** `install -g`, `add -g`, `remove -g`, and `status -g` always force `["claude"]`; the global manifest has no `targets` field.
+**The global scope supports Codex too.** `global.json` accepts the same `targets` field; with `"targets": ["claude", "codex"]`, `install -g` / `add -g` / `remove -g` / `status -g` / `reconcile -g` also render the global packages into Codex's **user scope** (`$CODEX_HOME`, default `~/.codex` — the same env override Codex itself honours), making them available in every Codex session without per-project manifests. Without the field, behaviour stays Claude-only and byte-identical.
+
+#### What `"codex"` produces at GLOBAL scope (`install -g`)
+
+| Element | Output path | Strategy |
+|---------|------------|----------|
+| skill (within limits) | `$CODEX_HOME/skills/<name>` | **Absolute symlink** into the catalog — auto-fresh, no drift tracking. Gated: the frontmatter `description` must be ≤ 1024 chars and the name valid hyphen-case, else the whole skill would silently fail to load in Codex |
+| skill (over cap / bad name) | `$CODEX_HOME/skills/<name>/` | Rendered with the first-sentence description trim + `.ai-dotfiles-meta` drift sidecar (same as project scope) |
+| agent | `$CODEX_HOME/agents/<name>.toml` | Rendered TOML with the `# source-sha256` drift header |
+| always-on rule | `$CODEX_HOME/AGENTS.md` managed block | Same marker + sha discipline as project blocks |
+| path-scoped rule | `$CODEX_HOME/skills/rule-<name>/` | **Demoted** to a synthetic rule-skill (warned): there is no project tree, so no per-directory `AGENTS.md` surface — the path scoping is lost, the content stays available on demand |
+| description-only rule | `$CODEX_HOME/skills/rule-<name>/` | Synthetic rule-skill, as in project scope |
+| `~/.claude/CLAUDE.md` | `$CODEX_HOME/AGENTS.md` managed block `claude-global-instructions` | The global instructions bridge — drift-tracked via the block's sha marker; refreshed by `install -g` / `reconcile -g` |
+| domain `settings.fragment.json` / `mcp.fragment.json` | `$CODEX_HOME/config.toml` | Managed `[ai_dotfiles]` region + `[mcp_servers]` with the ownership sidecar; the user's own keys/tables/servers are preserved |
+| domain hooks | `$CODEX_HOME/hooks.json` | Translated hook groups with the per-group signature sidecar — user/other-tool hook groups (e.g. moshi's) survive every write |
+
+`install -g` also adds `CLAUDE.md` to `project_doc_fallback_filenames` in `$CODEX_HOME/config.toml`, so any project that has only a `CLAUDE.md` is readable by Codex without a per-project `migrate`.
+
+`$CODEX_HOME/config.toml`, `hooks.json` and `AGENTS.md` are **shared files the user already owns** — every write goes through the managed-region / signature-sidecar / marker-block discipline, and `remove -g` / `install -g --prune` strip only ai-dotfiles-owned entries (prune identifies our skill symlinks by "resolves into the catalog"). The rule name `claude-global-instructions` is reserved for the bridge.
+
+**Duplication:** an element installed both globally and in a project renders twice (user scope + project scope). The global scope cannot know every project, so this is accepted by design. Verified on Codex CLI 0.143 (`codex debug prompt-input`): Codex does **not** de-duplicate by name — *both* entries appear in the session's skill list. Nothing breaks, but the prompt carries two same-named skills; prefer keeping an element in only one scope when that bothers you (`remove` it from the project manifest once it goes global).
 
 ### `link_mode` — symlink vs copy for the Claude target
 
@@ -470,7 +492,7 @@ ai-dotfiles list --available           # cross-check against catalog contents
 
 ## Notes
 
-- The `targets` field in `ai-dotfiles.json` controls which CLIs the manifest renders to. Valid values: `"claude"`, `"codex"`. Absent → `["claude"]`. The Codex target is project-scoped only — `-g` commands always use `["claude"]`.
+- The `targets` field in `ai-dotfiles.json` **and** `global.json` controls which CLIs the manifest renders to. Valid values: `"claude"`, `"codex"`. Absent → `["claude"]`. With `"codex"` in `global.json`, the `-g` commands render into `$CODEX_HOME` (see "What `"codex"` produces at GLOBAL scope").
 - The `link_mode` field in `ai-dotfiles.json` controls how the Claude target writes into `.claude/`. Valid values: `"symlink"` (default — live symlinks into the catalog), `"copy"` (real copied files, for native-Windows hosts whose catalog lives in WSL). Absent → `"symlink"`; an unknown value is rejected. A copy is a snapshot — re-run `ai-dotfiles install` after a catalog change. Project-scoped only; `-g` commands always symlink. See [`link_mode`](#link_mode--symlink-vs-copy-for-the-claude-target).
 - Never edit `~/.claude/` directly for anything managed by ai-dotfiles — use `add` / `remove` so the manifest stays authoritative.
 - The manifest file is `<project>/ai-dotfiles.json` (per-project) or `~/.ai-dotfiles/global.json` (global). Specifiers live under `"packages"`.

@@ -204,97 +204,41 @@ def _claude_target_pairs(
     )
 
 
-def _codex_rule_pairs(rule_md: Path, project_root: Path) -> list[tuple[Path, Path]]:
-    """Return the ``(source, target)`` pairs a rule produces for Codex.
-
-    A rule has no single Codex artefact — it dispatches by
-    :class:`~ai_dotfiles.core.rule_classify.RuleClass` (ADR ai-1-2):
-
-    * ``DESCRIPTION_ONLY`` -> one pair: the synthetic
-      ``.agents/skills/rule-<name>/`` skill;
-    * ``ALWAYS_ON`` / ``PATH_SCOPED`` -> one pair per ``AGENTS.md`` the
-      rule's managed block lands in (the project-root file, or one
-      ``<dir>/AGENTS.md`` per ``paths:`` entry).
-
-    The ``source`` of every pair is the rule ``.md``. A rule whose file
-    is absent (e.g. resolving a not-yet-installed element) yields no
-    pairs rather than raising — the classifier needs a readable file.
-    """
-    # Imported lazily: ``rule_classify`` / ``agents_md`` pull in the
-    # frontmatter parser; keep them off this module's import path.
-    from ai_dotfiles.core import paths
-    from ai_dotfiles.core.agents_md import rule_block_targets
-    from ai_dotfiles.core.rule_classify import RuleClass, classify_rule
-
-    if not rule_md.is_file():
-        return []
-
-    rule_class = classify_rule(rule_md)
-    if rule_class is RuleClass.DESCRIPTION_ONLY:
-        target = paths.project_codex_skills_dir(project_root) / f"rule-{rule_md.stem}"
-        return [(rule_md, target)]
-
-    agents_md_paths = rule_block_targets(rule_md, project_root, rule_class.value)
-    return [(rule_md, agents_md) for agents_md in agents_md_paths]
-
-
-def _codex_pair_for(
-    element_type: ElementType, name: str, source: Path, project_root: Path, raw: str
-) -> list[tuple[Path, Path]]:
-    """Return the ``(source, target)`` pairs for one Codex element.
-
-    Codex skills land under ``.agents/skills/<name>/`` and Codex agents
-    under ``.codex/agents/<name>.toml`` — two distinct roots, unlike the
-    single ``.claude`` tree. A rule dispatches by ``RuleClass`` and may
-    map onto several ``AGENTS.md`` files or a synthetic skill (see
-    :func:`_codex_rule_pairs`). Hooks have no Codex surface and raise
-    :class:`ElementError`.
-    """
-    # Imported lazily: ``core.paths`` depends on this module's ``ElementType``,
-    # so a top-level import would cycle.
-    from ai_dotfiles.core import paths
-
-    if element_type is ElementType.SKILL:
-        return [(source, paths.project_codex_skills_dir(project_root) / name)]
-    if element_type is ElementType.AGENT:
-        return [(source, paths.project_codex_agents_dir(project_root) / f"{name}.toml")]
-    if element_type is ElementType.RULE:
-        return _codex_rule_pairs(source, project_root)
-    raise ElementError(
-        f"Element type {element_type.value!r} has no Codex target surface "
-        f"(specifier {raw!r})."
-    )
-
-
 def _codex_target_pairs(
     element: Element, project_root: Path, catalog: Path
 ) -> list[tuple[Path, Path]]:
-    if element.type is ElementType.DOMAIN:
-        # Expand the domain into its member skills/agents/rules and
-        # resolve each for the Codex target. Hooks have no Codex surface.
-        domain_root = catalog / element.name
-        pairs: list[tuple[Path, Path]] = []
-        for subdir, member_type in (
-            ("skills", ElementType.SKILL),
-            ("agents", ElementType.AGENT),
-            ("rules", ElementType.RULE),
-        ):
-            source_dir = domain_root / subdir
-            if not source_dir.is_dir():
-                continue
-            for entry in sorted(source_dir.iterdir()):
-                if entry.name in _DOMAIN_SKIP_FILES or entry.name.startswith("."):
-                    continue
-                name = entry.stem if member_type is ElementType.AGENT else entry.name
-                pairs.extend(
-                    _codex_pair_for(member_type, name, entry, project_root, element.raw)
-                )
-        return pairs
+    """Return the ``(source, target)`` pairs for the Codex target.
 
-    source = resolve_source_path(element, catalog)
-    return _codex_pair_for(
-        element.type, element.name, source, project_root, element.raw
-    )
+    Delegates to :mod:`ai_dotfiles.core.codex_targets` — the single home
+    of the Codex path layout — flattening its typed
+    ``CodexPair`` / ``CodexRulePlan`` results into plain tuples: a
+    skill/agent/rule-skill pair contributes its rendered target, an
+    always-on / path-scoped rule contributes one pair per ``AGENTS.md``
+    its managed block lands in.
+
+    A standalone rule whose file is absent (e.g. resolving a
+    not-yet-installed element) yields no pairs rather than raising — the
+    classifier needs a readable file.
+    """
+    # Imported lazily: ``codex_targets`` imports Element/ElementType from
+    # this module, so a top-level import would cycle.
+    from ai_dotfiles.core.codex_layout import project_layout
+    from ai_dotfiles.core.codex_targets import iter_codex_pairs, iter_codex_rule_plans
+
+    if (
+        element.type is ElementType.RULE
+        and not resolve_source_path(element, catalog).is_file()
+    ):
+        return []
+
+    layout = project_layout(project_root)
+    pairs: list[tuple[Path, Path]] = [
+        (pair.source, pair.target)
+        for pair in iter_codex_pairs(element, layout, catalog)
+    ]
+    for plan in iter_codex_rule_plans(element, layout, catalog):
+        pairs.extend((plan.source, target) for target in plan.agents_md_paths)
+    return pairs
 
 
 def resolve_target_paths(

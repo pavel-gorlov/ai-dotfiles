@@ -165,3 +165,31 @@ def test_project_codex_resolvers_create_no_directories(tmp_path: Path) -> None:
     paths.project_codex_agents_dir(tmp_path)
     assert not (tmp_path / ".agents").exists()
     assert not (tmp_path / ".codex").exists()
+
+
+def test_project_codex_dir(tmp_path: Path) -> None:
+    assert paths.project_codex_dir(tmp_path) == tmp_path / ".codex"
+
+
+def test_codex_home_defaults_to_home_dot_codex(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    assert paths.codex_home() == tmp_path / ".codex"
+
+
+def test_codex_home_respects_env_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    override = tmp_path / "elsewhere" / "codex"
+    monkeypatch.setenv("CODEX_HOME", str(override))
+    assert paths.codex_home() == override
+
+
+def test_codex_home_ignores_empty_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", "")
+    assert paths.codex_home() == tmp_path / ".codex"

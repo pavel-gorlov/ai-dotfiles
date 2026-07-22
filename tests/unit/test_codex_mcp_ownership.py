@@ -30,9 +30,11 @@ def test_save_sorts_keys(tmp_path: Path) -> None:
     assert text.index('"a"') < text.index('"z"')
 
 
-def test_ownership_path_is_under_dot_codex(tmp_path: Path) -> None:
-    path = mcp_ownership_path(tmp_path)
-    assert path.parent.name == ".codex"
+def test_ownership_path_is_inside_codex_dir(tmp_path: Path) -> None:
+    """The sidecar sits directly in the codex dir (<root>/.codex or $CODEX_HOME)."""
+    codex_dir = tmp_path / ".codex"
+    path = mcp_ownership_path(codex_dir)
+    assert path.parent == codex_dir
     assert path.name == ".ai-dotfiles-mcp-ownership.json"
 
 
@@ -49,7 +51,7 @@ def test_delete_silent_when_absent(tmp_path: Path) -> None:
 
 def test_load_invalid_json_raises(tmp_path: Path) -> None:
     path = mcp_ownership_path(tmp_path)
-    path.parent.mkdir(parents=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{not json", encoding="utf-8")
     with pytest.raises(ConfigError, match="Invalid JSON"):
         load_mcp_ownership(tmp_path)
@@ -57,7 +59,7 @@ def test_load_invalid_json_raises(tmp_path: Path) -> None:
 
 def test_load_non_object_raises(tmp_path: Path) -> None:
     path = mcp_ownership_path(tmp_path)
-    path.parent.mkdir(parents=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("[1, 2]", encoding="utf-8")
     with pytest.raises(ConfigError, match="JSON object"):
         load_mcp_ownership(tmp_path)
@@ -65,7 +67,7 @@ def test_load_non_object_raises(tmp_path: Path) -> None:
 
 def test_load_malformed_value_raises(tmp_path: Path) -> None:
     path = mcp_ownership_path(tmp_path)
-    path.parent.mkdir(parents=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('{"fs": "not-a-list"}', encoding="utf-8")
     with pytest.raises(ConfigError, match="list of strings"):
         load_mcp_ownership(tmp_path)

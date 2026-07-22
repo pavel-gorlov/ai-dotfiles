@@ -31,8 +31,6 @@ Codex home) without touching the filesystem.
 from __future__ import annotations
 
 import json
-import os
-import shutil
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -40,14 +38,14 @@ from pathlib import Path
 import tomllib
 
 from ai_dotfiles.core import codex_config, codex_install, codex_render, paths
+from ai_dotfiles.core.codex_layout import project_layout
 from ai_dotfiles.core.codex_local_registry import (
     load_local_registry,
     save_local_registry,
 )
 from ai_dotfiles.core.codex_targets import iter_codex_pairs, iter_codex_rule_plans
 from ai_dotfiles.core.elements import Element, ElementType
-from ai_dotfiles.core.errors import AiDotfilesError, LinkError
-from ai_dotfiles.core.frontmatter import parse_frontmatter
+from ai_dotfiles.core.errors import AiDotfilesError
 from ai_dotfiles.core.local_discovery import LocalElement, iter_local_elements
 
 __all__ = [
@@ -58,16 +56,10 @@ __all__ = [
     "migrate_to_codex",
 ]
 
-# Codex enforces a hard cap on a skill's frontmatter ``description``; over the
-# limit the whole skill fails to load (openai/codex issue #13941). A raw Claude
-# description that exceeds it must be trimmed, so such a skill is rendered, not
-# symlinked.
-SKILL_DESCRIPTION_MAX = 1024
-
-# Codex skill ``name``: lowercase letters/digits/hyphens, <= 64 chars, and it
-# must equal the parent folder name (always true for a local element, whose
-# folder *is* its name).
-_SKILL_NAME_MAX = 64
+# Re-exported for compatibility — the cap (and the whole gated-symlink
+# decision) moved to :mod:`ai_dotfiles.core.codex_install` when the global
+# Codex scope started sharing it (see ``skill_symlink_ok``).
+SKILL_DESCRIPTION_MAX = codex_install.SKILL_DESCRIPTION_MAX
 
 
 @dataclass(frozen=True)
@@ -150,12 +142,12 @@ def _migrate_skill(
 ) -> None:
     source_dir = element.source_path
     target_dir = paths.project_codex_skills_dir(project_root) / element.name
-    can_symlink, reason = _skill_symlink_ok(source_dir, element.name)
+    can_symlink, reason = codex_install.skill_symlink_ok(source_dir, element.name)
     skills: dict[str, str] = registry["skills"]  # type: ignore[assignment]
 
     if can_symlink:
         if not dry_run:
-            _relative_symlink(source_dir, target_dir)
+            codex_install.symlink_codex_skill(source_dir, target_dir)
         skills[element.name] = "symlink"
         report.actions.append(
             MigrateAction(
@@ -226,9 +218,10 @@ def _migrate_rule(
 ) -> None:
     parsed = Element(ElementType.RULE, element.name, element.raw)
     catalog = paths.project_claude_dir(project_root)  # .claude mirrors catalog layout
+    layout = project_layout(project_root)
 
     skills: dict[str, str] = registry["skills"]  # type: ignore[assignment]
-    for pair in iter_codex_pairs(parsed, project_root, catalog):
+    for pair in iter_codex_pairs(parsed, layout, catalog):
         if not dry_run:
             codex_install.install_codex_rule_skill(pair.source, pair.target)
         skills[pair.target.name] = "render"
@@ -244,7 +237,7 @@ def _migrate_rule(
         )
 
     rule_blocks: dict[str, list[str]] = registry["rule_blocks"]  # type: ignore[assignment]
-    for plan in iter_codex_rule_plans(parsed, project_root, catalog):
+    for plan in iter_codex_rule_plans(parsed, layout, catalog):
         rule_name = element.name
         if not dry_run:
             codex_install.apply_codex_rule_blocks(plan.source, plan.agents_md_paths)
@@ -277,7 +270,7 @@ def _migrate_instructions(
         report.fallback_changed = "CLAUDE.md" not in current
         return
     report.fallback_changed = codex_config.ensure_project_doc_fallback(
-        project_root, "CLAUDE.md"
+        paths.project_codex_dir(project_root), "CLAUDE.md"
     )
 
 
@@ -319,82 +312,17 @@ def _migrate_user_mcp(project_root: Path, report: MigrateReport, dry_run: bool) 
         current = _current_mcp_names(project_root)
         report.mcp_added.extend(name for name in translated if name not in current)
         return
-    added, _ = codex_config.add_mcp_servers(project_root, translated)
+    added, _ = codex_config.add_mcp_servers(
+        paths.project_codex_dir(project_root), translated
+    )
     report.mcp_added.extend(added)
 
 
 # ── helpers ───────────────────────────────────────────────────────────
 
 
-def _skill_symlink_ok(source_dir: Path, name: str) -> tuple[bool, str]:
-    """Return ``(can_symlink, reason)`` for a local skill.
-
-    A raw ``SKILL.md`` may be symlinked (auto-fresh) only when Codex will load
-    it unchanged: the ``name`` must be valid hyphen-case and the frontmatter
-    ``description`` must be within Codex's hard cap. Otherwise the skill is
-    rendered with the description trim.
-    """
-    if not _valid_skill_name(name):
-        return False, f"name {name!r} is not Codex hyphen-case — rendering instead"
-    skill_md = source_dir / "SKILL.md"
-    try:
-        frontmatter = parse_frontmatter(skill_md.read_text(encoding="utf-8"))
-    except OSError:
-        return False, "SKILL.md unreadable — rendering instead"
-    description = frontmatter.get("description")
-    if isinstance(description, str) and len(description) > SKILL_DESCRIPTION_MAX:
-        return (
-            False,
-            f"description {len(description)} chars > {SKILL_DESCRIPTION_MAX} cap "
-            "— rendering with first-sentence trim",
-        )
-    return True, "symlink (auto-fresh; raw SKILL.md within Codex limits)"
-
-
-def _valid_skill_name(name: str) -> bool:
-    if not name or len(name) > _SKILL_NAME_MAX:
-        return False
-    if name[0] == "-" or name[-1] == "-":
-        return False
-    return all(ch.islower() or ch.isdigit() or ch == "-" for ch in name)
-
-
-def _relative_symlink(source_dir: Path, target_dir: Path) -> str:
-    """Create a relative symlink ``target_dir`` -> ``source_dir`` idempotently.
-
-    The link is relative so it survives the repo being moved or cloned. A
-    stale symlink is repointed; a previously *rendered* managed skill at the
-    target is replaced by the link; a user-authored directory is refused.
-    """
-    try:
-        target_dir.parent.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise LinkError(f"Failed to create {target_dir.parent}: {exc}") from exc
-
-    rel = os.path.relpath(source_dir, target_dir.parent)
-
-    if target_dir.is_symlink():
-        if os.readlink(target_dir) == rel:
-            return "already-linked"
-        target_dir.unlink()
-    elif target_dir.exists():
-        if codex_install.is_managed_skill(target_dir):
-            shutil.rmtree(target_dir)
-        else:
-            raise LinkError(
-                f"{target_dir} exists and is not ai-dotfiles-managed; "
-                "refusing to overwrite a user-authored skill"
-            )
-
-    try:
-        target_dir.symlink_to(rel)
-    except OSError as exc:
-        raise LinkError(f"Failed to symlink {target_dir} -> {rel}: {exc}") from exc
-    return "linked"
-
-
 def _load_config_toml(project_root: Path) -> dict[str, object]:
-    path = codex_config.config_path(project_root)
+    path = codex_config.config_path(paths.project_codex_dir(project_root))
     if not path.is_file():
         return {}
     try:

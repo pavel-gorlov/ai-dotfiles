@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from ai_dotfiles.core.codex_layout import global_layout, project_layout
 from ai_dotfiles.core.codex_targets import (
     codex_skipped_domain_subdirs,
+    global_demoted_rules,
     iter_codex_pairs,
     iter_codex_rule_plans,
 )
@@ -42,7 +46,7 @@ def test_standalone_skill_yields_one_skill_pair(tmp_path: Path) -> None:
     _write(catalog / "skills" / "commit" / "SKILL.md", _SKILL_MD)
     element = parse_element("skill:commit")
 
-    pairs = iter_codex_pairs(element, tmp_path / "proj", catalog)
+    pairs = iter_codex_pairs(element, project_layout(tmp_path / "proj"), catalog)
 
     assert len(pairs) == 1
     assert pairs[0].element_type is ElementType.SKILL
@@ -54,7 +58,7 @@ def test_standalone_agent_yields_one_agent_pair(tmp_path: Path) -> None:
     _write(catalog / "agents" / "writer.md", _AGENT_MD)
     element = parse_element("agent:writer")
 
-    pairs = iter_codex_pairs(element, tmp_path / "proj", catalog)
+    pairs = iter_codex_pairs(element, project_layout(tmp_path / "proj"), catalog)
 
     assert len(pairs) == 1
     assert pairs[0].element_type is ElementType.AGENT
@@ -69,14 +73,16 @@ def test_standalone_description_only_rule_yields_synthetic_skill_pair(
     _write(catalog / "rules" / "python.md", _RULE_DESC_ONLY)
     element = parse_element("rule:python")
 
-    pairs = iter_codex_pairs(element, tmp_path / "proj", catalog)
+    pairs = iter_codex_pairs(element, project_layout(tmp_path / "proj"), catalog)
 
     assert len(pairs) == 1
     assert pairs[0].element_type is ElementType.RULE
     assert pairs[0].source == catalog / "rules" / "python.md"
     assert pairs[0].target == (tmp_path / "proj" / ".agents" / "skills" / "rule-python")
     # An always-on / path-scoped rule has no skill pair.
-    assert iter_codex_rule_plans(element, tmp_path / "proj", catalog) == []
+    assert (
+        iter_codex_rule_plans(element, project_layout(tmp_path / "proj"), catalog) == []
+    )
 
 
 def test_standalone_always_on_rule_yields_root_agents_md_plan(
@@ -88,8 +94,8 @@ def test_standalone_always_on_rule_yields_root_agents_md_plan(
     element = parse_element("rule:principles")
     proj = tmp_path / "proj"
 
-    assert iter_codex_pairs(element, proj, catalog) == []
-    plans = iter_codex_rule_plans(element, proj, catalog)
+    assert iter_codex_pairs(element, project_layout(proj), catalog) == []
+    plans = iter_codex_rule_plans(element, project_layout(proj), catalog)
 
     assert len(plans) == 1
     assert plans[0].rule_class == "always_on"
@@ -105,11 +111,11 @@ def test_standalone_path_scoped_rule_yields_nested_agents_md_plan(
     element = parse_element("rule:api")
     proj = tmp_path / "proj"
 
-    plans = iter_codex_rule_plans(element, proj, catalog)
+    plans = iter_codex_rule_plans(element, project_layout(proj), catalog)
 
     assert len(plans) == 1
     assert plans[0].rule_class == "path_scoped"
-    assert plans[0].agents_md_paths == [(proj / "src" / "api" / "AGENTS.md")]
+    assert plans[0].agents_md_paths == [proj / "src" / "api" / "AGENTS.md"]
 
 
 # ── iter_codex_pairs: domain expansion ─────────────────────────────
@@ -122,7 +128,7 @@ def test_domain_expands_skills_and_agents(tmp_path: Path) -> None:
     _write(domain / "agents" / "reviewer.md", _AGENT_MD)
     element = parse_element("@gitflow")
 
-    pairs = iter_codex_pairs(element, tmp_path / "proj", catalog)
+    pairs = iter_codex_pairs(element, project_layout(tmp_path / "proj"), catalog)
     kinds = sorted(p.element_type.value for p in pairs)
 
     assert kinds == ["agent", "skill"]
@@ -139,8 +145,8 @@ def test_domain_expands_rules_into_codex_surfaces(tmp_path: Path) -> None:
     element = parse_element("@python")
     proj = tmp_path / "proj"
 
-    pairs = iter_codex_pairs(element, proj, catalog)
-    plans = iter_codex_rule_plans(element, proj, catalog)
+    pairs = iter_codex_pairs(element, project_layout(proj), catalog)
+    plans = iter_codex_rule_plans(element, project_layout(proj), catalog)
 
     # The skill member plus the description-only rule's synthetic skill.
     kinds = sorted(p.element_type.value for p in pairs)
@@ -157,7 +163,7 @@ def test_domain_metadata_files_are_not_members(tmp_path: Path) -> None:
     _write(domain / "agents" / "README.md", "readme\n")
     element = parse_element("@gitflow")
 
-    pairs = iter_codex_pairs(element, tmp_path / "proj", catalog)
+    pairs = iter_codex_pairs(element, project_layout(tmp_path / "proj"), catalog)
 
     assert len(pairs) == 1
     assert pairs[0].element_type is ElementType.SKILL
@@ -189,3 +195,74 @@ def test_skipped_subdirs_empty_when_none_present(tmp_path: Path) -> None:
 def test_skipped_subdirs_empty_for_standalone_element(tmp_path: Path) -> None:
     element = parse_element("skill:commit")
     assert codex_skipped_domain_subdirs(element, tmp_path / "catalog") == []
+
+
+# ── global layout: $CODEX_HOME paths + rule demotion ───────────────
+
+
+def test_global_layout_targets_codex_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Skill/agent targets land under $CODEX_HOME at global scope."""
+    codex_home = tmp_path / "codex-home"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    catalog = tmp_path / "catalog"
+    _write(catalog / "skills" / "commit" / "SKILL.md", _SKILL_MD)
+    _write(catalog / "agents" / "writer.md", _AGENT_MD)
+
+    layout = global_layout()
+    skill_pairs = iter_codex_pairs(parse_element("skill:commit"), layout, catalog)
+    agent_pairs = iter_codex_pairs(parse_element("agent:writer"), layout, catalog)
+
+    assert skill_pairs[0].target == codex_home / "skills" / "commit"
+    assert agent_pairs[0].target == codex_home / "agents" / "writer.toml"
+    assert layout.codex_dir == codex_home
+    assert layout.root_agents_md == codex_home / "AGENTS.md"
+    assert layout.project_root is None
+
+
+def test_global_always_on_rule_plans_global_agents_md(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An always-on rule's single global block target is $CODEX_HOME/AGENTS.md."""
+    codex_home = tmp_path / "codex-home"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    catalog = tmp_path / "catalog"
+    _write(catalog / "rules" / "principles.md", _RULE_ALWAYS_ON)
+    element = parse_element("rule:principles")
+
+    plans = iter_codex_rule_plans(element, global_layout(), catalog)
+
+    assert len(plans) == 1
+    assert plans[0].rule_class == "always_on"
+    assert plans[0].agents_md_paths == [codex_home / "AGENTS.md"]
+
+
+def test_global_path_scoped_rule_demotes_to_rule_skill(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No project tree at global scope — a path-scoped rule becomes a skill."""
+    codex_home = tmp_path / "codex-home"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    catalog = tmp_path / "catalog"
+    _write(catalog / "rules" / "api.md", _RULE_PATH_SCOPED)
+    element = parse_element("rule:api")
+    layout = global_layout()
+
+    pairs = iter_codex_pairs(element, layout, catalog)
+    plans = iter_codex_rule_plans(element, layout, catalog)
+
+    assert plans == []
+    assert len(pairs) == 1
+    assert pairs[0].element_type is ElementType.RULE
+    assert pairs[0].target == codex_home / "skills" / "rule-api"
+    assert global_demoted_rules(element, catalog) == ["api"]
+
+
+def test_global_demoted_rules_empty_for_other_classes(tmp_path: Path) -> None:
+    catalog = tmp_path / "catalog"
+    _write(catalog / "rules" / "style.md", _RULE_DESC_ONLY)
+    _write(catalog / "rules" / "principles.md", _RULE_ALWAYS_ON)
+
+    assert global_demoted_rules(parse_element("rule:style"), catalog) == []
+    assert global_demoted_rules(parse_element("rule:principles"), catalog) == []

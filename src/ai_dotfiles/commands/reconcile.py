@@ -25,10 +25,21 @@ from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
     help="Report drift and exit non-zero if any is found; write nothing "
     "(for CI / pre-commit).",
 )
-def reconcile(check: bool) -> None:
+@click.option(
+    "-g",
+    "--global",
+    "is_global",
+    is_flag=True,
+    help="Reconcile the global (user-scope) Codex artefacts in $CODEX_HOME "
+    "instead of the project ones.",
+)
+def reconcile(check: bool, is_global: bool) -> None:
     """Regenerate stale or missing Codex artefacts (--check to gate CI)."""
     try:
-        _run_reconcile(check=check)
+        if is_global:
+            _run_reconcile_global(check=check)
+        else:
+            _run_reconcile(check=check)
     except AiDotfilesError as exc:
         ui.error(str(exc))
         raise SystemExit(exc.exit_code) from exc
@@ -52,7 +63,25 @@ def _run_reconcile(*, check: bool) -> None:
     _print_report(report)
 
 
-def _print_report(report: ReconcileReport) -> None:
+def _run_reconcile_global(*, check: bool) -> None:
+    manifest_path = paths.global_manifest_path()
+    targets = manifest.get_targets(manifest_path)
+    if "codex" not in targets:
+        ui.info(
+            "Codex is not a global target — nothing to reconcile. "
+            '(Add "codex" to "targets" in global.json to opt in.)'
+        )
+        return
+    packages = manifest.get_packages(manifest_path)
+    report = codex_reconcile.reconcile_codex_global(
+        packages, paths.catalog_dir(), check_only=check
+    )
+    _print_report(report, fix_cmd="ai-dotfiles reconcile -g")
+
+
+def _print_report(
+    report: ReconcileReport, fix_cmd: str = "ai-dotfiles reconcile"
+) -> None:
     if not report.drift:
         ui.info("Codex artefacts up to date.")
         return
@@ -63,9 +92,7 @@ def _print_report(report: ReconcileReport) -> None:
 
     if report.check_only:
         noun = "artefact" if len(report.drift) == 1 else "artefacts"
-        ui.info(
-            f"{len(report.drift)} stale/missing {noun}. Run 'ai-dotfiles reconcile'."
-        )
+        ui.info(f"{len(report.drift)} stale/missing {noun}. Run '{fix_cmd}'.")
         raise SystemExit(1)
 
     noun = "artefact" if len(report.drift) == 1 else "artefacts"

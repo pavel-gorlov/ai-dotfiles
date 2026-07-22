@@ -105,13 +105,17 @@ class HooksResult:
         )
 
 
-def hooks_path(project_root: Path) -> Path:
-    """Return the project Codex hooks path (``<root>/.codex/hooks.json``)."""
-    return project_root / ".codex" / HOOKS_FILENAME
+def hooks_path(codex_dir: Path) -> Path:
+    """Return the Codex hooks path inside ``codex_dir``.
+
+    ``codex_dir`` is the directory holding ``hooks.json`` — project
+    scope passes ``<root>/.codex``, the global scope ``$CODEX_HOME``.
+    """
+    return codex_dir / HOOKS_FILENAME
 
 
-def _ownership_path(project_root: Path) -> Path:
-    return project_root / ".codex" / _OWNERSHIP_FILENAME
+def _ownership_path(codex_dir: Path) -> Path:
+    return codex_dir / _OWNERSHIP_FILENAME
 
 
 def _translate_handler(handler: dict[str, Any]) -> dict[str, Any] | None:
@@ -220,8 +224,8 @@ def _load_hooks_file(path: Path) -> dict[str, list[dict[str, Any]]]:
     return hooks if isinstance(hooks, dict) else {}
 
 
-def _load_ownership(project_root: Path) -> set[str]:
-    path = _ownership_path(project_root)
+def _load_ownership(codex_dir: Path) -> set[str]:
+    path = _ownership_path(codex_dir)
     if not path.is_file():
         return set()
     try:
@@ -231,10 +235,10 @@ def _load_ownership(project_root: Path) -> set[str]:
     return set(data) if isinstance(data, list) else set()
 
 
-def _save_ownership(project_root: Path, signatures: set[str]) -> None:
-    path = _ownership_path(project_root)
+def _save_ownership(codex_dir: Path, signatures: set[str]) -> None:
+    path = _ownership_path(codex_dir)
     if not signatures:
-        _delete_ownership(project_root)
+        _delete_ownership(codex_dir)
         return
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -245,9 +249,9 @@ def _save_ownership(project_root: Path, signatures: set[str]) -> None:
         raise LinkError(f"Failed to write hooks ownership {path}: {exc}") from exc
 
 
-def _delete_ownership(project_root: Path) -> None:
+def _delete_ownership(codex_dir: Path) -> None:
     try:
-        _ownership_path(project_root).unlink()
+        _ownership_path(codex_dir).unlink()
     except FileNotFoundError:
         return
     except OSError as exc:  # pragma: no cover - unreadable sidecar
@@ -263,7 +267,7 @@ def _write_hooks_file(path: Path, hooks: dict[str, list[dict[str, Any]]]) -> Non
 
 
 def write_codex_hooks(
-    project_root: Path, fragment_paths: list[tuple[str, Path]]
+    codex_dir: Path, fragment_paths: list[tuple[str, Path]]
 ) -> HooksResult:
     """Emit domain hooks into ``.codex/hooks.json``, preserving user hooks.
 
@@ -277,9 +281,9 @@ def write_codex_hooks(
         LinkError: if the file cannot be written.
     """
     domain_hooks, skipped_by_domain = build_codex_hooks(fragment_paths)
-    path = hooks_path(project_root)
+    path = hooks_path(codex_dir)
     existing_hooks = _load_hooks_file(path)
-    prev_sigs = _load_ownership(project_root)
+    prev_sigs = _load_ownership(codex_dir)
 
     result_hooks: dict[str, list[dict[str, Any]]] = {}
     for event, groups in existing_hooks.items():
@@ -303,7 +307,7 @@ def write_codex_hooks(
             path.unlink()
     except OSError as exc:
         raise LinkError(f"Failed to write Codex hooks {path}: {exc}") from exc
-    _save_ownership(project_root, new_sigs)
+    _save_ownership(codex_dir, new_sigs)
 
     if not new_sigs:
         status = "removed" if prev_sigs else "updated"
@@ -314,17 +318,17 @@ def write_codex_hooks(
     return HooksResult(status, skipped_by_domain)
 
 
-def strip_codex_hooks(project_root: Path) -> bool:
+def strip_codex_hooks(codex_dir: Path) -> bool:
     """Remove only domain-owned groups from ``.codex/hooks.json``.
 
     User-authored groups survive; a file left empty is deleted. Returns
     ``True`` if the file was rewritten or deleted, ``False`` if there was
     nothing to strip.
     """
-    prev_sigs = _load_ownership(project_root)
-    path = hooks_path(project_root)
+    prev_sigs = _load_ownership(codex_dir)
+    path = hooks_path(codex_dir)
     if not path.is_file() or not prev_sigs:
-        _delete_ownership(project_root)
+        _delete_ownership(codex_dir)
         return False
 
     existing_hooks = _load_hooks_file(path)
@@ -343,5 +347,5 @@ def strip_codex_hooks(project_root: Path) -> bool:
             path.unlink()
     except OSError as exc:
         raise LinkError(f"Failed to strip Codex hooks {path}: {exc}") from exc
-    _delete_ownership(project_root)
+    _delete_ownership(codex_dir)
     return True
