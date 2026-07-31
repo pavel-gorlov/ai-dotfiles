@@ -1,10 +1,5 @@
 # ai-dotfiles
 
-> [!WARNING]
-> **🚧 This package is not published yet.** `pipx install ai-dotfiles` does not work
-> yet — run the tool **locally in dev mode** from source instead.
-> See the [Development](#development) section.
-
 Package manager for Claude Code configuration. Like `npm` for your AI coding setup.
 
 Keep a small `ai-dotfiles.json` in each project, `install` on a new machine, and the
@@ -13,16 +8,30 @@ single catalog stored under `~/.ai-dotfiles/`.
 
 ## Install
 
-Recommended (isolated global install):
+### Homebrew (recommended)
+
+Works on macOS and Linux (Linuxbrew):
 
 ```bash
-pipx install ai-dotfiles
+brew install pavel-gorlov/tap/ai-dotfiles
 ```
 
-Or from source:
+The formula lives in
+[pavel-gorlov/homebrew-tap](https://github.com/pavel-gorlov/homebrew-tap).
+
+### pipx / uv
+
+Not on PyPI yet — install straight from GitHub:
 
 ```bash
-git clone https://github.com/psgorlov/ai-dotfiles.git
+pipx install git+https://github.com/pavel-gorlov/ai-dotfiles.git
+# or: uv tool install git+https://github.com/pavel-gorlov/ai-dotfiles.git
+```
+
+### From source
+
+```bash
+git clone https://github.com/pavel-gorlov/ai-dotfiles.git
 cd ai-dotfiles
 poetry install
 poetry run ai-dotfiles --help
