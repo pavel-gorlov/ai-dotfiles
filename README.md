@@ -1,14 +1,15 @@
 # ai-dotfiles
 
-Package manager for Claude Code configuration. Like `npm` for your AI coding setup.
+Package manager for Claude Code and OpenAI Codex CLI configuration. Like `npm`
+for your AI coding setup.
 
 Keep a small `ai-dotfiles.json` in each project, `install` on a new machine, and the
 full `.claude/` tree (skills, agents, rules, hooks, settings) is restored from a
 single catalog stored under `~/.ai-dotfiles/`.
 
-Works with **OpenAI Codex CLI** too: add `"targets": ["claude", "codex"]` to the
-manifest and the same catalog renders skills, agents, rules, hooks and MCP servers
-for both tools — see [Multi-target support](#multi-target-support-codex-cli).
+One catalog, two targets: add `"targets": ["claude", "codex"]` to the manifest
+and the same skills, agents, rules, hooks and MCP servers render for both tools —
+see [Multi-target support](#multi-target-support-codex-cli).
 
 ## Install
 
