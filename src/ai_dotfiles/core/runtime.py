@@ -146,11 +146,25 @@ def _shim_owner(path: Path) -> str | None:
     return None
 
 
+def _portable_path(path: Path) -> str:
+    """Render *path* for a shim so the home dir is resolved at runtime.
+
+    Baking the absolute home path breaks the shim on any machine with a
+    different home dir (issue #5). Paths outside home — e.g. a custom
+    ``AI_DOTFILES_HOME`` — have no portable spelling and stay absolute.
+    """
+    try:
+        rel = path.relative_to(Path.home())
+    except ValueError:
+        return str(path)
+    return f"$(cd ~ && pwd)/{rel}"
+
+
 def _render_shim(domain_name: str, target: Path, python: Path | None) -> str:
     if python is not None:
-        exec_line = f'exec "{python}" "{target}" "$@"\n'
+        exec_line = f'exec "{_portable_path(python)}" "{_portable_path(target)}" "$@"\n'
     else:
-        exec_line = f'exec "{target}" "$@"\n'
+        exec_line = f'exec "{_portable_path(target)}" "$@"\n'
     return (
         "#!/bin/sh\n"
         f"{_SHIM_HEADER}\n"

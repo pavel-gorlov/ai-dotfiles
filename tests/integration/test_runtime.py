@@ -9,6 +9,9 @@ production code path.
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -147,6 +150,59 @@ def test_provision_no_python_uses_direct_shim(
     shim_body = (tmp_storage / "bin" / "hello.sh").read_text(encoding="utf-8")
     target = (catalog / "tools" / "bin" / "hello.sh").resolve()
     assert f'exec "{target}"' in shim_body
+
+
+@pytest.mark.integration
+def test_shim_home_paths_resolved_at_runtime(
+    tmp_storage: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Paths under home are baked as $(cd ~ && pwd)/<rel>, not absolute (issue #5)."""
+    catalog = tmp_storage / "catalog"
+    _write_domain(
+        catalog,
+        "taskmanager",
+        requires={"python": ["click>=8"]},
+        bin_files={"tm": "#!/usr/bin/env python3\n"},
+    )
+    _install_subprocess_fake(monkeypatch)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    runtime.provision_domain_runtime(catalog, "taskmanager")
+
+    body = (tmp_storage / "bin" / "tm").read_text(encoding="utf-8")
+    assert str(tmp_path) not in body
+    assert '"$(cd ~ && pwd)/.ai-dotfiles/venvs/taskmanager/bin/python"' in body
+    assert '"$(cd ~ && pwd)/.ai-dotfiles/catalog/taskmanager/bin/tm"' in body
+
+
+@pytest.mark.integration
+def test_shim_survives_home_relocation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The issue #5 scenario: moving the home dir must not break shims."""
+    home_a = tmp_path / "home-a"
+    storage = home_a / ".ai-dotfiles"
+    storage.mkdir(parents=True)
+    monkeypatch.setenv("AI_DOTFILES_HOME", str(storage))
+    monkeypatch.setattr(Path, "home", lambda: home_a)
+    catalog = storage / "catalog"
+    _write_domain(catalog, "tools", bin_files={"hello.sh": "#!/bin/sh\necho hi\n"})
+    # No subprocess fake: a bin-only domain provisions without subprocess,
+    # and the fake would shadow the real subprocess.run used below.
+
+    runtime.provision_domain_runtime(catalog, "tools")
+
+    home_b = tmp_path / "home-b"
+    shutil.move(str(home_a), str(home_b))
+    shim = home_b / ".ai-dotfiles" / "bin" / "hello.sh"
+    proc = subprocess.run(
+        [str(shim)],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "HOME": str(home_b)},
+    )
+    assert proc.returncode == 0
+    assert proc.stdout.strip() == "hi"
 
 
 @pytest.mark.integration
