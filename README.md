@@ -6,6 +6,10 @@ Keep a small `ai-dotfiles.json` in each project, `install` on a new machine, and
 full `.claude/` tree (skills, agents, rules, hooks, settings) is restored from a
 single catalog stored under `~/.ai-dotfiles/`.
 
+Works with **OpenAI Codex CLI** too: add `"targets": ["claude", "codex"]` to the
+manifest and the same catalog renders skills, agents, rules, hooks and MCP servers
+for both tools — see [Multi-target support](#multi-target-support-codex-cli).
+
 ## Install
 
 ### Homebrew (recommended)
