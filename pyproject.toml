@@ -84,5 +84,7 @@ exclude_lines = [
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.1.0"
+version_provider = "poetry"
 tag_format = "v$version"
+version_files = ["src/ai_dotfiles/__init__.py:__version__"]
+update_changelog_on_bump = true
