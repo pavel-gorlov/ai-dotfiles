@@ -24,6 +24,7 @@ from ai_dotfiles.core import (
     codex_global,
     codex_install,
     codex_migrate,
+    codex_rules,
     elements,
     paths,
     settings_merge,
@@ -233,6 +234,11 @@ def _reconcile_config(
         if not check_only:
             codex_config.write_codex_config(codex_dir, settings_pairs)
             codex_config.write_codex_mcp(codex_dir, mcp_pairs)
+
+    if codex_rules.rules_state(codex_dir, settings_pairs) in ("stale", "missing"):
+        report.drift.append(f"rules/{codex_rules.RULES_FILENAME}")
+        if not check_only:
+            codex_rules.write_codex_rules(codex_dir, settings_pairs)
 
 
 # ── local (migrate-origin) artefacts ──────────────────────────────────

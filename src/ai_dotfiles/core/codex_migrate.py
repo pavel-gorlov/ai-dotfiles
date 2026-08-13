@@ -37,7 +37,14 @@ from pathlib import Path
 
 import tomllib
 
-from ai_dotfiles.core import codex_config, codex_install, codex_render, paths
+from ai_dotfiles.core import (
+    codex_config,
+    codex_install,
+    codex_render,
+    codex_rules,
+    paths,
+    settings_merge,
+)
 from ai_dotfiles.core.codex_layout import project_layout
 from ai_dotfiles.core.codex_local_registry import (
     load_local_registry,
@@ -122,6 +129,7 @@ def migrate_to_codex(
 
     _migrate_instructions(project_root, report, dry_run)
     _migrate_user_mcp(project_root, report, dry_run)
+    _migrate_permissions(project_root, packages, report, dry_run)
     report.claude_only.extend(claude_only_surfaces(project_root))
 
     if not dry_run:
@@ -351,6 +359,90 @@ def _rellabel(path: Path, project_root: Path) -> str:
         return str(path.relative_to(project_root))
     except ValueError:
         return path.name
+
+
+def _local_permissions(project_root: Path) -> dict[str, list[str]]:
+    """Merge the project's own ``permissions`` from both settings files.
+
+    ``settings.json`` is mostly ai-dotfiles' own merge of catalog
+    fragments, but users add entries to it by hand too; ``settings.local.json``
+    is never written by ai-dotfiles. Both are read here and the
+    catalog-derived rules are subtracted later, so whatever is left is
+    genuinely the project's own.
+    """
+    claude_dir = paths.project_claude_dir(project_root)
+    merged: dict[str, list[str]] = {}
+    for name in ("settings.json", "settings.local.json"):
+        path = claude_dir / name
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        perms = data.get("permissions")
+        if not isinstance(perms, dict):
+            continue
+        for key in ("allow", "deny", "ask"):
+            values = perms.get(key)
+            if isinstance(values, list):
+                bucket = merged.setdefault(key, [])
+                bucket += [v for v in values if isinstance(v, str) and v not in bucket]
+    return merged
+
+
+def _migrate_permissions(
+    project_root: Path,
+    packages: list[str] | None,
+    report: MigrateReport,
+    dry_run: bool,
+) -> None:
+    """Translate the project's own allow-lists into the Codex exec policy.
+
+    ``install`` renders the *catalog* permission lists; a project's own
+    entries (in ``settings.json`` beyond the merged fragments, and every
+    entry in ``settings.local.json``) had no Codex home at all and used to
+    vanish without a word. They now become ``prefix_rule`` entries in
+    ``.codex/rules/ai-dotfiles-local.rules`` — except the ones that cannot
+    be expressed without granting more than the user did, which are
+    reported as Claude-only.
+    """
+    permissions = _local_permissions(project_root)
+    if not permissions:
+        return
+
+    fragment_pairs = [
+        (path.parent.name, path)
+        for path in settings_merge.collect_domain_fragments(
+            list(packages or []), paths.catalog_dir()
+        )
+    ]
+    exclude = codex_rules.catalog_rule_keys(fragment_pairs)
+    codex_dir = paths.project_codex_dir(project_root)
+
+    if dry_run:
+        rules, skipped = codex_rules.translate_permissions(permissions)
+        rules = [r for r in rules if (r.pattern, r.decision) not in exclude]
+    else:
+        _, rules, skipped = codex_rules.write_local_codex_rules(
+            codex_dir, permissions, exclude
+        )
+
+    if rules:
+        report.actions.append(
+            MigrateAction(
+                ElementType.RULE,
+                "permissions",
+                "exec-policy",
+                f".codex/rules/{codex_rules.LOCAL_RULES_FILENAME}",
+                "MECHANICAL",
+                f"{len(rules)} project allow-list entr"
+                f"{'y' if len(rules) == 1 else 'ies'} -> prefix_rule",
+            )
+        )
+
+    for skip in skipped:
+        report.claude_only.append((f"permission {skip.entry}", skip.reason))
 
 
 def claude_only_surfaces(project_root: Path) -> list[tuple[str, str]]:

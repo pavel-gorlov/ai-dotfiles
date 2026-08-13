@@ -23,6 +23,7 @@ from ai_dotfiles.commands._codex_config_writer import (
     write_codex_config,
     write_codex_hooks,
     write_codex_mcp,
+    write_codex_rules,
 )
 from ai_dotfiles.core import (
     claude_copy,
@@ -478,6 +479,7 @@ def _install_codex_target(
     write_codex_config(packages, codex_dir, catalog)
     write_codex_mcp(packages, codex_dir, catalog)
     write_codex_hooks(packages, codex_dir, catalog)
+    write_codex_rules(packages, codex_dir, catalog)
 
     if prune:
         # Local-origin artefacts (created by `ai-dotfiles migrate`) are not
@@ -576,6 +578,7 @@ def _install_codex_global(
     write_codex_config(packages, layout.codex_dir, catalog)
     write_codex_mcp(packages, layout.codex_dir, catalog)
     write_codex_hooks(packages, layout.codex_dir, catalog)
+    write_codex_rules(packages, layout.codex_dir, catalog)
     if ensure_project_doc_fallback(layout.codex_dir, "CLAUDE.md"):
         ui.success("config.toml (project_doc_fallback_filenames += CLAUDE.md)")
 

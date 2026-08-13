@@ -214,8 +214,41 @@ Absent `link_mode` field → `"symlink"`. Every existing manifest keeps byte-ide
 | `agent:name` or domain agent | `.codex/agents/<name>.toml` | Generated TOML (`name`, `description`, `developer_instructions`) — a committed project artefact. A frontmatter `model` is **not** carried over: see below |
 | `rule:name` or domain `rules/` member | See rule classes below | Dispatched by rule frontmatter — three possible outputs |
 | Domain `hooks/` members | `.codex/hooks.json` references them | Scripts stay in `.claude/hooks/`; the hook entries in `hooks.json` reference them (an info note reminds you to keep the Claude target installed so they resolve) |
-| Domain `settings.fragment.json` | `.codex/config.toml` `[ai_dotfiles]` + `.codex/hooks.json` | `permissions` / `sandbox` → config.toml; `hooks` → hooks.json (translated to Codex's hook harness) |
+| Domain `settings.fragment.json` | `.codex/config.toml` `[ai_dotfiles]` + `.codex/hooks.json` + `.codex/rules/ai-dotfiles.rules` | `permissions` → exec-policy `prefix_rule` entries (see below) and, as a record of the source lists, the `[ai_dotfiles]` table; `sandbox` → config.toml; `hooks` → hooks.json |
 | Domain `mcp.fragment.json` | `.codex/config.toml` `[mcp_servers]` table | Each server entry written as a `[mcp_servers.<name>]` sub-table; ownership in `.codex/.ai-dotfiles-mcp-ownership.json` |
+
+#### Permissions → the Codex exec policy
+
+Claude gates shell commands with `permissions` entries (`Bash(git fetch:*)`). Codex gates them with an **exec policy**: Starlark `.rules` files scanned from a `rules/` directory — `<repo>/.codex/rules/` at project scope, `$CODEX_HOME/rules/` at global scope.
+
+ai-dotfiles writes two files there and never touches a third:
+
+| File | Written by | Contents |
+|---|---|---|
+| `ai-dotfiles.rules` | `install` / `add` / `remove` | catalog domain permission lists |
+| `ai-dotfiles-local.rules` | `migrate` | the project's own entries (`settings.local.json`, plus anything hand-added to `settings.json`), minus what the catalog already covers |
+| `default.rules` | **Codex itself** | the approvals you grant in the TUI — ai-dotfiles never writes it |
+
+```python
+prefix_rule(
+    pattern = ["git", "fetch"],
+    decision = "allow",
+    justification = "ai-dotfiles: Bash(git fetch:*)",
+)
+```
+
+`allow` → `allow`, `deny` → `forbidden`, `ask` → `prompt`. Layers merge by *most restrictive* (`forbidden` > `prompt` > `allow`). Codex echoes the `justification` verbatim when it blocks a command, so a block names the catalog entry that caused it.
+
+**Entries that would grant more than you wrote are not translated.** `prefix_rule` matches a token prefix, so `Bash(pg_isready)` — an exact command — would become "`pg_isready` with any arguments". Rather than quietly widen a grant, these are reported and left out:
+
+- an exact command with no trailing `*`;
+- an argument list with shell syntax (quotes, pipes, redirects) — `Bash(curl … -d '{…}')`;
+- a wildcard anywhere but the end;
+- a non-`Bash` tool (`Read()`, `WebFetch()`, `mcp__*`) — the exec policy governs command execution only.
+
+`status` reports the file as `STALE (permissions changed)` when the fragments no longer match it; `install` and `reconcile` regenerate.
+
+Caveat inherited from Codex: the **project** layer loads only once the project is trusted, exactly like `.codex/config.toml`. Until then only the user-scope rules apply.
 
 #### Agent `model` pins are dropped
 

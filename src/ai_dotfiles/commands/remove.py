@@ -13,6 +13,7 @@ from ai_dotfiles.core import (
     codex_config,
     codex_hooks,
     codex_install,
+    codex_rules,
     manifest,
     symlinks,
 )
@@ -190,6 +191,14 @@ def _rebuild_codex_config(manifest_path: Path, codex_dir: Path, catalog: Path) -
         ui.info("Codex: stripped managed region from config.toml")
     elif result.status in ("created", "updated"):
         ui.info("Codex: rebuilt config.toml managed region")
+
+    # The exec policy is derived from the same fragments — rebuild it from
+    # whatever domains survive, so a removed domain's prefix rules go away.
+    rules_status, _ = codex_rules.write_codex_rules(codex_dir, fragment_pairs)
+    if rules_status == "removed":
+        ui.info(f"Codex: removed rules/{codex_rules.RULES_FILENAME}")
+    elif rules_status in ("created", "updated"):
+        ui.info(f"Codex: rebuilt rules/{codex_rules.RULES_FILENAME}")
 
     mcp_result = codex_config.write_codex_mcp(
         codex_dir, collect_mcp_fragments(packages, catalog)

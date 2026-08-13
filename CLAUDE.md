@@ -52,6 +52,12 @@ Agent `model` frontmatter is deliberately **not** rendered into Codex TOML (Clau
 
 **`ai-dotfiles reconcile`** regenerates the stale/missing artefacts in one pass (`reconcile --check` writes nothing and exits non-zero on drift — a CI / pre-commit gate); `ai-dotfiles install` also regenerates. A note in the agent's commit message (e.g. "run `ai-dotfiles reconcile` in projects that use this agent") is the recommended signal to consumers.
 
+### Permissions → Codex exec policy (`core/codex_rules.py`)
+
+Claude `permissions` lists become Starlark `prefix_rule` entries in `<codex_dir>/rules/`: `ai-dotfiles.rules` (catalog, written by `install`) and `ai-dotfiles-local.rules` (the project's own entries, written by `migrate`). `default.rules` belongs to Codex — never write it. Supersedes ADR ai-1-5's premise that Codex has no per-command permission model; the inert `[ai_dotfiles.permissions]` table stays as a record of the source lists.
+
+**The invariant:** `prefix_rule` is prefix-matched, so it is strictly wider than an exact command. An entry that cannot be expressed without granting more than the user did (exact commands, shell syntax, mid-string wildcards, non-`Bash` tools) is **reported, never approximated**. Don't "improve" this by widening.
+
 ### Local elements → Codex (`migrate`)
 
 `install` renders only catalog elements. A project's own hand-authored `.claude/` skills/agents/rules are carried to Codex by **`ai-dotfiles migrate`** (symlink where the format is unchanged, render where it changes; `CLAUDE.md` bridged via `project_doc_fallback_filenames`; domain hooks emitted to `.codex/hooks.json`). Provenance is tracked in `.codex/.ai-dotfiles-local.json` so `install --prune` keeps migrated artefacts. Core modules: `core/local_discovery.py`, `core/codex_migrate.py`, `core/codex_local_registry.py`, `core/codex_reconcile.py`, `core/codex_hooks.py`.
