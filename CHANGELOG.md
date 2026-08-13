@@ -1,3 +1,9 @@
+## v0.3.1 (2026-08-13)
+
+### Fix
+
+- **codex**: emit relative hook commands, not a non-existent variable
+
 ## v0.3.0 (2026-08-13)
 
 ### Feat
