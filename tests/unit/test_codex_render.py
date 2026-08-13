@@ -9,6 +9,8 @@ import pytest
 import tomllib
 
 from ai_dotfiles.core.codex_render import (
+    AGENT_GENERATOR_VERSION,
+    dropped_model,
     render_agent_toml,
     render_rule_skill_md,
     render_skill_md,
@@ -74,18 +76,36 @@ def test_agent_toml_is_valid_with_all_keys(tmp_path: Path) -> None:
     table = tomllib.loads(body)
     assert table["name"] == "example-agent"
     assert table["description"] == "An example agent demonstrating frontmatter"
-    assert table["model"] == "opus"
     assert "developer_instructions" in table
     assert table["developer_instructions"].startswith("# Example Agent")
     assert "You are a specialized agent" in table["developer_instructions"]
 
 
-def test_agent_toml_omits_model_when_absent(tmp_path: Path) -> None:
-    path = _write(tmp_path, "a.md", _AGENT_NO_MODEL)
-    out = render_agent_toml(path)
-    table = tomllib.loads(out)
+@pytest.mark.parametrize("source", [_AGENT_MD, _AGENT_NO_MODEL])
+def test_agent_toml_never_emits_a_model(tmp_path: Path, source: str) -> None:
+    """A Claude model alias must not reach Codex.
+
+    Codex accepts an unknown model silently and then drops the
+    multi-agent instruction blocks from the session, so a carried-over
+    ``sonnet`` / ``opus`` pin disables the very machinery a subagent
+    needs. Omitting the key inherits the parent session's model.
+    """
+    path = _write(tmp_path, "a.md", source)
+    table = tomllib.loads(render_agent_toml(path))
     assert "model" not in table
-    assert table["name"] == "plain-agent"
+
+
+def test_agent_toml_header_records_generator_version(tmp_path: Path) -> None:
+    path = _write(tmp_path, "a.md", _AGENT_MD)
+    lines = render_agent_toml(path).splitlines()
+    assert lines[0] == "# managed-by: ai-dotfiles"
+    assert lines[1].startswith("# source-sha256: ")
+    assert lines[2] == f"# generator: {AGENT_GENERATOR_VERSION}"
+
+
+def test_dropped_model_reports_the_pin(tmp_path: Path) -> None:
+    assert dropped_model(_write(tmp_path, "a.md", _AGENT_MD)) == "opus"
+    assert dropped_model(_write(tmp_path, "b.md", _AGENT_NO_MODEL)) is None
 
 
 def test_agent_toml_carries_header(tmp_path: Path) -> None:

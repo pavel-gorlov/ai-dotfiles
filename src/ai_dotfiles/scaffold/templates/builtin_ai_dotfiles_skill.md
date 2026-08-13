@@ -211,11 +211,19 @@ Absent `link_mode` field → `"symlink"`. Every existing manifest keeps byte-ide
 | Element | Output path | Format |
 |---------|------------|--------|
 | `skill:name` or domain skill | `.agents/skills/<name>/` | Real directory with a generated `SKILL.md` (first-sentence `description`) + copied support files (`scripts/`, `references/`, `assets/`, …) — the Codex target is fully self-contained, no symlinks into the catalog |
-| `agent:name` or domain agent | `.codex/agents/<name>.toml` | Generated TOML (`name`, `description`, `developer_instructions`, optional `model`) — a committed project artefact |
+| `agent:name` or domain agent | `.codex/agents/<name>.toml` | Generated TOML (`name`, `description`, `developer_instructions`) — a committed project artefact. A frontmatter `model` is **not** carried over: see below |
 | `rule:name` or domain `rules/` member | See rule classes below | Dispatched by rule frontmatter — three possible outputs |
 | Domain `hooks/` members | `.codex/hooks.json` references them | Scripts stay in `.claude/hooks/`; the hook entries in `hooks.json` reference them (an info note reminds you to keep the Claude target installed so they resolve) |
 | Domain `settings.fragment.json` | `.codex/config.toml` `[ai_dotfiles]` + `.codex/hooks.json` | `permissions` / `sandbox` → config.toml; `hooks` → hooks.json (translated to Codex's hook harness) |
 | Domain `mcp.fragment.json` | `.codex/config.toml` `[mcp_servers]` table | Each server entry written as a `[mcp_servers.<name>]` sub-table; ownership in `.codex/.ai-dotfiles-mcp-ownership.json` |
+
+#### Agent `model` pins are dropped
+
+A catalog agent may pin `model: sonnet` / `opus` / `haiku` in its frontmatter. That pin is **not** written to the generated `.toml`, for both targets (`install` and `migrate`).
+
+Codex's model catalog (`codex debug models`) holds only `gpt-*` slugs, so a Claude alias is unknown to it — and Codex does not reject it. An unknown model is accepted silently, and the session is then assembled *without* the multi-agent instruction blocks, so the subagent quietly loses the collaboration machinery it exists to use. The same happens for a family alias like `gpt-5.6`, which the local catalog does not resolve.
+
+With the key omitted, a Codex agent inherits the parent session's model and reasoning effort — the documented default, and the one that stays correct as OpenAI's catalog moves. If a specific model genuinely matters for an agent, set it in `.codex/config.toml` (`[agents.<name>]`) rather than in the catalog source, so it is not overwritten on regeneration.
 
 #### Rule classes for the Codex target
 
@@ -320,9 +328,14 @@ Every generated Codex file starts with:
 ```
 # managed-by: ai-dotfiles
 # source-sha256: <hex>
+# generator: <n>
 ```
 
-The hash is of the source catalog file (UTF-8). `ai-dotfiles status` compares it to the current catalog source and flags the artefact as `STALE (source changed)` when they differ. Run `ai-dotfiles install` to regenerate. User-authored files in the same directories (no `# managed-by` header) are never touched by `add`, `remove`, or `--prune`.
+The hash is of the source catalog file (UTF-8). `ai-dotfiles status` compares it to the current catalog source and flags the artefact as `STALE (source changed)` when they differ.
+
+`generator` is the version of the renderer that produced the file. When ai-dotfiles changes how an artefact is rendered, the *source* is untouched, so the hash alone would report every existing file as fresh forever. A file whose recorded version is behind the current one is flagged `STALE (generator changed)` instead. Either way, `ai-dotfiles install` (or `reconcile`) regenerates.
+
+User-authored files in the same directories (no `# managed-by` header) are never touched by `add`, `remove`, or `--prune`.
 
 `install --prune` also prunes managed Codex artefacts — skills directories and `.toml` files carrying the managed-by header — that are no longer backed by the manifest. Local-origin artefacts (created by `migrate`, recorded in `.codex/.ai-dotfiles-local.json`) are protected from prune.
 

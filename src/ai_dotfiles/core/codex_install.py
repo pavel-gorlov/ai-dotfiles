@@ -40,6 +40,7 @@ from pathlib import Path
 
 from ai_dotfiles.core import agents_md
 from ai_dotfiles.core.codex_render import (
+    AGENT_GENERATOR_VERSION,
     render_agent_toml,
     render_rule_skill_md,
     render_skill_md,
@@ -55,6 +56,7 @@ __all__ = [
     "SKILL_DESCRIPTION_MAX",
     "SKILL_META_FILENAME",
     "apply_codex_rule_blocks",
+    "generator_is_outdated",
     "install_codex_agent",
     "install_codex_rule_skill",
     "install_codex_skill",
@@ -149,10 +151,10 @@ def _read_skill_meta(target_dir: Path) -> dict[str, str] | None:
 
 
 def _read_header_lines(path: Path) -> list[str]:
-    """Return the first two lines of ``path`` (empty list if unreadable)."""
+    """Return the first three lines of ``path`` (empty list if unreadable)."""
     try:
         with path.open(encoding="utf-8") as handle:
-            return [handle.readline().rstrip("\n"), handle.readline().rstrip("\n")]
+            return [handle.readline().rstrip("\n") for _ in range(3)]
     except OSError:
         return []
 
@@ -192,10 +194,40 @@ def _source_sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def generator_is_outdated(generated_path: Path) -> bool:
+    """Return True if an agent ``.toml`` came from an older renderer.
+
+    Lets the status layer say *why* an artefact is stale: the source did
+    not necessarily change — the renderer did. Returns False for any
+    non-agent artefact, which carries no generator marker.
+    """
+    lines = _read_header_lines(generated_path)
+    if len(lines) < 3 or lines[0] != MANAGED_BY_HEADER:
+        return False
+    if not lines[2].startswith("# generator: "):
+        return True
+    return lines[2].removeprefix("# generator: ").strip() != str(
+        AGENT_GENERATOR_VERSION
+    )
+
+
 def _agent_is_stale(generated_path: Path, source_path: Path) -> bool:
-    """Drift check for an agent ``.toml`` — compares the header SHA line."""
+    """Drift check for an agent ``.toml`` — header SHA *and* generator.
+
+    Two independent reasons to regenerate: the catalog source changed, or
+    the renderer that produced this file did. Without the second check a
+    transform change (e.g. dropping the ``model`` pin) would never reach
+    projects whose sources happen to be untouched.
+
+    A file written before the generator line existed has no third header
+    line and is therefore stale, which is the intended migration path.
+    """
     lines = _read_header_lines(generated_path)
     if len(lines) < 2 or not lines[1].startswith("# source-sha256: "):
+        return True
+    if len(lines) < 3 or not lines[2].startswith("# generator: "):
+        return True
+    if lines[2].removeprefix("# generator: ").strip() != str(AGENT_GENERATOR_VERSION):
         return True
     recorded = lines[1].removeprefix("# source-sha256: ").strip()
     try:
