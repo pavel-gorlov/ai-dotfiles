@@ -23,6 +23,7 @@ from ai_dotfiles.core import (
     codex_global,
     codex_install,
     codex_migrate,
+    codex_rules,
     elements,
     manifest,
     paths,
@@ -295,6 +296,7 @@ def _print_codex_target(
     if layout.project_root is None:
         issues += _print_codex_bridge_status(layout)
     issues += _print_codex_config_status(packages, layout.codex_dir, catalog)
+    issues += _print_codex_rules_status(packages, layout.codex_dir, catalog)
 
     if not found_any:
         ui.info("    (no Codex-renderable elements in the manifest)")
@@ -324,6 +326,33 @@ def _print_codex_config_status(
         ui.info(f"    {_OK} {'config.toml'.ljust(28)} OK")
         return 0
     ui.info(f"    {_BROKEN} {'config.toml'.ljust(28)} STALE (fragments changed)")
+    return 1
+
+
+def _print_codex_rules_status(
+    packages: list[str], codex_dir: Path, catalog: Path
+) -> int:
+    """Print the exec-policy ``.rules`` drift status. Return issues.
+
+    Same recompute-and-compare approach as ``config.toml`` — the file is
+    wholly ai-dotfiles-owned, so any divergence from what the current
+    fragments produce is drift.
+    """
+    settings_pairs = [
+        (path.parent.name, path)
+        for path in settings_merge.collect_domain_fragments(packages, catalog)
+    ]
+    label = f"rules/{codex_rules.RULES_FILENAME}"
+    state = codex_rules.rules_state(codex_dir, settings_pairs)
+    if state == "absent":
+        return 0
+    if state == "ok":
+        ui.info(f"    {_OK} {label.ljust(28)} OK")
+        return 0
+    if state == "missing":
+        ui.info(f"    {_MISSING} {label.ljust(28)} NOT INSTALLED")
+        return 1
+    ui.info(f"    {_BROKEN} {label.ljust(28)} STALE (permissions changed)")
     return 1
 
 

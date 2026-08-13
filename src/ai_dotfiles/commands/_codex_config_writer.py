@@ -19,7 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ai_dotfiles import ui
-from ai_dotfiles.core import codex_config, codex_hooks, settings_merge
+from ai_dotfiles.core import codex_config, codex_hooks, codex_rules, settings_merge
 from ai_dotfiles.core.mcp_merge import collect_mcp_fragments
 
 
@@ -54,6 +54,31 @@ def write_codex_config(packages: list[str], codex_dir: Path, catalog: Path) -> N
     # ``hooks`` have no place in config.toml's [ai_dotfiles] table, but they
     # are no longer dropped — write_codex_hooks emits them to
     # .codex/hooks.json. See :func:`write_codex_hooks`.
+
+
+def write_codex_rules(packages: list[str], codex_dir: Path, catalog: Path) -> None:
+    """Translate domain permission lists into the Codex exec policy.
+
+    Claude's ``permissions`` lists become ``prefix_rule`` entries in
+    ``<codex_dir>/rules/ai-dotfiles.rules``. Entries that cannot be
+    expressed as a token prefix without granting *more* than the user
+    did are reported rather than approximated — see
+    :mod:`ai_dotfiles.core.codex_rules`.
+    """
+    result, skipped = codex_rules.write_codex_rules(
+        codex_dir, _codex_fragment_pairs(packages, catalog)
+    )
+    if result == "created":
+        ui.success(f"rules/{codex_rules.RULES_FILENAME} (exec policy created)")
+    elif result == "updated":
+        ui.success(f"rules/{codex_rules.RULES_FILENAME} (exec policy updated)")
+    elif result == "removed":
+        ui.info(f"rules/{codex_rules.RULES_FILENAME} (exec policy removed)")
+
+    for entry, reason in sorted({(s.entry, s.reason) for s in skipped}):
+        ui.warn(
+            f"permission '{entry}' not translated to the Codex exec policy — {reason}."
+        )
 
 
 def write_codex_hooks(packages: list[str], codex_dir: Path, catalog: Path) -> None:
