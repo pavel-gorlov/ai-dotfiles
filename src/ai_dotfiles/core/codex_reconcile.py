@@ -22,6 +22,7 @@ from pathlib import Path
 from ai_dotfiles.core import (
     codex_config,
     codex_global,
+    codex_hooks,
     codex_install,
     codex_migrate,
     codex_rules,
@@ -239,6 +240,11 @@ def _reconcile_config(
         report.drift.append(f"rules/{codex_rules.RULES_FILENAME}")
         if not check_only:
             codex_rules.write_codex_rules(codex_dir, settings_pairs)
+
+    if codex_hooks.hooks_state(codex_dir, settings_pairs) in ("stale", "missing"):
+        report.drift.append(codex_hooks.HOOKS_FILENAME)
+        if not check_only:
+            codex_hooks.write_codex_hooks(codex_dir, settings_pairs)
 
 
 # ── local (migrate-origin) artefacts ──────────────────────────────────

@@ -52,6 +52,10 @@ Agent `model` frontmatter is deliberately **not** rendered into Codex TOML (Clau
 
 **`ai-dotfiles reconcile`** regenerates the stale/missing artefacts in one pass (`reconcile --check` writes nothing and exits non-zero on drift — a CI / pre-commit gate); `ai-dotfiles install` also regenerates. A note in the agent's commit message (e.g. "run `ai-dotfiles reconcile` in projects that use this agent") is the recommended signal to consumers.
 
+### Codex hook commands are relative (`core/codex_hooks.py`)
+
+Codex injects **no** project-root variable into a hook's environment; it spawns each hook with the session root as its working directory (`command_runner.rs`: `.current_dir(cwd)`). So `$CLAUDE_PROJECT_DIR/...` is emitted as a plain relative path. A previous version substituted a guessed `$CODEX_PROJECT_DIR`, which expanded to `""` and made every hook exit 127 — don't reintroduce a variable without verifying it exists in the Codex binary. Windows caveat: hooks run via `COMSPEC` (`cmd.exe`), so `.sh` handlers don't execute there.
+
 ### Permissions → Codex exec policy (`core/codex_rules.py`)
 
 Claude `permissions` lists become Starlark `prefix_rule` entries in `<codex_dir>/rules/`: `ai-dotfiles.rules` (catalog, written by `install`) and `ai-dotfiles-local.rules` (the project's own entries, written by `migrate`). `default.rules` belongs to Codex — never write it. Supersedes ADR ai-1-5's premise that Codex has no per-command permission model; the inert `[ai_dotfiles.permissions]` table stays as a record of the source lists.

@@ -311,7 +311,10 @@ def test_install_global_codex_preserves_foreign_codex_home(
     domain_groups = [g for g in hooks["hooks"]["PreToolUse"] if g != _MOSHI_GROUP]
     assert len(domain_groups) == 1
     command = domain_groups[0]["hooks"][0]["command"]
-    assert command == "$CODEX_PROJECT_DIR/.claude/hooks/g.sh"
+    # Relative — Codex sets no project-root variable and runs hooks from the
+    # session root. (At global scope that root is whatever project the user
+    # is in, which is the same place `.claude/hooks/` lives.)
+    assert command == ".claude/hooks/g.sh"
     agents_md = (codex_home / "AGENTS.md").read_text(encoding="utf-8")
     assert "My own global paragraph." in agents_md
     assert "<!-- ai-dotfiles:rule:principles START -->" in agents_md

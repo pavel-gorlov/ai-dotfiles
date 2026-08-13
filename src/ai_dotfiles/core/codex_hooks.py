@@ -16,10 +16,16 @@ The translation is deliberately conservative:
   e.g. ``Bash(git *)``) has **no** Codex equivalent — Codex matches on the
   tool *name* via ``matcher`` — so it is dropped. The guard script itself
   should self-filter (the ``if`` was a Claude-side optimisation);
-* ``$CLAUDE_PROJECT_DIR`` in a command is rewritten to
-  :data:`_CODEX_PROJECT_VAR`. The referenced scripts live in ``.claude/hooks/``
+* ``$CLAUDE_PROJECT_DIR`` in a command becomes a **relative** path. Codex
+  injects no project-root variable — it spawns each hook with the session
+  root as the working directory instead — so the variable is dropped rather
+  than substituted. The referenced scripts live in ``.claude/hooks/``
   (materialised for the Claude target), so a Codex-only project must also keep
   those scripts available.
+
+Portability note: on Windows Codex runs a hook through ``COMSPEC``
+(``cmd.exe``), not a POSIX shell, so a ``.sh`` script referenced by bare path
+will not execute there whatever the path looks like.
 
 ``.codex/hooks.json`` is a shared file (a user may hand-author project hooks,
 and it coexists with the user-level ``~/.codex/hooks.json`` Codex merges
@@ -68,11 +74,19 @@ CODEX_HOOK_EVENTS: frozenset[str] = frozenset(
     }
 )
 
-# Claude's project-root variable and the Codex substitute used in hook
-# commands. NOTE: isolated here so it is a one-line change if a Codex version
-# names its project-root variable differently.
+# Claude's project-root variable. Codex has no counterpart: it injects no
+# project variable into a hook's environment at all (``command_runner.rs``
+# passes only the handler's own declared ``env``). An earlier version of this
+# module substituted a guessed ``$CODEX_PROJECT_DIR``; it expanded to the
+# empty string, so every hook command became ``/.claude/hooks/<x>.sh`` and
+# died with exit 127.
+#
+# What Codex does give is the working directory: hooks are spawned with
+# ``.current_dir(cwd)`` at the session root. So the variable is dropped and
+# the path left relative — verified on Codex 0.147, where a handler with
+# ``.claude/hooks/probe.sh`` ran with ``PWD`` at the project root while the
+# ``$CODEX_PROJECT_DIR`` sibling failed.
 _CLAUDE_PROJECT_VAR = "$CLAUDE_PROJECT_DIR"
-_CODEX_PROJECT_VAR = "$CODEX_PROJECT_DIR"
 
 
 class HooksResult:
@@ -118,11 +132,27 @@ def _ownership_path(codex_dir: Path) -> Path:
     return codex_dir / _OWNERSHIP_FILENAME
 
 
+def _rewrite_project_dir(command: str) -> str:
+    """Turn a ``$CLAUDE_PROJECT_DIR``-anchored path into a relative one.
+
+    Codex injects no project-root variable, but runs every hook with the
+    session root as its working directory, so dropping the variable (and
+    the separator that followed it) leaves a path that resolves.
+    """
+    if _CLAUDE_PROJECT_VAR not in command:
+        return command
+    out = command.replace(f"{_CLAUDE_PROJECT_VAR}/", "")
+    # A bare ``$CLAUDE_PROJECT_DIR`` with no trailing separator means the
+    # project root itself; ``.`` is its relative spelling.
+    return out.replace(_CLAUDE_PROJECT_VAR, ".")
+
+
 def _translate_handler(handler: dict[str, Any]) -> dict[str, Any] | None:
     """Translate one Claude hook handler to a Codex one, or ``None`` to drop it.
 
     Keeps ``type``/``command``/``timeout``; drops the Claude-only ``if``
-    guard; rewrites ``$CLAUDE_PROJECT_DIR`` in the command.
+    guard; rewrites ``$CLAUDE_PROJECT_DIR`` to a working-directory-relative
+    path (see :func:`_rewrite_project_dir`).
     """
     if handler.get("type") != "command":
         return None
@@ -131,7 +161,7 @@ def _translate_handler(handler: dict[str, Any]) -> dict[str, Any] | None:
         return None
     out: dict[str, Any] = {
         "type": "command",
-        "command": command.replace(_CLAUDE_PROJECT_VAR, _CODEX_PROJECT_VAR),
+        "command": _rewrite_project_dir(command),
     }
     timeout = handler.get("timeout")
     if isinstance(timeout, int | float) and not isinstance(timeout, bool):
@@ -143,11 +173,16 @@ def _translate_group(group: dict[str, Any]) -> dict[str, Any] | None:
     handlers = group.get("hooks")
     if not isinstance(handlers, list):
         return None
-    translated = [
-        t
-        for h in handlers
-        if isinstance(h, dict) and (t := _translate_handler(h)) is not None
-    ]
+    # Dropping the Claude-only ``if`` guard can collapse two handlers that
+    # differed only by it into the same command — Codex would then run the
+    # script twice per tool call. De-duplicate, keeping the first.
+    translated: list[dict[str, Any]] = []
+    for handler in handlers:
+        if not isinstance(handler, dict):
+            continue
+        entry = _translate_handler(handler)
+        if entry is not None and entry not in translated:
+            translated.append(entry)
     if not translated:
         return None
     out: dict[str, Any] = {}
@@ -316,6 +351,41 @@ def write_codex_hooks(
     else:
         status = "updated"
     return HooksResult(status, skipped_by_domain)
+
+
+def hooks_state(codex_dir: Path, fragment_paths: list[tuple[str, Path]]) -> str:
+    """Return the drift state of the domain-owned hook groups.
+
+    ``hooks.json`` is shared with the user (and with the user-level file
+    Codex merges additively), so drift is judged only over the groups the
+    current fragments should produce: every expected group must already be
+    present in the file. A translation change — such as dropping the bogus
+    project-root variable that made every hook exit 127 — changes the
+    group's signature and therefore shows up here, which is what lets
+    ``reconcile`` repair projects whose fragments never moved.
+
+    Returns ``absent`` / ``missing`` / ``stale`` / ``ok``.
+    """
+    expected, _ = build_codex_hooks(fragment_paths)
+    expected_sigs = {
+        _group_signature(event, group)
+        for event, groups in expected.items()
+        for group in groups
+    }
+    if not expected_sigs:
+        return "stale" if _load_ownership(codex_dir) else "absent"
+
+    path = hooks_path(codex_dir)
+    if not path.is_file():
+        return "missing"
+
+    on_disk = _load_hooks_file(path)
+    present = {
+        _group_signature(event, group)
+        for event, groups in on_disk.items()
+        for group in groups
+    }
+    return "ok" if expected_sigs <= present else "stale"
 
 
 def strip_codex_hooks(codex_dir: Path) -> bool:
