@@ -785,7 +785,9 @@ def test_add_emits_domain_hooks_to_codex(project: Path, catalog: Path) -> None:
     data = json.loads(hooks_file.read_text(encoding="utf-8"))
     handler = data["hooks"]["PreToolUse"][0]["hooks"][0]
     assert "if" not in handler  # Claude-only guard dropped
-    assert "$CODEX_PROJECT_DIR" in handler["command"]  # var rewritten
+    # Relative to the session root — Codex sets no project-root variable.
+    assert handler["command"].startswith(".claude/hooks/")
+    assert "PROJECT_DIR" not in handler["command"]
     # An event with no Codex twin is reported, not silently emitted.
     assert "Notification" in (out + err)
 
