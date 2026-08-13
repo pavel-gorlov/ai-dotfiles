@@ -1,3 +1,13 @@
+## v0.3.0 (2026-08-13)
+
+### Feat
+
+- **codex**: translate permission lists into the Codex exec policy
+
+### Fix
+
+- **codex**: stop carrying Claude model pins into Codex agents
+
 ## v0.2.0 (2026-08-11)
 
 ### Feat
