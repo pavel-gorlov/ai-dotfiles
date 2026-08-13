@@ -27,6 +27,7 @@ from ai_dotfiles.core.codex_install import (
     skill_symlink_ok,
     symlink_codex_skill,
 )
+from ai_dotfiles.core.codex_render import source_sha256
 from ai_dotfiles.core.errors import ElementError
 from ai_dotfiles.core.frontmatter import parse_frontmatter
 
@@ -307,6 +308,39 @@ def test_is_stale_true_when_header_absent(tmp_path: Path) -> None:
     source = _write(tmp_path / "a.md", _AGENT_MD)
     no_header = _write(tmp_path / "x.toml", 'name = "x"\n')
     assert is_stale(no_header, source) is True
+
+
+def test_is_stale_true_for_artefact_from_an_older_generator(tmp_path: Path) -> None:
+    """A renderer change must reach projects whose sources never moved.
+
+    This is the migration path for every ``.toml`` generated before the
+    ``model`` pin was dropped: the source SHA still matches, so without
+    the generator check `status` would call these files fresh forever and
+    the stale pin would never be rewritten.
+    """
+    source = _write(tmp_path / "a.md", _AGENT_MD)
+    target = tmp_path / "a.toml"
+    install_codex_agent(source, target)
+    assert is_stale(target, source) is False
+
+    lines = target.read_text(encoding="utf-8").splitlines(keepends=True)
+    assert lines[2].startswith("# generator: ")
+    lines[2] = "# generator: 1\n"
+    target.write_text("".join(lines), encoding="utf-8")
+
+    assert is_stale(target, source) is True
+
+
+def test_is_stale_true_for_pre_generator_header(tmp_path: Path) -> None:
+    """The two-line header shipped in 0.2.0 and earlier — no version line."""
+    source = _write(tmp_path / "a.md", _AGENT_MD)
+    legacy = _write(
+        tmp_path / "legacy.toml",
+        f"# managed-by: ai-dotfiles\n"
+        f"# source-sha256: {source_sha256(_AGENT_MD)}\n"
+        f'name = "example-agent"\n',
+    )
+    assert is_stale(legacy, source) is True
 
 
 def test_is_stale_recognizes_skill_md_drift(tmp_path: Path) -> None:

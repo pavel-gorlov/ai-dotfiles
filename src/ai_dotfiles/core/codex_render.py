@@ -4,16 +4,21 @@ A catalog element is a markdown file with YAML frontmatter. The Codex
 target wants two different on-disk shapes:
 
 * a catalog *agent* ``.md`` becomes a Codex ``.toml`` (frontmatter keys
-  ``name`` / ``description`` / optional ``model`` plus the markdown body
-  as ``developer_instructions``);
+  ``name`` / ``description`` plus the markdown body as
+  ``developer_instructions``);
 * a catalog ``SKILL.md`` is re-emitted with its ``description`` trimmed
   to a single sentence (ADR ai-1-4).
 
 Drift detection (ADR ai-1-1) records the SHA-256 of the *source* file's
-content. The two targets carry that marker differently:
+content plus the version of the renderer that produced the output. The
+source digest alone is not enough: changing a transform here rewrites
+every generated artefact while leaving its source untouched, so a
+source-only comparison would report already-generated files as fresh
+forever. The two targets carry the marker differently:
 
-* an agent ``.toml`` keeps a two-line ``# managed-by`` / ``# source-sha256``
-  comment header — ``#`` is a valid TOML comment;
+* an agent ``.toml`` keeps a three-line ``# managed-by`` /
+  ``# source-sha256`` / ``# generator`` comment header — ``#`` is a valid
+  TOML comment;
 * a skill ``SKILL.md`` must start with ``---`` on line 1 for Codex's
   frontmatter parser to see it (ai-19), so its marker lives in a sidecar
   ``.ai-dotfiles-meta`` JSON file written next to it by the install layer.
@@ -36,12 +41,23 @@ from ai_dotfiles.core.errors import ElementError
 from ai_dotfiles.core.frontmatter import parse_frontmatter
 
 __all__ = [
+    "AGENT_GENERATOR_VERSION",
+    "dropped_model",
     "render_agent_toml",
     "render_rule_skill_md",
     "render_skill_md",
     "source_sha256",
     "split_body",
 ]
+
+# Bumped whenever :func:`render_agent_toml` changes its output for an
+# unchanged source. The install layer treats a generated ``.toml`` whose
+# header records a different version as stale, so `install` / `reconcile`
+# regenerate it. History:
+#   1 — initial render; copied frontmatter ``model`` verbatim.
+#   2 — ``model`` is no longer emitted (Claude aliases are meaningless to
+#       Codex and silently degrade the session).
+AGENT_GENERATOR_VERSION = 2
 
 # Same leading ``---\n ... \n---\n`` block matched by the frontmatter
 # parser; reused here to split the body from the frontmatter.
@@ -65,13 +81,17 @@ def source_sha256(text: str) -> str:
 
 
 def _toml_header(source_text: str) -> str:
-    """Build the two-line managed-by + source-sha256 header for a ``.toml``.
+    """Build the managed-by + source-sha256 + generator header for a ``.toml``.
 
     Used only for agent ``.toml`` output, where ``#`` is a valid TOML
     comment. A skill ``SKILL.md`` carries no such header — its marker
     lives in a ``.ai-dotfiles-meta`` sidecar (ai-19).
     """
-    return f"{_MANAGED_BY}\n# source-sha256: {source_sha256(source_text)}\n"
+    return (
+        f"{_MANAGED_BY}\n"
+        f"# source-sha256: {source_sha256(source_text)}\n"
+        f"# generator: {AGENT_GENERATOR_VERSION}\n"
+    )
 
 
 def split_body(text: str) -> str:
@@ -105,10 +125,20 @@ def _first_sentence(description: str) -> str:
 def render_agent_toml(md_path: Path) -> str:
     """Render a catalog agent ``.md`` into Codex ``.toml`` form.
 
-    The frontmatter ``name`` and ``description`` become TOML keys, the
-    markdown body becomes ``developer_instructions``, and ``model`` is
-    emitted only when present in the frontmatter. The result is prefixed
-    with the managed-by + source-sha256 header (ADR ai-1-1).
+    The frontmatter ``name`` and ``description`` become TOML keys and the
+    markdown body becomes ``developer_instructions`` — the three fields
+    Codex requires. The result is prefixed with the managed-by +
+    source-sha256 + generator header (ADR ai-1-1).
+
+    A frontmatter ``model`` is deliberately **not** carried over. Claude
+    pins it to an alias (``sonnet`` / ``opus`` / ``haiku``) that means
+    nothing to Codex, whose catalog holds only ``gpt-*`` slugs. Codex
+    does not validate the value: an unknown model is accepted silently
+    and the session is then built *without* the multi-agent instruction
+    blocks, so the agent quietly loses the collaboration machinery it
+    exists to use. Omitting the key makes the agent inherit the parent
+    session's model, which is the documented default and stays correct
+    as the model catalog moves.
 
     Raises:
         ElementError: if the agent frontmatter lacks ``name`` or
@@ -129,12 +159,21 @@ def render_agent_toml(md_path: Path) -> str:
         "description": description,
         "developer_instructions": split_body(source_text),
     }
-    model = frontmatter.get("model")
-    if isinstance(model, str) and model:
-        table["model"] = model
 
     # tomli-w emits no comments, so the drift header is prepended raw.
     return _toml_header(source_text) + tomli_w.dumps(table)
+
+
+def dropped_model(md_path: Path) -> str | None:
+    """Return the frontmatter ``model`` of an agent, or None if unset.
+
+    :func:`render_agent_toml` drops the pin; this reports what was
+    dropped so a caller with a user-facing report (``migrate``) can say
+    so instead of changing the artefact silently.
+    """
+    frontmatter = parse_frontmatter(md_path.read_text(encoding="utf-8"))
+    model = frontmatter.get("model")
+    return model if isinstance(model, str) and model else None
 
 
 def render_skill_md(md_path: Path) -> str:

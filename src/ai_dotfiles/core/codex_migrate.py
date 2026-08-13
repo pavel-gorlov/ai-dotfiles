@@ -197,6 +197,10 @@ def _migrate_agent(
         return
     agents: dict[str, str] = registry["agents"]  # type: ignore[assignment]
     agents[element.name] = "render"
+    note = "markdown -> TOML (developer_instructions)"
+    pinned_model = codex_render.dropped_model(source_md)
+    if pinned_model is not None:
+        note += f"; dropped model pin '{pinned_model}' (inherits session model)"
     report.actions.append(
         MigrateAction(
             ElementType.AGENT,
@@ -204,7 +208,7 @@ def _migrate_agent(
             "render-agent",
             f".codex/agents/{element.name}.toml",
             "MECHANICAL",
-            "markdown -> TOML (developer_instructions)",
+            note,
         )
     )
 

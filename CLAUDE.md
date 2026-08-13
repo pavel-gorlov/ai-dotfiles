@@ -44,6 +44,10 @@ The file `src/ai_dotfiles/scaffold/templates/builtin_ai_dotfiles_skill.md` is sh
 
 When a catalog agent `.md` changes (body or frontmatter), the generated `.codex/agents/<name>.toml` in any project that targets Codex goes stale. **Regenerate it** by running `ai-dotfiles install` in the affected project.
 
+A generated agent `.toml` carries a `# generator: <n>` header alongside `# source-sha256`. Bump `codex_render.AGENT_GENERATOR_VERSION` whenever you change what `render_agent_toml` emits for an unchanged source — otherwise the source hash still matches and every already-generated project treats its stale artefact as fresh forever. Generator drift is reported as `STALE (generator changed)`.
+
+Agent `model` frontmatter is deliberately **not** rendered into Codex TOML (Claude aliases are unknown to Codex, which accepts them silently and then drops the multi-agent instruction blocks); an omitted key inherits the session model.
+
 `ai-dotfiles status` compares the `# source-sha256` header in each generated file against the current catalog source and reports `STALE (source changed)` for any artefact that needs regeneration — now including always-on/path-scoped rule blocks (sha-compared, not just presence) and `.codex/config.toml` (recomputed from the current fragments). The same drift detection applies to Codex skill `SKILL.md` files generated under `.agents/skills/<name>/`.
 
 **`ai-dotfiles reconcile`** regenerates the stale/missing artefacts in one pass (`reconcile --check` writes nothing and exits non-zero on drift — a CI / pre-commit gate); `ai-dotfiles install` also regenerates. A note in the agent's commit message (e.g. "run `ai-dotfiles reconcile` in projects that use this agent") is the recommended signal to consumers.

@@ -390,7 +390,12 @@ def _print_codex_pair_status(pair: Any) -> int:
         ui.info(f"    {_MISSING} {label.ljust(28)} NOT INSTALLED")
         return 1
     if codex_install.is_stale(generated, source):
-        ui.info(f"    {_BROKEN} {label.ljust(28)} STALE (source changed)")
+        reason = (
+            "generator changed"
+            if codex_install.generator_is_outdated(generated)
+            else "source changed"
+        )
+        ui.info(f"    {_BROKEN} {label.ljust(28)} STALE ({reason})")
         return 1
     ui.info(_format_line(_OK, label, source, "OK"))
     return 0
