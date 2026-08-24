@@ -40,3 +40,4 @@ coverage.xml
 /.claude/skills/rebase
 /.claude/skills/revert-merged-pr
 # >>> end ai-dotfiles managed <<<
+.taskmanager/.id-counter

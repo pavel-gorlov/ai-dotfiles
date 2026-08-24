@@ -1,5 +1,4 @@
 project_slug: ai
-id_counter: 21
 default_assignee: claude
 transitions:
   allow:
