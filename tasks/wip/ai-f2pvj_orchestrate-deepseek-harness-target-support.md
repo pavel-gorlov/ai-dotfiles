@@ -168,8 +168,21 @@ DshLayout/project_layout/global_layout; DshTargetPlan and project/global
 target planners. Native customSkillDirs is list[str]; merge its additions
 with effective provider config, never replace unrelated native fields.
 Global plan has no cwd/native root; owned_roots bounds scans only and
-does not own foreign files. Next target-dispatch row starts only after
-this transaction's commit is verified. No native runtime acceptance yet.
+does not own foreign files. Commit 190b85debc291f4a873f1570f7c765caacd09b52
+is verified with pre-commit/commit-msg/whitespace gates; the tree was clean.
+The next target-dispatch row is eligible. No native runtime acceptance yet.
+
+**ai-bdfbz → ai-d80em.** Target/path acceptance is 4/4 after actual diff
+inspection; 106 focused plus 164 DSH/Codex/path/manifest regressions passed.
+mypy74/Ruff/Black/whitespace checks pass. Target.DSH and explicit branches
+are available; resolve_target_paths config_root is Path | DshLayout.
+DSH agents/description-only unconditional rules contribute to config_path;
+shared always-on rules target root_agents_md. Every non-empty source paths
+is excluded from DSH activation even when Codex classifies it ALWAYS_ON.
+Unknown manifest targets/default/empty lists retain their existing behavior.
+Next owner builds the desired/protected project-block union, preserving
+Codex classification and both local registries. Commit verification precedes
+that dispatch; no native activation has been claimed.
 
 ## Acceptance criteria
 

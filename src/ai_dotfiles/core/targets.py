@@ -32,11 +32,13 @@ class Target(Enum):
 
     ``CLAUDE`` is the original and default target (a manifest with no
     ``targets`` field resolves to ``["claude"]``). ``CODEX`` is the
-    OpenAI Codex CLI target.
+    OpenAI Codex CLI target. ``DSH`` is DeepSeek Harness, supported in
+    both project and user scope.
     """
 
     CLAUDE = "claude"
     CODEX = "codex"
+    DSH = "dsh"
 
 
 class RenderMode(Enum):
@@ -53,7 +55,9 @@ class RenderMode(Enum):
     the individual element to decide. Codex rules use this: a rule maps
     onto a root ``AGENTS.md`` block, a nested ``AGENTS.md`` block, or a
     synthetic skill depending on its
-    :class:`~ai_dotfiles.core.rule_classify.RuleClass`.
+    :class:`~ai_dotfiles.core.rule_classify.RuleClass`. DSH rules require
+    their own dispatch: unconditional blocks, literal native prompt rows,
+    or an unsupported path-activation diagnostic.
     """
 
     SYMLINK = "symlink"
@@ -98,6 +102,19 @@ RENDER_POLICY: dict[Target, dict[ElementType, ElementRenderPolicy]] = {
         # AGENTS.md, path-scoped -> nested AGENTS.md, description-only ->
         # synthetic skill); the command layer classifies each rule and
         # dispatches. No single subdir applies, hence ``None``.
+        ElementType.RULE: ElementRenderPolicy(RenderMode.DISPATCH, None),
+    },
+    Target.DSH: {
+        # Domains contribute native members and configuration, rather than
+        # symlinking a whole domain into the native tree.
+        ElementType.DOMAIN: ElementRenderPolicy(RenderMode.DISPATCH, None),
+        # The native provider accepts the full skill directory unchanged.
+        ElementType.SKILL: ElementRenderPolicy(RenderMode.SYMLINK, "skills"),
+        # Callable agents are rows in the owned configuration snapshot,
+        # not Markdown files discovered under a native agents directory.
+        ElementType.AGENT: ElementRenderPolicy(RenderMode.RENDER, "ai-dotfiles"),
+        # Original paths must be checked before reusing Codex classification.
+        # Path-scoped rules have no faithful DSH activation surface.
         ElementType.RULE: ElementRenderPolicy(RenderMode.DISPATCH, None),
     },
 }

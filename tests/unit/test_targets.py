@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from ai_dotfiles.core.elements import ElementType
+from ai_dotfiles.core.manifest import get_targets, write_manifest
 from ai_dotfiles.core.targets import (
     RENDER_POLICY,
     RenderMode,
@@ -16,6 +19,7 @@ from ai_dotfiles.core.targets import (
 def test_target_values() -> None:
     assert Target.CLAUDE.value == "claude"
     assert Target.CODEX.value == "codex"
+    assert Target.DSH.value == "dsh"
 
 
 def test_render_policy_covers_every_target_and_element_type() -> None:
@@ -47,6 +51,47 @@ def test_codex_policy(
     policy = render_policy_for(Target.CODEX, element_type)
     assert policy.mode is expected_mode
     assert policy.subdir == expected_subdir
+
+
+@pytest.mark.parametrize(
+    ("element_type", "expected_mode", "expected_subdir"),
+    [
+        (ElementType.SKILL, RenderMode.SYMLINK, "skills"),
+        (ElementType.AGENT, RenderMode.RENDER, "ai-dotfiles"),
+        (ElementType.RULE, RenderMode.DISPATCH, None),
+        (ElementType.DOMAIN, RenderMode.DISPATCH, None),
+    ],
+)
+def test_dsh_policy(
+    element_type: ElementType,
+    expected_mode: RenderMode,
+    expected_subdir: str | None,
+) -> None:
+    policy = render_policy_for(Target.DSH, element_type)
+    assert policy.mode is expected_mode
+    assert policy.subdir == expected_subdir
+
+
+@pytest.mark.parametrize("filename", ["ai-dotfiles.json", "global.json"])
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        ({}, ["claude"]),
+        ({"targets": ["dsh"]}, ["dsh"]),
+        ({"targets": ["claude", "codex", "dsh"]}, ["claude", "codex", "dsh"]),
+        ({"targets": []}, []),
+        ({"targets": ["future-target", "dsh"]}, ["future-target", "dsh"]),
+    ],
+)
+def test_manifest_targets_preserve_scope_and_default_contract(
+    tmp_path: Path,
+    filename: str,
+    data: dict[str, list[str]],
+    expected: list[str],
+) -> None:
+    path = tmp_path / filename
+    write_manifest(path, data)
+    assert get_targets(path) == expected
 
 
 def test_skip_policy_has_no_subdir() -> None:
