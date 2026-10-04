@@ -397,6 +397,69 @@ ticks/move/usage and current held ai-ckvng journal, but exclude its five source
 files. After commit verification, resume that five-file owner for descendant
 domain-include readiness, shadowed targeted-patch retirement, test layout and
 full focused native gates. Hooks/launch remain held until ai-ckvng is accepted.
+Corrective commit b34cf40d4a06faf13e9d80b4edd52f6eef82d6d4 is independently
+verified against parent 4b7b3f9 with exact 26-path allowlist, clean index and
+only the five held config files untracked; main HEAD/status preserved. Required
+pre-commit/commit-msg/whitespace gates exit 0 with no formatter mutations.
+The same ai-ckvng writer may now resume with refreshed complete context.
+
+**Published host API → launcher hold.** Read exact installed RC2
+@deepseek-ai/dsh/lib/profile-boot-BZ2ZjNWi.js and app-boot/lib/index.js.
+Native runProfile commits its private AppReady after boot without managed audit;
+an unrelated preflight process does not enforce our same-host readiness gate.
+Public boot(binName, absoluteConfigPath, patches, prepare, bareModuleBaseUrl)
+and provideCmdline are available, but root Include resolves relative modules
+beside absoluteConfigPath. ai-vv1t9 must preserve the original profile base for
+user relative modules/includes when hosting an owned config, with actual native
+sentinel/relative-path evidence. Do not call mutating prepareProfile/runProfile
+as a substitute for that gate or write a cordis.yml into the user profile.
+This is technical enforcement of decisions 3/12/14, no new surface or choice.
+
+**ai-ckvng review → survivor precedence correction.** Worker focused115/115 and
+regressions790/790 pass; coordinator repeated focused115/115 and style/type gates.
+Actual additional RC2 probe shows another-domain row remains shadowed after its
+later competing declaration is itself retired with a shadowed insertion anchor.
+Keep ai-ckvng wip and its six criteria open; resume the same five-file owner for
+bounded surviving-declaration precedence and native regression. Hooks/launch
+remain held. This is the approved contribution preservation contract, not a fork.
+Another actual RC2 probe confirms a final user/domain collision missed by early
+input checks: domain patch changes user-client serverName to the inserted native
+domain-client's name, and inspection incorrectly returns valid true. The same
+writer must reject effective foreign id/tool/server conflicts after domain/CLI
+overrides, with precise origins. This implements existing decision 9 only.
+
+**ai-ckvng final gate → selected-domain declaration correction.** Root focused
+137/137 and both exact native probes pass; worker relevant regression 790/790
+passes on the intermediate diff. A bounded actual native probe then confirms
+selected native-domain preset children are omitted from domain ownership and
+required-id collection: foreign root client and selected domain child share a
+serverName but valid remains true. Same five-file owner now collects root plus
+literal chosen preset descendants, retaining exact source fields and excluding
+unselected tree descendants. This is existing namespace/readiness scope; no new
+user choice. Hold acceptance/hooks until updated native/static gates and commit.
+
+**ai-ckvng review → acceptance transaction.** Frozen five-file diff has worker
+140/140 focused native/unit and 790/790 relevant regressions, all required
+type/style/syntax/whitespace gates exit 0. Coordinator independently repeats
+140/140 (11.06s), both exact native defect probes and static gates. Original
+scoped assertions remain intact. Six composition criteria are demonstrated;
+prepare tick/move/usage/source changes in one subtask commit before hooks.
+Consumer APIs: DshConfigSource / DshNativeContribution (hooks must provide ONE
+combined contribution), collect_dsh_config_sources / collect_dsh_configuration,
+compose_dsh_configuration, attach_dsh_config_outputs, inspect_dsh_configuration;
+read_dsh_config_snapshot and dsh_config_drift are read-only drift operations.
+Fresh sources always drive activation; attach uses guarded raw-source resources.
+Native helper inspect is read-only and not readiness: actual managed host must
+mountSelectedComposition and await auditBeforeReady before its readiness commit.
+Domain required IDs cover root plus chosen preset/includes only. Hooks/launcher
+retain their original owners and remaining full runtime acceptance is open.
+
+**ai-ckvng acceptance → done transaction.** tm acceptance 6/6, tm move done
+and tm validate all exit 0; task and usage paths are prepared with five source
+files and this journal for one feat(ai-ckvng) commit. Exact independent native
+probes repeat exit 0 after the final selected-preset correction. The writer is
+idle; verify the Git commit before promoting ai-4m4hj. No runtime/CLI readiness
+or whole-epic completion is claimed by this composition gate.
 
 ## Acceptance criteria
 
