@@ -461,6 +461,54 @@ probes repeat exit 0 after the final selected-preset correction. The writer is
 idle; verify the Git commit before promoting ai-4m4hj. No runtime/CLI readiness
 or whole-epic completion is claimed by this composition gate.
 
+**ai-ckvng → ai-4m4hj.** Commit
+99a7e5daa7415756601f62003a680b7b929c1c34 independently verified: parent b34cf40,
+8 changes/9 paths, +4980/-7; source/acceptance/task move/usage/journal together.
+Pre-commit, commit-msg and whitespace exit 0, no formatter changes. Index and
+worktree clean, main unchanged. Promote only this next serial two-file hooks
+owner. Its collector must preserve all original global/domain/project handlers
+in ONE combined DshNativeContribution; otherwise scope precedence would discard
+global handlers. Use DshOutput/DshResource and copied domain resources with source
+preflight, never depend on a Claude installation. Read-only published native
+hook parser/protocol evidence complements pure mocked unit tests; actual host
+readiness and required final runtime fixture remain with later owners.
+
+**ai-4m4hj initial collector → bounded resource correction.** Reviewed draft
+always inventories/copies source.path.parent, even an empty hook map; implicit
+global/local settings must not sweep ~/.claude or a repository. Preserve guarded
+raw inputs and known handler/support roots only, while explicit bounded catalog
+domain resources retain their whole-tree discipline. Same two-file writer;
+required unit/native gates stay open. This implements existing bounded ownership,
+not a scope fork. Official native Claude matcher uses exact word/pipe alternatives,
+so read|read_image translation does not need an invented regex workaround.
+
+
+**ai-4m4hj review → acceptance transaction.** All five hook criteria are
+backed by worker 206/206 and full combined 830/830, coordinator 206/206 and
+actual seven-event/two-origin native probe, mypy82/Ruff/Black2/whitespace exit 0.
+No skip or protocol emulation. Original raw sources and bounded referenced
+hook resources carry guarded source/tree provenance; never copy implicit
+~/.claude/project parents wholesale. One combined DshNativeContribution named
+hooks avoids scope precedence dropping global handlers. Native compatibility
+limits are explicit; internal required_semantics evidence blocks unsupported
+required behaviour without a new source format or flag. Initial loopback
+sandbox refusal was resolved by repeating the entire unchanged gate in isolated
+fixtures. Final comment-only docstring correction matches resource policy.
+Prepare task ticks/move/usage/source and journal in one feat(ai-4m4hj) commit;
+verify commit before launcher promotion. Same-host readiness, relative user
+profile origins and actual named-child acceptance remain open with later owners.
+
+
+**ai-4m4hj acceptance → done transaction.** tm acceptance 5/5 and tm move
+done exit 0. Two source/test additions plus ticks/task relocation/usage and this
+journal form one commit; verify exact paths, parent 99a7e5d and clean tree before
+promoting ai-vv1t9. Native host readiness remains its explicit next concern.
+
+**ai-4m4hj Git gate → pinned formatting.** Black25.1 adds twelve trailing
+commas to test function parameters only; actual twelve-hunk diff accepted,
+core unchanged. Git owner repeats206 hook unit tests and required Git gates
+before the same subtask commit. No extra source change or weakened native gate.
+
 ## Acceptance criteria
 
 - [ ] All 20 subtasks are complete with their concrete acceptance gates checked.
