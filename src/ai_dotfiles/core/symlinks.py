@@ -56,7 +56,12 @@ def _backup_target_for(target: Path, backup_root: Path) -> Path:
 
 
 def safe_symlink(
-    source: Path, target: Path, backup: Path, *, adopt: bool = False
+    source: Path,
+    target: Path,
+    backup: Path,
+    *,
+    adopt: bool = False,
+    chmod_scripts: bool = True,
 ) -> str:
     """Create symlink ``target`` -> ``source`` idempotently.
 
@@ -66,13 +71,18 @@ def safe_symlink(
     When ``adopt`` is True and ``target`` exists as a real file or directory,
     the target's content replaces ``source`` (so the user's pre-existing
     content becomes the source of truth) instead of being moved to ``backup``.
+
+    ``chmod_scripts=False`` preserves source mode bits for targets whose bundle
+    inventory must describe the original source exactly. The default retains
+    the existing Claude hook executable-bit behavior.
     """
     source_abs = source.resolve() if source.exists() else source.absolute()
     if not source_abs.exists():
         raise LinkError(f"Source does not exist: {source}")
 
     # chmod +x applies before linking so the symlink inherits exec perms.
-    _maybe_chmod_sh(source_abs)
+    if chmod_scripts:
+        _maybe_chmod_sh(source_abs)
 
     try:
         target.parent.mkdir(parents=True, exist_ok=True)

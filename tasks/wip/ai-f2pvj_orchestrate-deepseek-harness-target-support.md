@@ -87,6 +87,13 @@ an execution request, as stated in the approved epic.
   An unselected composition must not silently fall back to global ready:true.
   Rehearsals must include scoped parent composition and real child inheritance.
   Do not persist a synthetic audit session into user history or repair profiles.
+  Native AgentPresetRegistry.mount(ctx, id), acquireScope(id), resolve(id) and
+  serviceFor are public in published RC2; preset trees are in-memory and their
+  write() is a no-op. Use/prove the public scoped-read/binding path instead of
+  fabricating a durable audit session. Native CLI runProfile commits appReady
+  after boot, but does not invoke the managed audit boundary: the managed host
+  must actually await it before its readiness/surface release, not merely run an
+  unrelated offline audit. No complete claim for this consumer exists yet.
 - Phase 3 registers local contributions before remove/prune and retires missing
   sources. Command owners integrate the same core collectors, including existing
   Codex prune/remove call sites that could delete DSH-shared project blocks.
@@ -293,6 +300,45 @@ filter/options and final prompt sections are verified; no unrestricted child,
 complete-persona repair or ask/sandbox bypass. Native bridge gate is proven;
 full launcher/runtime acceptance remains Phase 2/4. Commit verification precedes
 the next installer dispatch and Phase 1 closes only after that row's gate.
+Commit f7fb93f84dfe392a0a4237b53c65a739f27835a8 is verified; tree was
+clean and required pre-commit/commit-msg/whitespace gates passed. Pinned
+Black added two accepted trailing commas in test parameter lists only.
+
+**ai-efsr3 → ai-ckvng.** Installer acceptance 5/5 after actual three-file
+diff review. 78 installer cases include four published native skill-provider
+project/global x link/copy cases; combined 941/941, corrected bridge-first
+115/115 and worker full 1652/1652 pass. Coordinator full pytest 1652/1652
+(8.86s), mypy79/Ruff all/Black163 all pass. Initial full run found four fixture
+setup errors masked by target-first ordering; owned test now explicitly imports
+and exposes bridge_native_runtime, without pytest_plugins or skips. Phase 4
+may consolidate this required fixture across bridge/target/runtime tests.
+APIs: collect_dsh_elements -> DshInstallPlan; plan_dsh_install accepts retried
+READY metadata/results, permissions, DshResource; preflight_dsh_install checks
+all output/registry/shared paths, source snapshots and fresh local protection
+before writes; apply_dsh_install -> DshInstallResult. read_dsh_inventory,
+verify_dsh_owned_output, output_drift, audit_path are public read-only helpers.
+DshOutput can represent generated content or source link/copy; DshResource binds
+safe relative paths under resources_dir. Schema/install generator both 1.
+records keyed relative to dsh_dir carry mode/source/source_inventory/
+output_inventory/source_tree_sha256/provenance/generators; source_records retain
+READY/DEFERRED/MANUAL raw source and diagnostics, rule_blocks is the shared
+protection shape. Domain resource provenance uses the complete tree digest.
+Catalog resources are copied under resources/domains/<domain>, independent of
+Claude; bridge/audit source/generated signatures remain intact. Native skill
+bundles stay whole, no Codex description transformation. New optional
+safe_symlink chmod_scripts=True preserves incumbent behavior; DSH passes False.
+Foreign/modified entries are refused; outer aliases preserve native lexical
+paths while managed symlink parents are rejected. fs_copy.py unchanged.
+Aggregate config.json/patch.json/hooks.json remain ai-ckvng/ai-4m4hj's concern.
+native_rows must be merged across scopes before inserting one bridge/audit set.
+desired_output_keys/current_source_ids and result.retired_output_keys identify
+previous READY native outputs absent from the current desired set. Omission
+alone cannot prevent discovery of an old linked skill; later reconcile/launcher
+must retire it or refuse stale activation after catalog/local union. Shared
+block retirement likewise waits for the desired/protected union. Do not claim
+safe activation from file presence or preserve an old unsupported restriction
+as an unrestricted native element. Phase 1 gate is green; commit verification
+precedes Phase 2 dispatch. Whole launcher/runtime acceptance remains pending.
 
 ## Acceptance criteria
 
