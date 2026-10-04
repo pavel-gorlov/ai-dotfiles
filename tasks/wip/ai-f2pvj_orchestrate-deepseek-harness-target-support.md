@@ -227,6 +227,26 @@ partial parent/provider inheritance. Installer must gate shared blocks on
 render_rule READY and enumerate source rules for excluded-path diagnostics.
 Permission translator is next after commit verification; native runtime
 activation/readiness remains pending with ai-8n95c/ai-f2bcb.
+Commit 1baa6daf9053932710aa69bc8c4914274f9c8417 is verified; the tree was
+clean and required pre-commit/commit-msg gates passed.
+
+**ai-bdqha → ai-8n95c.** Permission translator acceptance is 4/4 after
+complete diff inspection and 385 focused/regression tests, including 146
+permission cases; mypy77/Ruff/Black/whitespace pass. APIs:
+translate_permissions(permissions, provenance=...) -> DshPermissionPolicy;
+merge_permission_policies retains source order/repeats/origins. Exact mapped
+deny/ask views and required_tools are sorted/deduplicated. bridge_data schema
+version 1 and generator 1 supplies deny/ask/requiredTools/blocked/contributions/
+diagnostics; raw malformed values have independent snapshots. Unknown fields,
+malformed data and unsupported deny/ask block policy activation; allow-only
+gaps stay nonblocking and grant nothing. Consumers must translate original
+sources before settings merge, reject unknown schema/blocked/malformed payloads
+and JSON parse errors, never replace restrictions with empty policy or presets.
+The next owner implements actual monotonic deny, preserving ask waterfall,
+literal prompt/description bridge and readiness on pinned DSH. Native startup
+audit ignores absent/disabled required ids, so explicitly assert every managed
+id and mapped tool after Loader settlement. Commit verification precedes
+dispatch; native runtime acceptance has not yet been performed.
 
 ## Acceptance criteria
 
