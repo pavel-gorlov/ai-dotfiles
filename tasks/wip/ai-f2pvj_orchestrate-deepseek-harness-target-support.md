@@ -74,6 +74,12 @@ an execution request, as stated in the approved epic.
 - Phase 2 owns one effective composition. Native rows/resources stay origin-bound;
   required managed ids from all producers enter the runtime audit. Project wins
   for managed names; user conflicts fail rather than rename/overwrite.
+  Its Node helper also resolves deferred native skill frontmatter validation:
+  valid block/escaped YAML values must use the native parser, never a Python
+  placeholder value or permanent STATIC_PARSE_UNSUPPORTED skip. The renderer
+  accepts native-parsed metadata/deferred sources; original directories remain
+  intact until this validation is integrated. This implements the existing
+  valid-native-skill matrix, without adding a Python YAML dependency.
 - Phase 3 registers local contributions before remove/prune and retires missing
   sources. Command owners integrate the same core collectors, including existing
   Codex prune/remove call sites that could delete DSH-shared project blocks.
@@ -200,6 +206,27 @@ LF/CRLF/unowned whitespace; Codex removal delegates to it. Lifecycle owners
 must compute keep union before delete/prune. Codex classification is unchanged,
 DSH-only description rules are private bridge sources. Phase 1 renderer is
 next after commit verification; native runtime acceptance remains pending.
+Commit 79ae642e0f1c30afe02a63233ef928da93880082 is verified; the tree was
+clean and required pre-commit/commit-msg gates passed. Phase 0 is complete.
+
+**ai-86vb3 → ai-bdqha.** Renderer acceptance 6/6 after actual source/test
+inspection and 411 focused/regression tests (142 renderer cases); mypy76,
+Ruff/Black/whitespace clean. DshRenderResult statuses READY/DEFERRED/MANUAL;
+activate READY only. validate_skill/render_rule/render_agent retry accepts
+native_frontmatter Mapping[str, object], resolved by ai-ckvng's native parser.
+DshDiagnostic has code/origin/element/field/reason/blocking;
+DshProvenance has source/origin/element/source_sha256/generator and as_dict.
+DSH_RENDER_GENERATOR_VERSION=1. native_tool_names and immutable
+CLAUDE_TOOL_NAMES are the shared exact map (Read -> read,read_image;
+Write/Edit/Glob/Grep/Bash/WebFetch/WebSearch; no Task/Agent/MCP guessing).
+Agent row ids ai-dotfiles-agent-<name>, toolName ai_dotfiles_agent_<name>,
+provider spawn; persona string is literal. bridge_data retains descriptions,
+sourceModel/provenance; no unsupported description key in native Config.
+required_tools includes allow AND deny names for audit. Native options retain
+partial parent/provider inheritance. Installer must gate shared blocks on
+render_rule READY and enumerate source rules for excluded-path diagnostics.
+Permission translator is next after commit verification; native runtime
+activation/readiness remains pending with ai-8n95c/ai-f2bcb.
 
 ## Acceptance criteria
 
