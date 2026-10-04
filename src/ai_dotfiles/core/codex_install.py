@@ -637,25 +637,14 @@ def remove_codex_rule_blocks(agents_md_path: Path, rule_name: str) -> bool:
 
     Only the block delimited by the rule's ai-dotfiles markers is
     removed; surrounding user-authored text is preserved. An
-    ``AGENTS.md`` left whitespace-only after the strip is deleted — it
-    held nothing but ai-dotfiles content. Returns ``True`` if the file
+    ``AGENTS.md`` left empty after the strip is deleted; unowned whitespace
+    and original line endings survive. Returns ``True`` if the file
     was rewritten or deleted, ``False`` if there was nothing to strip.
     """
-    if not agents_md_path.is_file():
-        return False
-    text = agents_md_path.read_text(encoding="utf-8")
-    if rule_name not in agents_md.iter_rule_block_names(text):
-        return False
-
-    stripped = agents_md.strip_rule_blocks(text, {rule_name})
     try:
-        if stripped.strip():
-            agents_md_path.write_text(stripped, encoding="utf-8")
-        else:
-            agents_md_path.unlink()
+        return agents_md.remove_rule_blocks(agents_md_path, {rule_name})
     except OSError as exc:
         raise LinkError(
             f"Failed to update {agents_md_path} while removing rule "
             f"{rule_name!r}: {exc}"
         ) from exc
-    return True
