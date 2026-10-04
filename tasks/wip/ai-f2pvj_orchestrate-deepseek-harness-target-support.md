@@ -80,6 +80,13 @@ an execution request, as stated in the approved epic.
   accepts native-parsed metadata/deferred sources; original directories remain
   intact until this validation is integrated. This implements the existing
   valid-native-skill matrix, without adding a Python YAML dependency.
+  Native runtime audit is scope-aware: preset-scoped tools/services cannot be
+  judged by the global registry view. ai-8n95c exposes an explicit public audit
+  boundary for the chosen native agent/scope; ai-ckvng/ai-vv1t9 must resolve the
+  effective selection/overrides and await that boundary before reporting ready.
+  An unselected composition must not silently fall back to global ready:true.
+  Rehearsals must include scoped parent composition and real child inheritance.
+  Do not persist a synthetic audit session into user history or repair profiles.
 - Phase 3 registers local contributions before remove/prune and retires missing
   sources. Command owners integrate the same core collectors, including existing
   Codex prune/remove call sites that could delete DSH-shared project blocks.
@@ -247,6 +254,45 @@ literal prompt/description bridge and readiness on pinned DSH. Native startup
 audit ignores absent/disabled required ids, so explicitly assert every managed
 id and mapped tool after Loader settlement. Commit verification precedes
 dispatch; native runtime acceptance has not yet been performed.
+Commit 79c9d8c9b5800dfcdc79d254b1bdca8cd0f76f6b is verified with
+clean tree and required pre-commit/commit-msg/whitespace gates.
+
+**Pre-existing → bounded DSH ownership.** pre-existing, do not fix in
+this branch: safe_symlink/copy_tree_into and the existing Codex skill
+materialization paths can replace existing destinations; those incumbent
+policies are outside the DSH charter. DSH installer must perform its own
+ownership/collision/parent-symlink preflight before invoking shared primitives.
+Do not widen ai-efsr3 into Claude/Codex cleanup or change existing default
+filesystem semantics. fs_copy.py already exists and preserves executable bits.
+
+**ai-8n95c → ai-efsr3.** Bridge acceptance is 6/6 after actual four-file
+review and coordinator native pytest 37/37. Worker final combined pytest
+596/596 (37 focused, including 36 real runtime tests; 559 regressions),
+mypy78/Ruff/Black2/both node --check/whitespace pass. Exact RC2 installation
+/private/tmp/dsh-bridge-native-rc2 and actual CLI --version are verified;
+test homes/profiles/cache/fake services are isolated. Reuse test-only
+_AI_DOTFILES_TEST_DSH_RUNTIME for disposable setup; never install at runtime.
+APIs: build_bridge_config(agents, literal_rules, permissions=...) accepts
+READY/unblocked only; agent metadata extends bridge_data with rowId,
+requiredTools, deep-copied exact toolFilter/agentOptions (null != empty allow).
+bridge_audit_requirements adds each producer's required ids/tools/services/
+subagent providers. Schema/generators all 1; bridge/audit row ids
+ai-dotfiles-bridge/ai-dotfiles-audit. bridge_module_text/audit_module_text
+prepend managed signature, template source SHA and generator; read errors
+are ConfigError. Installer must materialize these owned module/resources
+with provenance; aggregate config remains the Phase 2 collector's concern.
+Native ctx.aiDotfilesAudit.run({scope}) / auditReady(ctx, config, {scope})
+is awaited AFTER Loader boot, BEFORE surface. apply is synchronous to avoid
+self-deadlock. Unique configured leaf ids or qualified Entry.id are allowed,
+ambiguous leaves fail; root Include prefixes include:. Preset profiles without
+chosen native scope return COMPOSITION_NOT_SELECTED/pending, not ready.
+Actual parent-preset scoped tools/services and stock spawn inheritance pass;
+no synthetic durable user audit session is allowed. Only managed required-row
+failures are fatal; foreign optional failures remain diagnostics. Exact native
+filter/options and final prompt sections are verified; no unrestricted child,
+complete-persona repair or ask/sandbox bypass. Native bridge gate is proven;
+full launcher/runtime acceptance remains Phase 2/4. Commit verification precedes
+the next installer dispatch and Phase 1 closes only after that row's gate.
 
 ## Acceptance criteria
 
