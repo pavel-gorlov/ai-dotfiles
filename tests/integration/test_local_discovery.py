@@ -9,7 +9,10 @@ from pathlib import Path
 
 import pytest
 
-from ai_dotfiles.core.elements import ElementType
+from ai_dotfiles.core.claude_copy import copy_element
+from ai_dotfiles.core.copy_ownership import save_copy_ownership
+from ai_dotfiles.core.elements import ElementType, parse_element
+from ai_dotfiles.core.errors import ConfigError
 from ai_dotfiles.core.local_discovery import LocalElement, iter_local_elements
 
 pytestmark = pytest.mark.integration
@@ -132,3 +135,47 @@ def test_symlink_pointing_outside_storage_is_local(
     found = list(iter_local_elements(project))
 
     assert _keys(found) == {(ElementType.SKILL, "my-skill")}
+
+
+@pytest.mark.parametrize("modified", [False, True])
+def test_catalog_domain_copies_are_not_local(
+    tmp_path: Path, tmp_storage: Path, modified: bool
+) -> None:
+    project = tmp_path / "project"
+    catalog = tmp_storage / "catalog"
+    domain = catalog / "development"
+    _write(domain / "skills" / "copied" / "SKILL.md", "# Catalog skill")
+    _write(domain / "agents" / "copied.md", "# Catalog agent")
+    _write(domain / "rules" / "copied.md", "# Catalog rule")
+    copy_element(parse_element("@development"), project / ".claude", catalog)
+    if modified:
+        _write(project / ".claude" / "agents" / "copied.md", "User edited copy")
+    _write(project / ".claude" / "agents" / "local.md", "# Catalog agent")
+
+    found = list(iter_local_elements(project, manifest_packages=["@development"]))
+
+    assert _keys(found) == {(ElementType.AGENT, "local")}
+
+
+def test_catalog_linked_parent_is_not_local(tmp_path: Path, tmp_storage: Path) -> None:
+    project = tmp_path / "project"
+    directory = tmp_storage / "catalog" / "domain" / "agents"
+    _write(directory / "managed.md", "# managed")
+    (project / ".claude").mkdir(parents=True)
+    (project / ".claude" / "agents").symlink_to(directory)
+
+    assert list(iter_local_elements(project)) == []
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["../agents/escape.md", "/tmp/escape.md", "skills/../escape", "skills//escape"],
+)
+def test_copy_ledger_refuses_unsafe_paths(
+    tmp_path: Path, tmp_storage: Path, label: str
+) -> None:
+    _write(tmp_path / ".claude" / "agents" / "local.md")
+    save_copy_ownership(tmp_path / ".claude", {label})
+
+    with pytest.raises(ConfigError, match="Unsafe Claude copy ownership"):
+        list(iter_local_elements(tmp_path))

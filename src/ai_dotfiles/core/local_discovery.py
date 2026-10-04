@@ -16,6 +16,8 @@ Discovery is provenance-based, not name-based:
   :func:`ai_dotfiles.core.paths.storage_root` — those are skipped;
 * an element named in the manifest is skipped even if the on-disk entry is a
   real file (a name collision the ``status`` command already flags as BROKEN);
+* a path recorded by the Claude copy-ownership sidecar is skipped, including
+  domain members and copies whose bytes were subsequently edited;
 * everything else that looks like a valid element is *local*.
 
 The returned :class:`LocalElement` carries the real source path, so the same
@@ -36,10 +38,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ai_dotfiles.core import paths
+from ai_dotfiles.core.copy_ownership import load_copy_ownership, relative_label
 from ai_dotfiles.core.elements import ElementType, parse_element
-from ai_dotfiles.core.errors import AiDotfilesError
+from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
 
-__all__ = ["LocalElement", "iter_local_elements"]
+__all__ = ["LocalElement", "is_catalog_managed_path", "iter_local_elements"]
 
 
 @dataclass(frozen=True)
@@ -80,13 +83,14 @@ def iter_local_elements(
 
     storage = _resolved_storage()
     managed = _manifest_element_keys(manifest_packages)
+    copies = _copy_labels(claude_dir)
 
-    yield from _iter_skills(claude_dir / "skills", storage, managed)
+    yield from _iter_skills(claude_dir / "skills", storage, managed, copies)
     yield from _iter_markdown(
-        claude_dir / "agents", ElementType.AGENT, "agent", storage, managed
+        claude_dir / "agents", ElementType.AGENT, "agent", storage, managed, copies
     )
     yield from _iter_markdown(
-        claude_dir / "rules", ElementType.RULE, "rule", storage, managed
+        claude_dir / "rules", ElementType.RULE, "rule", storage, managed, copies
     )
 
 
@@ -94,13 +98,14 @@ def _iter_skills(
     skills_dir: Path,
     storage: Path | None,
     managed: frozenset[tuple[str, str]],
+    copies: frozenset[str],
 ) -> Iterator[LocalElement]:
     if not skills_dir.is_dir():
         return
     for entry in sorted(skills_dir.iterdir()):
         if entry.name.startswith("."):
             continue
-        if _points_into_storage(entry, storage):
+        if _points_into_storage(entry, storage) or f"skills/{entry.name}" in copies:
             continue
         if not entry.is_dir():
             continue
@@ -118,13 +123,17 @@ def _iter_markdown(
     prefix: str,
     storage: Path | None,
     managed: frozenset[tuple[str, str]],
+    copies: frozenset[str],
 ) -> Iterator[LocalElement]:
     if not dir_path.is_dir():
         return
     for entry in sorted(dir_path.iterdir()):
         if entry.name.startswith(".") or entry.suffix != ".md":
             continue
-        if _points_into_storage(entry, storage):
+        if (
+            _points_into_storage(entry, storage)
+            or f"{dir_path.name}/{entry.name}" in copies
+        ):
             continue
         if not entry.is_file():
             continue
@@ -142,19 +151,42 @@ def _resolved_storage() -> Path | None:
 
 
 def _points_into_storage(entry: Path, storage: Path | None) -> bool:
-    """True when ``entry`` is a symlink resolving under the ai-dotfiles storage.
+    """True when ``entry`` resolves under storage, including linked parents.
 
     Such an entry is a catalog-managed link, not a local element. A dangling
     symlink (target missing) is treated as *not* into storage so it is not
     silently swallowed here — it surfaces elsewhere as a broken link.
     """
-    if storage is None or not entry.is_symlink():
+    if storage is None:
         return False
     try:
         target = entry.resolve()
     except OSError:
         return False
     return target == storage or target.is_relative_to(storage)
+
+
+def _copy_labels(claude_dir: Path) -> frozenset[str]:
+    labels = load_copy_ownership(claude_dir)
+    for label in labels:
+        path = Path(label)
+        if (
+            path.is_absolute()
+            or not path.parts
+            or ".." in path.parts
+            or path.as_posix() != label
+        ):
+            raise ConfigError(f"Unsafe Claude copy ownership path: {label!r}")
+    return frozenset(labels)
+
+
+def is_catalog_managed_path(path: Path, project_root: Path) -> bool:
+    """Identify catalog links/copies by provenance, including domain members."""
+    claude_dir = paths.project_claude_dir(project_root)
+    label = relative_label(path, claude_dir)
+    return label in _copy_labels(claude_dir) or _points_into_storage(
+        path, _resolved_storage()
+    )
 
 
 def _valid_specifier(prefix: str, name: str) -> bool:
@@ -170,8 +202,8 @@ def _manifest_element_keys(
 ) -> frozenset[tuple[str, str]]:
     """Return ``(type_value, name)`` keys for the manifest's standalone elements.
 
-    Domains are skipped: a domain's members materialise as catalog symlinks,
-    which :func:`_points_into_storage` already excludes.
+    Domains are skipped: their catalog symlinks and recorded copies are
+    excluded separately by provenance.
     """
     if not packages:
         return frozenset()
