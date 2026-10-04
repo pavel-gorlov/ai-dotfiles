@@ -52,6 +52,7 @@ __all__ = [
     "block_markers",
     "block_matches",
     "iter_rule_block_names",
+    "remove_rule_blocks",
     "rule_block_targets",
     "rule_name_of",
     "strip_rule_blocks",
@@ -74,9 +75,9 @@ _MARKER_SHA = "<!-- ai-dotfiles:rule:{name} sha256:{sha} -->"
 # Matches a whole managed block (START line .. END line, inclusive),
 # capturing the rule name. Non-greedy so adjacent blocks stay separate.
 _BLOCK_RE = re.compile(
-    r"<!-- ai-dotfiles:rule:(?P<name>[A-Za-z0-9._-]+) START -->\n"
+    r"<!-- ai-dotfiles:rule:(?P<name>[A-Za-z0-9._-]+) START -->\r?\n"
     r".*?"
-    r"<!-- ai-dotfiles:rule:(?P=name) END -->\n?",
+    r"<!-- ai-dotfiles:rule:(?P=name) END -->(?:\r?\n)?",
     re.DOTALL,
 )
 
@@ -96,6 +97,8 @@ def rule_name_of(md_path: Path) -> str:
 
 def block_markers(name: str) -> tuple[str, str]:
     """Return the ``(start, end)`` marker lines for a rule ``name``."""
+    if not _RULE_NAME_RE.fullmatch(name):
+        raise ElementError(f"Rule name not marker-safe: {name!r}")
     return _MARKER_START.format(name=name), _MARKER_END.format(name=name)
 
 
@@ -127,7 +130,7 @@ def _existing_block_sha(name: str, text: str) -> str | None:
     start, _ = block_markers(name)
     pattern = re.compile(
         re.escape(start)
-        + r"\n<!-- ai-dotfiles:rule:"
+        + r"\r?\n<!-- ai-dotfiles:rule:"
         + re.escape(name)
         + r" sha256:(?P<sha>[0-9a-f]+) -->"
     )
@@ -172,24 +175,38 @@ def strip_rule_blocks(text: str, names: set[str] | None = None) -> str:
     blank lines, other blocks) is preserved. If ``names`` is given, only
     those rules' blocks are stripped; otherwise *all* managed blocks go.
 
-    Blank lines that the original file placed directly around a managed
-    block are collapsed so repeated strip/insert cycles do not pile up
-    empty lines (no drift).
+    No whitespace outside the matching marker span is normalized, including
+    user-authored blank lines, trailing spaces and CRLF line endings.
     """
 
     def _replace(match: re.Match[str]) -> str:
         if names is not None and match.group("name") not in names:
             return match.group(0)
-        return "\0"  # sentinel — collapsed below
+        return ""
 
-    stripped = _BLOCK_RE.sub(_replace, text)
-    # Collapse the sentinel plus any surrounding blank lines into a
-    # single newline so user paragraphs keep their spacing.
-    stripped = re.sub(r"\n*\0\n*", "\n", stripped)
-    stripped = stripped.replace("\0", "")
-    # Guard against runaway blank runs introduced by adjacent removals.
-    stripped = re.sub(r"\n{3,}", "\n\n", stripped)
-    return stripped
+    return _BLOCK_RE.sub(_replace, text)
+
+
+def remove_rule_blocks(agents_md: Path, names: set[str] | None = None) -> bool:
+    """Remove selected managed blocks while preserving all other file bytes.
+
+    Delete a file only when no bytes remain. Whitespace outside the markers
+    has no ownership record, so even a whitespace-only user file survives.
+    File-system errors remain available for the install layer to wrap.
+    """
+    if not agents_md.is_file():
+        return False
+    if agents_md.is_symlink():
+        raise ElementError(f"Refusing to edit symlinked AGENTS.md: {agents_md}")
+    existing = agents_md.read_bytes().decode("utf-8")
+    updated = strip_rule_blocks(existing, names)
+    if updated == existing:
+        return False
+    if updated:
+        agents_md.write_bytes(updated.encode("utf-8"))
+    else:
+        agents_md.unlink()
+    return True
 
 
 def upsert_rule_block(agents_md: Path, name: str, body: str) -> bool:
@@ -205,8 +222,12 @@ def upsert_rule_block(agents_md: Path, name: str, body: str) -> bool:
     """
     body = body.strip()
     new_sha = _content_sha(body)
+    block_markers(name)
 
-    existing = agents_md.read_text(encoding="utf-8") if agents_md.is_file() else ""
+    if agents_md.is_symlink():
+        raise ElementError(f"Refusing to edit symlinked AGENTS.md: {agents_md}")
+
+    existing = agents_md.read_bytes().decode("utf-8") if agents_md.is_file() else ""
 
     if _existing_block_sha(name, existing) == new_sha:
         return False
@@ -227,23 +248,27 @@ def upsert_rule_block(agents_md: Path, name: str, body: str) -> bool:
 
     if name in iter_rule_block_names(existing):
         # Replace the stale block in place — keep surrounding user text.
-        updated = strip_rule_blocks(existing, {name})
-        updated = _append_block(updated, block)
+        def _replace(match: re.Match[str]) -> str:
+            if match.group("name") != name:
+                return match.group(0)
+            return block.replace("\n", "\r\n") if "\r\n" in match.group(0) else block
+
+        updated = _BLOCK_RE.sub(_replace, existing)
     elif existing:
         updated = _append_block(existing, block)
     else:
         updated = block
 
     agents_md.parent.mkdir(parents=True, exist_ok=True)
-    agents_md.write_text(updated, encoding="utf-8")
+    agents_md.write_bytes(updated.encode("utf-8"))
     return True
 
 
 def _append_block(text: str, block: str) -> str:
-    """Append ``block`` to ``text`` with exactly one blank-line separator."""
-    if not text.strip():
-        return block
-    return f"{text.rstrip()}\n\n{block}"
+    """Append on a new line without trimming or adding user blank lines."""
+    newline = "\r\n" if "\r\n" in text else "\n"
+    separator = newline if text and not text.endswith("\n") else ""
+    return text + separator + block.replace("\n", newline)
 
 
 def rule_block_targets(

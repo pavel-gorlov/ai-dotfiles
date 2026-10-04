@@ -115,7 +115,7 @@ that integration and may test/document it without introducing another owner.
 |---|---|---|---|---|---|---|
 | ai-7xrwf | Define DSH layout and native target paths | write | M | general-purpose | 0.5–1 d · 5 files · ~+300/−20 LOC | `src/ai_dotfiles/core/paths.py`, `src/ai_dotfiles/core/dsh_layout.py`, `src/ai_dotfiles/core/dsh_targets.py`, `tests/unit/test_dsh_paths.py`, `tests/unit/test_dsh_targets.py` |
 | ai-bdfbz | Register DSH target and explicit element dispatch | write | M | general-purpose | 0.5–1 d · 4 files · ~+150/−20 LOC | `src/ai_dotfiles/core/targets.py`, `src/ai_dotfiles/core/elements.py`, `tests/unit/test_targets.py`, `tests/unit/test_elements.py` |
-| ai-d80em | Coordinate shared Codex and DSH instruction ownership | write | M | general-purpose | 0.5–1 d · 3 files · ~+250/−30 LOC | `src/ai_dotfiles/core/shared_instructions.py`, `src/ai_dotfiles/core/agents_md.py`, `tests/unit/test_shared_instructions.py` |
+| ai-d80em | Coordinate shared Codex and DSH instruction ownership | write | M | general-purpose | 0.5–1 d · 4 files · ~+250/−40 LOC | `src/ai_dotfiles/core/shared_instructions.py`, `src/ai_dotfiles/core/agents_md.py`, `src/ai_dotfiles/core/codex_install.py` (only `remove_codex_rule_blocks` delegation), `tests/unit/test_shared_instructions.py` |
 | ai-86vb3 | Render DSH skills rules and callable agent payloads | write | M | general-purpose | 1–1.5 d · 2 files · ~+450/−0 LOC | `src/ai_dotfiles/core/dsh_render.py`, `tests/unit/test_dsh_render.py` |
 | ai-bdqha | Translate bounded DSH permission policy | write | M | general-purpose | 0.5–1 d · 2 files · ~+250/−0 LOC | `src/ai_dotfiles/core/dsh_permissions.py`, `tests/unit/test_dsh_permissions.py` |
 | ai-8n95c | Implement native literal prompt policy and readiness bridge | write | M | general-purpose | 1.5–2.5 d · 4 files · ~+700/−0 LOC | `src/ai_dotfiles/scaffold/templates/dsh_bridge.mjs`, `src/ai_dotfiles/scaffold/templates/dsh_audit.mjs`, `src/ai_dotfiles/core/dsh_audit.py`, `tests/integration/test_dsh_bridge.py` |
@@ -182,7 +182,24 @@ is excluded from DSH activation even when Codex classifies it ALWAYS_ON.
 Unknown manifest targets/default/empty lists retain their existing behavior.
 Next owner builds the desired/protected project-block union, preserving
 Codex classification and both local registries. Commit verification precedes
-that dispatch; no native activation has been claimed.
+that dispatch; commit 2c8c2bcb0bb6f1016f38c55439c257008482d6fd is verified
+with clean worktree and pre-commit/commit-msg gates. No native activation
+has been claimed.
+
+**ai-d80em → ai-86vb3.** Phase 0 union acceptance is 5/5 after actual
+diff inspection, 162 focused plus 78 Codex regressions and full pytest
+1249/1249. mypy75/Ruff/Black/whitespace pass. APIs: project_instruction_plan
+returns blocks, wanted_blocks, protected_blocks, keep_blocks, removable_names
+and dsh_literal_rules. Shared Markdown keys/project_root are canonical;
+DshLayout/native discovery stays lexical. Both local registries use
+rule_blocks {project-relative AGENTS.md: list[marker-safe names]} and protect
+entries independently of empty/disabled catalog targets. Invalid/traversing/
+outside-symlink records fail before mutation; sources/bodies are not stored
+in this common protection schema. agents_md.remove_rule_blocks preserves
+LF/CRLF/unowned whitespace; Codex removal delegates to it. Lifecycle owners
+must compute keep union before delete/prune. Codex classification is unchanged,
+DSH-only description rules are private bridge sources. Phase 1 renderer is
+next after commit verification; native runtime acceptance remains pending.
 
 ## Acceptance criteria
 
