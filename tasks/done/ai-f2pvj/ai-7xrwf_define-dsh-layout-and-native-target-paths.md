@@ -13,6 +13,8 @@ context_files:
 dependencies: []
 executor_agent: claude
 size: M
+mode: write
+phase: 1
 status_history:
 - at: '2026-10-04T11:53:18+00:00'
   status: backlog

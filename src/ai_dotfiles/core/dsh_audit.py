@@ -12,7 +12,8 @@ before launching a surface. Preset-based profiles without a chosen scope fail
 with COMPOSITION_NOT_SELECTED; a global-only profile needs no scope argument.
 The plugin's synchronous apply only exposes that boundary: awaiting Loader
 inside its own apply deadlocks. Native exit 0 is not an audit result. The audit
-checks all required managed rows, including their optional failures, every id,
+checks the settled root Loader and selected native preset tree by Entry identity,
+including all required managed rows and their optional failures, every id,
 service/tool/provider and the bridge's final assembled prompt. Complete persona
 modes fail rather than losing the literal sections after native assembly.
 """
@@ -40,7 +41,7 @@ from ai_dotfiles.core.errors import ConfigError
 DSH_BRIDGE_SCHEMA_VERSION = 1
 DSH_BRIDGE_GENERATOR_VERSION = 1
 DSH_AUDIT_SCHEMA_VERSION = 1
-DSH_AUDIT_GENERATOR_VERSION = 1
+DSH_AUDIT_GENERATOR_VERSION = 2
 DSH_BRIDGE_ROW_ID = "ai-dotfiles-bridge"
 DSH_AUDIT_ROW_ID = "ai-dotfiles-audit"
 _EMPTY_PERMISSIONS = DshPermissionPolicy()

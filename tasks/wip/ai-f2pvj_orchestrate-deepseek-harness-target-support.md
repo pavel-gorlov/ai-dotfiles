@@ -45,13 +45,19 @@ chains while preserving the approved five-phase delivery sequence.
 
 ## Phase order
 
-| Phase | Ordered subtasks | Integration gate |
-|---|---|---|
-| 0 — contract/ownership | ai-7xrwf → ai-bdfbz → ai-d80em | Typed target/path contract, native roots and shared-block union tests pass. |
-| 1 — elements/bridge | ai-86vb3 → ai-bdqha → ai-8n95c → ai-efsr3 | Rendered rows and policy data agree with literal/readiness bridge; safe install and focused native fixture pass. |
-| 2 — configuration/launch | ai-ckvng → ai-4m4hj → ai-vv1t9 | Native composition includes one merged hooks/MCP/agent set with origin resources; audited launch and fake-service cases pass. |
-| 3 — migration/lifecycle | ai-nzmc8 → ai-m4s7p → ai-k1w43 → ai-gbrqm → ai-b8jes | Local registry/retirement and shared union are integrated before command mutations; project/global CLI and existing lifecycle regressions pass. |
-| 4 — acceptance/docs | ai-f2bcb → ai-rr48w → ai-6w1qz → ai-pwjnx | Required native smoke, published references/examples and all final gates pass. |
+| Approved milestone / frontmatter phase | Integration gate |
+|---|---|
+| 0 — contract/ownership / 1 | Typed target/path contract, native roots and shared-block union tests pass. |
+| 1 — elements/bridge / 2 | Rendered rows and policy data agree with literal/readiness bridge; safe install and focused native fixture pass. |
+| 2 — configuration/launch / 3 | Native composition includes one merged hooks/MCP/agent set with origin resources; audited launch and fake-service cases pass. |
+| 3 — migration/lifecycle / 4 | Local registry/retirement and shared union are integrated before command mutations; project/global CLI and existing lifecycle regressions pass. |
+| 4 — acceptance/docs / 5 | Required native smoke, published references/examples and all final gates pass. |
+
+Membership and mode are explicit in each child's frontmatter. The classification
+table below retains serial row order. During the bounded correction ai-ckvng
+may remain wip after its worker returns idle: dispatch ai-arqyy as the sole
+writer, accept/commit that correction, then resume ai-ckvng for its scoped gate
+before hooks or launch. No overlapping workers or dependency bypass is allowed.
 
 ## Branches and PRs
 
@@ -94,6 +100,13 @@ an execution request, as stated in the approved epic.
   after boot, but does not invoke the managed audit boundary: the managed host
   must actually await it before its readiness/surface release, not merely run an
   unrelated offline audit. No complete claim for this consumer exists yet.
+  Native loadProfileDirectory can retire an obsolete schedule bundle by writing
+  the profile package.json. The read-only helper must inspect and refuse that
+  retired manifest case before calling the API, with explicit diagnostics and
+  unchanged profile/home/package sentinel evidence. It must not repair profiles.
+  ai-ckvng's proposed helper exports separate inspectComposition/parseFrontmatter
+  and mountSelectedComposition/auditBeforeReady boundaries; concrete names and
+  native scope proof are verified at its acceptance before ai-vv1t9 consumes them.
 - Phase 3 registers local contributions before remove/prune and retires missing
   sources. Command owners integrate the same core collectors, including existing
   Codex prune/remove call sites that could delete DSH-shared project blocks.
@@ -131,27 +144,28 @@ that integration and may test/document it without introducing another owner.
 
 ## Subtask classification
 
-| ID | Title | Mode | Size | Executor | Estimate | Context files |
-|---|---|---|---|---|---|---|
-| ai-7xrwf | Define DSH layout and native target paths | write | M | general-purpose | 0.5–1 d · 5 files · ~+300/−20 LOC | `src/ai_dotfiles/core/paths.py`, `src/ai_dotfiles/core/dsh_layout.py`, `src/ai_dotfiles/core/dsh_targets.py`, `tests/unit/test_dsh_paths.py`, `tests/unit/test_dsh_targets.py` |
-| ai-bdfbz | Register DSH target and explicit element dispatch | write | M | general-purpose | 0.5–1 d · 4 files · ~+150/−20 LOC | `src/ai_dotfiles/core/targets.py`, `src/ai_dotfiles/core/elements.py`, `tests/unit/test_targets.py`, `tests/unit/test_elements.py` |
-| ai-d80em | Coordinate shared Codex and DSH instruction ownership | write | M | general-purpose | 0.5–1 d · 4 files · ~+250/−40 LOC | `src/ai_dotfiles/core/shared_instructions.py`, `src/ai_dotfiles/core/agents_md.py`, `src/ai_dotfiles/core/codex_install.py` (only `remove_codex_rule_blocks` delegation), `tests/unit/test_shared_instructions.py` |
-| ai-86vb3 | Render DSH skills rules and callable agent payloads | write | M | general-purpose | 1–1.5 d · 2 files · ~+450/−0 LOC | `src/ai_dotfiles/core/dsh_render.py`, `tests/unit/test_dsh_render.py` |
-| ai-bdqha | Translate bounded DSH permission policy | write | M | general-purpose | 0.5–1 d · 2 files · ~+250/−0 LOC | `src/ai_dotfiles/core/dsh_permissions.py`, `tests/unit/test_dsh_permissions.py` |
-| ai-8n95c | Implement native literal prompt policy and readiness bridge | write | M | general-purpose | 1.5–2.5 d · 4 files · ~+700/−0 LOC | `src/ai_dotfiles/scaffold/templates/dsh_bridge.mjs`, `src/ai_dotfiles/scaffold/templates/dsh_audit.mjs`, `src/ai_dotfiles/core/dsh_audit.py`, `tests/integration/test_dsh_bridge.py` |
-| ai-efsr3 | Install DSH elements with copy link and provenance ownership | write | M | general-purpose | 1–1.5 d · 4 files · ~+400/−20 LOC | `src/ai_dotfiles/core/dsh_install.py`, `src/ai_dotfiles/core/fs_copy.py`, `src/ai_dotfiles/core/symlinks.py`, `tests/integration/test_dsh_target.py` |
-| ai-ckvng | Compose DSH configuration MCP and native domain fragments | write | M | general-purpose | 1.5–2.5 d · 5 files · ~+700/−0 LOC | `src/ai_dotfiles/core/dsh_config.py`, `src/ai_dotfiles/core/dsh_native.py`, `src/ai_dotfiles/scaffold/templates/dsh_compose.mjs`, `tests/unit/test_dsh_config.py`, `tests/integration/test_dsh_config_drift.py` |
-| ai-4m4hj | Translate supported DSH command hooks and resource bindings | write | M | general-purpose | 0.5–1.5 d · 2 files · ~+350/−0 LOC | `src/ai_dotfiles/core/dsh_hooks.py`, `tests/unit/test_dsh_hooks.py` |
-| ai-vv1t9 | Launch managed DSH with audited patches and environment | write | M | general-purpose | 1–2 d · 5 files · ~+450/−0 LOC | `src/ai_dotfiles/core/dsh_launch.py`, `src/ai_dotfiles/commands/dsh.py`, `src/ai_dotfiles/cli.py`, `tests/unit/test_dsh_launch.py`, `tests/e2e/test_dsh_launch.py` |
-| ai-nzmc8 | Migrate local Claude elements with DSH source registry | write | M | general-purpose | 1–2 d · 5 files · ~+550/−30 LOC | `src/ai_dotfiles/core/dsh_migrate.py`, `src/ai_dotfiles/core/dsh_local_registry.py`, `src/ai_dotfiles/core/local_discovery.py`, `tests/integration/test_dsh_migrate.py`, `tests/integration/test_local_discovery.py` |
-| ai-m4s7p | Reconcile DSH drift retired sources and bounded prune | write | M | general-purpose | 1–2 d · 4 files · ~+500/−20 LOC | `src/ai_dotfiles/core/dsh_reconcile.py`, `src/ai_dotfiles/core/gitignore.py`, `tests/integration/test_dsh_reconcile.py`, `tests/integration/test_dsh_prune.py` |
-| ai-k1w43 | Wire DSH install add and remove in both scopes | write | M | general-purpose | 1–2 d · 5 files · ~+450/−60 LOC | `src/ai_dotfiles/commands/install.py`, `src/ai_dotfiles/commands/add.py`, `src/ai_dotfiles/commands/remove.py`, `tests/e2e/test_dsh_install.py`, `tests/e2e/test_dsh_global.py` |
-| ai-gbrqm | Wire DSH status reconcile and migration CLI | write | M | general-purpose | 0.5–1.5 d · 5 files · ~+300/−40 LOC | `src/ai_dotfiles/commands/status.py`, `src/ai_dotfiles/commands/reconcile.py`, `src/ai_dotfiles/commands/migrate.py`, `src/ai_dotfiles/core/completions.py`, `tests/e2e/test_dsh_migrate.py` |
-| ai-b8jes | Wire DSH domain add and remove lifecycle | write | M | general-purpose | 0.5–1 d · 2 files · ~+200/−30 LOC | `src/ai_dotfiles/commands/domain.py`, `tests/e2e/test_dsh_domain.py` |
-| ai-f2bcb | Build required isolated pinned DSH runtime acceptance | write | M | general-purpose | 1.5–2.5 d · 3 files · ~+650/−20 LOC | `tests/integration/test_dsh_runtime.py`, `tests/conftest.py`, `pyproject.toml` |
-| ai-rr48w | Document DSH lifecycle launcher and compatibility contract | write | S | general-purpose | 0.5–1 d · 3 files · ~+300/−30 LOC | `README.md`, `src/ai_dotfiles/scaffold/templates/builtin_ai_dotfiles_skill.md`, `docs/dsh-target.md` |
-| ai-6w1qz | Sync scaffold references and native fragment example | write | S | general-purpose | 0.25–0.5 d · 3 files · ~+100/−10 LOC | `src/ai_dotfiles/scaffold/templates/global_readme.md`, `src/ai_dotfiles/scaffold/templates/root_readme.md`, `src/ai_dotfiles/scaffold/templates/example_dsh_fragment.json` |
-| ai-pwjnx | Verify final DSH epic acceptance and existing regressions | read-only | S | general-purpose | 0.25–0.5 d · 0 files written · ~+30/−0 LOC of gate evidence | `pyproject.toml`, `poetry.lock`, `.pre-commit-config.yaml`, `tests/integration/test_dsh_runtime.py`, `README.md` |
+| ID | Title | Size | Executor | Estimate | Context files |
+|---|---|---|---|---|---|
+| ai-7xrwf | Define DSH layout and native target paths | M | general-purpose | 0.5–1 d · 5 files · ~+300/−20 LOC | `src/ai_dotfiles/core/paths.py`, `src/ai_dotfiles/core/dsh_layout.py`, `src/ai_dotfiles/core/dsh_targets.py`, `tests/unit/test_dsh_paths.py`, `tests/unit/test_dsh_targets.py` |
+| ai-bdfbz | Register DSH target and explicit element dispatch | M | general-purpose | 0.5–1 d · 4 files · ~+150/−20 LOC | `src/ai_dotfiles/core/targets.py`, `src/ai_dotfiles/core/elements.py`, `tests/unit/test_targets.py`, `tests/unit/test_elements.py` |
+| ai-d80em | Coordinate shared Codex and DSH instruction ownership | M | general-purpose | 0.5–1 d · 4 files · ~+250/−40 LOC | `src/ai_dotfiles/core/shared_instructions.py`, `src/ai_dotfiles/core/agents_md.py`, `src/ai_dotfiles/core/codex_install.py` (only `remove_codex_rule_blocks` delegation), `tests/unit/test_shared_instructions.py` |
+| ai-86vb3 | Render DSH skills rules and callable agent payloads | M | general-purpose | 1–1.5 d · 2 files · ~+450/−0 LOC | `src/ai_dotfiles/core/dsh_render.py`, `tests/unit/test_dsh_render.py` |
+| ai-bdqha | Translate bounded DSH permission policy | M | general-purpose | 0.5–1 d · 2 files · ~+250/−0 LOC | `src/ai_dotfiles/core/dsh_permissions.py`, `tests/unit/test_dsh_permissions.py` |
+| ai-8n95c | Implement native literal prompt policy and readiness bridge | M | general-purpose | 1.5–2.5 d · 4 files · ~+700/−0 LOC | `src/ai_dotfiles/scaffold/templates/dsh_bridge.mjs`, `src/ai_dotfiles/scaffold/templates/dsh_audit.mjs`, `src/ai_dotfiles/core/dsh_audit.py`, `tests/integration/test_dsh_bridge.py` |
+| ai-efsr3 | Install DSH elements with copy link and provenance ownership | M | general-purpose | 1–1.5 d · 4 files · ~+400/−20 LOC | `src/ai_dotfiles/core/dsh_install.py`, `src/ai_dotfiles/core/fs_copy.py`, `src/ai_dotfiles/core/symlinks.py`, `tests/integration/test_dsh_target.py` |
+| ai-ckvng | Compose DSH configuration MCP and native domain fragments | M | general-purpose | 1.5–2.5 d · 5 files · ~+700/−0 LOC | `src/ai_dotfiles/core/dsh_config.py`, `src/ai_dotfiles/core/dsh_native.py`, `src/ai_dotfiles/scaffold/templates/dsh_compose.mjs`, `tests/unit/test_dsh_config.py`, `tests/integration/test_dsh_config_drift.py` |
+| ai-arqyy | Audit selected native preset tree readiness | M | general-purpose | 0.25–0.5 d · 3 files · ~+120/−40 LOC | `src/ai_dotfiles/scaffold/templates/dsh_audit.mjs`, `src/ai_dotfiles/core/dsh_audit.py`, `tests/integration/test_dsh_bridge.py` |
+| ai-4m4hj | Translate supported DSH command hooks and resource bindings | M | general-purpose | 0.5–1.5 d · 2 files · ~+350/−0 LOC | `src/ai_dotfiles/core/dsh_hooks.py`, `tests/unit/test_dsh_hooks.py` |
+| ai-vv1t9 | Launch managed DSH with audited patches and environment | M | general-purpose | 1–2 d · 5 files · ~+450/−0 LOC | `src/ai_dotfiles/core/dsh_launch.py`, `src/ai_dotfiles/commands/dsh.py`, `src/ai_dotfiles/cli.py`, `tests/unit/test_dsh_launch.py`, `tests/e2e/test_dsh_launch.py` |
+| ai-nzmc8 | Migrate local Claude elements with DSH source registry | M | general-purpose | 1–2 d · 5 files · ~+550/−30 LOC | `src/ai_dotfiles/core/dsh_migrate.py`, `src/ai_dotfiles/core/dsh_local_registry.py`, `src/ai_dotfiles/core/local_discovery.py`, `tests/integration/test_dsh_migrate.py`, `tests/integration/test_local_discovery.py` |
+| ai-m4s7p | Reconcile DSH drift retired sources and bounded prune | M | general-purpose | 1–2 d · 4 files · ~+500/−20 LOC | `src/ai_dotfiles/core/dsh_reconcile.py`, `src/ai_dotfiles/core/gitignore.py`, `tests/integration/test_dsh_reconcile.py`, `tests/integration/test_dsh_prune.py` |
+| ai-k1w43 | Wire DSH install add and remove in both scopes | M | general-purpose | 1–2 d · 5 files · ~+450/−60 LOC | `src/ai_dotfiles/commands/install.py`, `src/ai_dotfiles/commands/add.py`, `src/ai_dotfiles/commands/remove.py`, `tests/e2e/test_dsh_install.py`, `tests/e2e/test_dsh_global.py` |
+| ai-gbrqm | Wire DSH status reconcile and migration CLI | M | general-purpose | 0.5–1.5 d · 5 files · ~+300/−40 LOC | `src/ai_dotfiles/commands/status.py`, `src/ai_dotfiles/commands/reconcile.py`, `src/ai_dotfiles/commands/migrate.py`, `src/ai_dotfiles/core/completions.py`, `tests/e2e/test_dsh_migrate.py` |
+| ai-b8jes | Wire DSH domain add and remove lifecycle | M | general-purpose | 0.5–1 d · 2 files · ~+200/−30 LOC | `src/ai_dotfiles/commands/domain.py`, `tests/e2e/test_dsh_domain.py` |
+| ai-f2bcb | Build required isolated pinned DSH runtime acceptance | M | general-purpose | 1.5–2.5 d · 3 files · ~+650/−20 LOC | `tests/integration/test_dsh_runtime.py`, `tests/conftest.py`, `pyproject.toml` |
+| ai-rr48w | Document DSH lifecycle launcher and compatibility contract | S | general-purpose | 0.5–1 d · 3 files · ~+300/−30 LOC | `README.md`, `src/ai_dotfiles/scaffold/templates/builtin_ai_dotfiles_skill.md`, `docs/dsh-target.md` |
+| ai-6w1qz | Sync scaffold references and native fragment example | S | general-purpose | 0.25–0.5 d · 3 files · ~+100/−10 LOC | `src/ai_dotfiles/scaffold/templates/global_readme.md`, `src/ai_dotfiles/scaffold/templates/root_readme.md`, `src/ai_dotfiles/scaffold/templates/example_dsh_fragment.json` |
+| ai-pwjnx | Verify final DSH epic acceptance and existing regressions | S | general-purpose | 0.25–0.5 d · 0 files written · ~+30/−0 LOC of gate evidence | `pyproject.toml`, `poetry.lock`, `.pre-commit-config.yaml`, `tests/integration/test_dsh_runtime.py`, `README.md` |
 
 ## Planning verification
 
@@ -161,7 +175,21 @@ BLOCKING: 0 after explicitly naming the click and Node integration owners.
 All 19 subtasks have concrete acceptance, at most five context files and
 disjoint write sets. Phase counts are 3 / 4 / 3 / 5 / 4; dependency fields
 have no chain of three nodes. tm validate --all and git diff --check pass.
-This records planning gates; implementation acceptance below is still pending.
+This records the original planning gates; implementation acceptance below is still pending.
+
+2026-10-04 bounded corrective cut: ai-arqyy isolates the native selected-tree
+audit failure found by ai-ckvng's actual RC2 host test. There are now 20 children
+(M x17, S x3); the original epic scope and Q3 remain unchanged. This correction
+implements the already approved scoped readiness contract rather than adding a
+surface or fallback. The current cut-check requires explicit mode/phase fields:
+the author now assigns the approved five milestones to positive phases 1–5 and
+the recorded modes in every child's frontmatter, including completed children,
+without changing their lifecycle or reopening history. Fresh-context corrective
+critic checked the epic, this contract and all 20 children: BLOCKING: 0.
+Command tm cut-check ai-f2pvj exited 0; stdout was
+"+ ai-f2pvj: cut-check passed", stderr empty. tm validate --all exited 0
+(48 valid files, 33 legacy done files skipped). Dispatch ai-arqyy may proceed
+while ai-ckvng's writer remains idle; the original Q3 scope remains unchanged.
 
 ## Execution notes
 
@@ -339,10 +367,40 @@ block retirement likewise waits for the desired/protected union. Do not claim
 safe activation from file presence or preserve an old unsupported restriction
 as an unrestricted native element. Phase 1 gate is green; commit verification
 precedes Phase 2 dispatch. Whole launcher/runtime acceptance remains pending.
+Commit 4b7b3f9a6b98b1d93d416a5cc270819a825c7714 is verified with a clean
+tree on epic/ai-47xpm and pre-commit/commit-msg/whitespace gates. The same
+transaction includes the standard file-mode tm usage snapshot; source ownership
+is unchanged. Phase 2 may now dispatch its first ordered writer ai-ckvng.
+
+**ai-ckvng → ai-arqyy.** ai-ckvng is held in wip with its writer idle:
+105/107 focused cases pass, two actual selected-preset readiness cases expose
+the existing root-only audit enumeration bug. Regressions 573/573 and 205/205,
+mypy81/Ruff/Black/Node checks pass. The bounded corrective cut has 20 children;
+tm cut-check and tm validate --all pass. Run a fresh-context cut critic before
+the sole three-file ai-arqyy writer. That writer must union actual selected-tree
+and root entries, retain strict required-row/body/filter/options checks, and
+bump audit template/Python generator together. Never fake Loader/session state.
+After its verified commit, resume ai-ckvng's scoped gates before hooks/launch.
+
+**ai-arqyy → ai-ckvng.** Corrective audit acceptance is 4/4 after real three-file
+review. Worker 415/415 native/render/policy/installer and 67/67 config/scoped
+regressions pass; coordinator bridge plus both original selected-scope failures
+now pass 51/51. mypy81/Ruff/Black2/Node/whitespace gates exit 0. Audit generator
+2 is synchronized across Python/ESM and installer metadata; schema/bridge/policy
+remain 1. Both auditReady(rootCtx, config, {scope}) and scoped run use the actual
+selected service's public Impl/Fiber/Entry tree and settled root union, Entry
+identity deduplication, and fatal SCOPED_TREE_UNAVAILABLE if proof is absent.
+Exact persona/filter/options and optional-foreign diagnostics remain intact;
+real child composition/model inheritance and no audit-session history pass.
+The corrective commit must include this cut's mode/phase authoring, new child
+ticks/move/usage and current held ai-ckvng journal, but exclude its five source
+files. After commit verification, resume that five-file owner for descendant
+domain-include readiness, shadowed targeted-patch retirement, test layout and
+full focused native gates. Hooks/launch remain held until ai-ckvng is accepted.
 
 ## Acceptance criteria
 
-- [ ] All 19 subtasks are complete with their concrete acceptance gates checked.
+- [ ] All 20 subtasks are complete with their concrete acceptance gates checked.
 - [ ] Every surface in the epic matrix is implemented faithfully or has its explicit native limitation diagnostic; no permission/rule broadening is introduced.
 - [ ] Project/global lifecycle, local retirement and mixed Codex/DSH ownership preserve user content; check/dry-run produce zero writes.
 - [ ] Required pinned native runtime acceptance passes with real child invocation and audited managed plugin readiness.

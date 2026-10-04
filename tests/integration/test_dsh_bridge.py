@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 
 from ai_dotfiles.core.dsh_audit import (
+    DSH_AUDIT_GENERATOR_VERSION,
     DshAuditRequirements,
     audit_module_text,
     bridge_audit_requirements,
@@ -229,6 +230,7 @@ def run_native(
             | None
         ) = None,
         native_tools: list[str] | None = None,
+        preset: bool = False,
     ) -> dict[str, Any]:
         root = tmp_path / f"case-{len(list(tmp_path.glob('case-*')))}"
         root.mkdir()
@@ -288,22 +290,52 @@ def run_native(
                     "ptc-runtime-node",
                 )
             )
-        rows.extend(agents)
-        rows.append(
+        managed = list(agents)
+        managed.append(
             {
                 "id": "ai-dotfiles-bridge",
                 "name": (root / "bridge.mjs").as_uri(),
                 "config": config,
             }
         )
-        rows.append(
+        managed.append(
             {
                 "id": "ai-dotfiles-audit",
                 "name": (root / "audit.mjs").as_uri(),
                 "config": requirements,
             }
         )
-        rows.extend(extra_rows or [])
+        managed.extend(extra_rows or [])
+        if preset:
+            rows.extend(
+                [
+                    {
+                        "id": "presets",
+                        "name": "@deepseek-ai/dsh-agent-preset-registry",
+                        "config": {"default": "parent"},
+                    },
+                    {
+                        "id": "parent-preset",
+                        "name": "@deepseek-ai/dsh-agent-preset",
+                        "config": {
+                            "id": "parent",
+                            "plugins": [
+                                {
+                                    "id": "managed",
+                                    "name": "cordis:group",
+                                    "isolate": {
+                                        "aiDotfilesAudit": True,
+                                        "aiDotfilesBridge": True,
+                                    },
+                                    "config": managed,
+                                }
+                            ],
+                        },
+                    },
+                ]
+            )
+        else:
+            rows.extend(managed)
         (root / "native.json").write_text(json.dumps(rows))
         (root / "fixture.json").write_text(
             json.dumps({"config": config, "requirements": requirements})
@@ -514,6 +546,209 @@ def test_bridge_builder_rejects_blocked_deferred_and_duplicate_sources(
     source.write_text("---\nname: deferred\ndescription: |\n  multiline\n---\nbody\n")
     with pytest.raises(ConfigError, match="DEFERRED"):
         build_bridge_config([render_agent(source)])
+
+
+def test_audit_generator_config_module_and_ownership_drift(tmp_path: Path) -> None:
+    from ai_dotfiles.core.dsh_install import (
+        apply_dsh_install,
+        output_drift,
+        plan_dsh_install,
+    )
+    from ai_dotfiles.core.dsh_layout import project_layout
+
+    assert DSH_AUDIT_GENERATOR_VERSION == 2
+    assert DshAuditRequirements().as_dict()["generator"] == 2
+    assert "// generator: 2\n" in audit_module_text()
+    assert "export const generator = 2;" in audit_module_text()
+    plan = plan_dsh_install(project_layout(tmp_path))
+    result = apply_dsh_install(plan)
+    output = next(item for item in plan.outputs if item.generators == {"audit": 2})
+    record = result.inventory.records["ai-dotfiles/audit.mjs"]
+    assert output_drift(output, record) == ()
+    record["generators"] = {"audit": 1}
+    assert output_drift(output, record) == ("generator changed",)
+
+
+SELECTED_PRESET = r"""
+const { createScope } = await import('@deepseek-ai/dsh-scope');
+const scope = {};
+Object.assign(scope, createScope(ctx, scope));
+assert.equal(ctx.get('aiDotfilesAudit'), undefined);
+assert.equal(ctx.get('aiDotfilesBridge'), undefined);
+assert.equal((await ctx.agentPresets.resolve('parent')).id, 'parent');
+const lease = await ctx.agentPresets.acquireScope('parent');
+await lease[Symbol.asyncDispose]();
+await ctx.agentPresets.mount(scope.ctx, 'parent');
+const nativeAudit = ctx.agentPresets.serviceFor(scope, 'aiDotfilesAudit');
+const impl = Object.getOwnPropertySymbols(ctx.reflect.store)
+  .map(key => ctx.reflect.store[key]).find(impl => impl.value === nativeAudit);
+assert.equal(impl.name, 'aiDotfilesAudit');
+const tree = impl.fiber.entry.parent.tree;
+assert.ok([...tree.entries()].includes(impl.fiber.entry));
+assert.ok(![...ctx.loader.entries()].includes(impl.fiber.entry));
+assert.equal(ctx.sessions.list().length, 0);
+"""
+
+
+def test_native_selected_preset_tree_settles_before_ready_and_real_child(
+    run_native: Callable[..., Any],
+) -> None:
+    result = run_native(
+        SELECTED_PRESET
+        + r"""
+assert.equal(audit.generator, fixture.requirements.generator);
+assert.throws(() => audit.validateAuditConfig({ ...fixture.requirements,
+  generator: 1 }), /schema or generator/);
+writeFileSync(new URL('./late.mjs', import.meta.url), `
+export const name = 'scoped-late';
+export async function apply(ctx) {
+  await new Promise(resolve => setTimeout(resolve, 25));
+  ctx.provide('fixtureScopedLate', { settled: true });
+}`);
+const adding = tree.create({ id: 'scoped-late',
+  name: new URL('./late.mjs', import.meta.url).href,
+  isolate: { fixtureScopedLate: true } }, 'managed');
+assert.ok(tree.getTasks().length > 0);
+const req = { ...fixture.requirements,
+  requiredIds: [...fixture.requirements.requiredIds, 'scoped-late'],
+  requiredServices: [...fixture.requirements.requiredServices, 'fixtureScopedLate'] };
+const report = await audit.auditReady(ctx, req, { scope });
+await adding;
+assert.equal(report.ready, true);
+assert.equal(report.composition, 'selected');
+assert.equal(ctx.agentPresets.serviceFor(scope, 'fixtureScopedLate').settled, true);
+assert.equal(tree.getTasks().length, 0);
+assert.deepEqual(await nativeAudit.run({ scope }), report);
+assert.equal(ctx.sessions.list().length, 0);
+// Another standing preset tree cannot create leaf-id collisions in this scope.
+await ctx.loader.create({ id: 'unselected', name: '@deepseek-ai/dsh-agent-preset',
+  config: { id: 'other', plugins: [{ id: 'managed', name: 'cordis:group',
+    isolate: { aiDotfilesAudit: true, aiDotfilesBridge: true },
+    config: tree.resolve('managed').options.config }] } });
+await ctx.loader.await();
+assert.equal((await ctx.agentPresets.resolve('other')).broken, undefined);
+assert.equal((await audit.auditReady(ctx, req, { scope })).ready, true);
+const handle = await createParent({ setup: async inner => {
+  await ctx.agentPresets.mount(inner, 'parent');
+} });
+ctx.localEvidence.script.push(tool('read'), text('scoped native child result'));
+const delegated = await execute('ai_dotfiles_agent_reviewer', handle.agent, {
+  description: 'Use selected composition', prompt: 'Read', run_in_background: false,
+});
+assert.equal(delegated.isError, false);
+const child = ctx.localEvidence.children[0];
+assert.equal(ctx.agentPresets.composedPreset(child.ctx), 'parent');
+assert.equal(child.options.model, 'current-route');
+assert.equal(child.options.maxTokens, 321);
+assert.ok(systemText(ctx.localEvidence.requests[0])
+  .includes(fixture.config.agents[0].persona));
+assert.deepEqual(ctx.localEvidence.requests[0].tools.map(item => item.name).sort(),
+  ['bash', 'read', 'read_image']);
+await handle.dispose(); await scope.dispose();
+console.log(JSON.stringify({ ready: report.ready, inherited: 'parent' }));
+""",
+        preset=True,
+    )
+    assert result == {"ready": True, "inherited": "parent"}
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "missing",
+        "disabled",
+        "import",
+        "pending",
+        "apply",
+        "ambiguous",
+        "filter",
+        "options",
+        "persona",
+    ],
+)
+def test_native_selected_preset_required_rows_remain_strict(
+    run_native: Callable[..., Any], kind: str
+) -> None:
+    result = run_native(
+        SELECTED_PRESET
+        + r"""
+const kind = KIND;
+const id = 'scoped-required';
+const file = new URL('./scoped-required.mjs', import.meta.url);
+let req = fixture.requirements;
+if (['filter', 'options', 'persona'].includes(kind)) {
+  const row = [...tree.entries()].find(entry =>
+    entry.options.id === fixture.config.agents[0].rowId);
+  const config = structuredClone(row.options.config);
+  if (kind === 'filter') delete config.toolFilter;
+  if (kind === 'options') config.agentOptions = { maxTokens: 1 };
+  if (kind === 'persona') config.persona = 'changed literal body';
+  await tree.update(row.options.id, { config });
+} else {
+  req = { ...fixture.requirements,
+    requiredIds: [...fixture.requirements.requiredIds, id] };
+  if (!['missing', 'import'].includes(kind)) writeFileSync(file,
+    "export const name = 'scoped-required'; "
+    + (kind === 'pending' ? "export const inject = ['missingScopedService']; " : '')
+    + "export function apply() { "
+    + (kind === 'apply' ? "throw new Error('scoped apply failed');" : '') + " }");
+  if (kind !== 'missing') await tree.create({ id, name: file.href,
+    disabled: kind === 'disabled' }, 'managed');
+  if (kind === 'ambiguous') await ctx.loader.create({ id, name: file.href });
+}
+let report;
+await assert.rejects(audit.auditReady(ctx, req, { scope }), error => {
+  report = error.report;
+  return error.name === 'DshReadinessError';
+});
+const expected = { missing: 'MISSING_ROW', disabled: 'DISABLED_ROW',
+  import: 'IMPORT_FAILED', pending: 'PENDING_SERVICE', apply: 'APPLY_FAILED',
+  ambiguous: 'AMBIGUOUS_ROW', filter: 'MANAGED_AGENT_FILTER',
+  options: 'MANAGED_AGENT_OPTIONS', persona: 'MANAGED_AGENT_CONFIG' }[kind];
+assert.ok(report.failures.some(item => item.code === expected));
+if (['filter', 'options', 'persona'].includes(kind)) {
+  await assert.rejects(nativeAudit.run({ scope }), error =>
+    error.report.failures.some(item => item.code === expected));
+} else {
+  // The same foreign optional row remains a diagnostic rather than a fatal row.
+  const foreign = await nativeAudit.run({ scope });
+  assert.equal(foreign.ready, true);
+  if (['import', 'pending', 'apply'].includes(kind)) {
+    assert.ok(foreign.diagnostics.some(item => item.code === expected));
+  }
+}
+assert.equal(ctx.sessions.list().length, 0);
+await scope.dispose();
+console.log(JSON.stringify({ refused: expected }));
+""".replace(
+            "KIND", json.dumps(kind)
+        ),
+        preset=True,
+    )
+    assert result["refused"] != ""
+
+
+def test_native_selected_tree_without_provider_proof_refuses_ready(
+    run_native: Callable[..., Any],
+) -> None:
+    result = run_native(
+        SELECTED_PRESET
+        + r"""
+for (const id of ['ai-dotfiles-audit', 'ai-dotfiles-bridge']) {
+  await tree.update(id, { disabled: true });
+}
+assert.equal(ctx.agentPresets.serviceFor(scope, 'aiDotfilesAudit'), undefined);
+assert.equal(ctx.agentPresets.serviceFor(scope, 'aiDotfilesBridge'), undefined);
+await assert.rejects(audit.auditReady(ctx, fixture.requirements, { scope }), error =>
+  error.report.ready === false && error.report.failures.some(item =>
+    item.code === 'SCOPED_TREE_UNAVAILABLE'));
+assert.equal(ctx.sessions.list().length, 0);
+await scope.dispose();
+console.log(JSON.stringify({ unprovedRefused: true }));
+""",
+        preset=True,
+    )
+    assert result["unprovedRefused"] is True
 
 
 def test_real_native_parent_preset_services_tools_and_child_inheritance(
