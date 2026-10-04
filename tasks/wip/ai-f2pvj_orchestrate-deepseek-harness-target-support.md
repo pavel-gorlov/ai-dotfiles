@@ -509,6 +509,120 @@ commas to test function parameters only; actual twelve-hunk diff accepted,
 core unchanged. Git owner repeats206 hook unit tests and required Git gates
 before the same subtask commit. No extra source change or weakened native gate.
 
+
+**ai-4m4hj → ai-vv1t9.** Hooks commit23610458efe496c22a1631ca3aea7e16f9e8eb99
+independently verified against parent99a7e5d: exact6paths, +1900/-53; source,
+ticks/task relocation/usage and notes together. Core SHA unchanged; only twelve
+accepted Black25.1 test commas, repeated206/206 and all Git gates exit0. Index/
+worktree clean, main unchanged. Promote only the five-file managed-launch owner.
+It consumes collect_dsh_hooks/attach_dsh_hook_outputs and ONE hooks contribution,
+current raw configuration/native rendering, source guards and selected-tree audit.
+A stale retired native-discovered output must be retired or refused, never treated
+as harmless omission. Official RC2 runtime is resolved, not installed; Python
+subprocess uses shell=False and explicit argv/environment/status propagation.
+Actual host boot must preserve user profile relative module/include origin and
+await auditBeforeReady with actual chosen scope before readiness/surface. Do not
+use mutating runProfile/prepareProfile or an unrelated offline audit as readiness.
+
+
+**ai-vv1t9 native API review → pre-surface gate.** Published headless-runner
+starts its run during apply instead of waiting for AppReady; audit must precede
+that surface too. Same five-file owner investigates public Cordis EntryTree
+staging with original profile base and read-only native includes; audit actual
+selected scope, then release finite supported native surfaces. Real failure
+probe must show zero provider turn/exposure before failed managed-row audit;
+success must use actual native surface/exit. Preserve argv/overrides and profile/
+home/relative module/include bytes. No private monkeypatch or generic new host;
+unprovable wrappers remain explicit diagnostics. Existing decisions 3/12/14.
+
+
+**ai-vv1t9 catalog collection → local producer integration hold.** Later
+ai-nzmc8/ai-m4s7p provide migration/registry/reconciliation. Launcher must not
+guess that schema or mistake merged .claude/settings.json for raw catalog input.
+Concrete typed local inputs may be exposed now, but actual producer/launcher
+join and tests remain mandatory before final acceptance. Existing unprovable
+local registry refuses activation, never silently omitted. Coordinator must
+assign a bounded continuation if the actual join needs launcher writes outside
+the later owner's current five-file set; no dormant feature flag or new scope.
+
+
+**ai-vv1t9 mixed instruction probe → no-broadening guard.** Actual RC2
+loadBaselineInstructions loads a shared Codex-only paths:["**/*.py"] /
+always_on:true root block unconditionally; probe
+/private/tmp/dsh-shared-native-root-probe.py exits0, nativeBodyPresent:true.
+Foundation contributor sets correctly exclude DSH but cannot filter a physical
+shared AGENTS.md for native discovery. Same launcher owner must stop that
+unrepresentable effective activation with precise source/field diagnostic,
+preserve Codex/user bytes and existing classifier, and inspect actual native
+provider/candidate configuration. No custom filtering runtime or source rewrite.
+This is the approved no-rule-broadening boundary, not an independent feature.
+
+
+**ai-vv1t9 draft review → argv/discovery guards.** Entire initial474-line
+core/command reviewed. Actual Node probe confirms app --port becomes a Node
+flag without -- (exit9); native argv needs an interpreter delimiter. Previously
+owned global native-discovered outputs must be refused/retired even when global
+manifest no longer enables DSH. Same owner adds read-only disabled-scope guards,
+preserves foreign files and proves argv. Native/acceptance gates remain open.
+
+
+**ai-vv1t9 initial32 gate → scoped/instruction proof.** Worker own32/32
+pass with real ready -> nestedinclude -> providerturn, failed required domain
+no ready/turn and profile/home bytes unchanged. Delimiter and disabled-scope
+retirement fixed. Native agent-loop stays as lazy core factory; eager config.agents
+is staged. Effective native instruction guard and real stock preset/scoped
+success/failure tests remain pending, all six launcher criteria still open.
+
+
+**ai-vv1t9 guard review → selected provider lookup.** Live selected-tree
+enumeration is present; draft root llm/default-model lookup still misses a
+preset-scoped provider route. Same writer resolves actual selected services via
+public serviceFor and adds global-valid/chosen-missing failure-before-turn
+proof. Launcher acceptance remains open until full final native/static gates.
+
+
+**ai-vv1t9 stock probe → immutable HMR/release correction.** RC2 HMR after
+AppReady replaces include:ai-dotfiles-host:hmr with include:hmr through public
+reconcileProfilePatches. Same owner blocks known official live recomposition
+under already approved restart-only decision14, emits precise diagnostics and
+releases only staged rows via public Entry.update. Preserve source/profile/home
+bytes and actual selected-tree ownership; do not replay all services or rewrite
+arbitrary wrappers. Final native/static gate and all six criteria stay open.
+
+
+**ai-vv1t9 native consumer review → scope fidelity.** RC2 HMR has no
+watchConfig:false; only the known official live path is disabled with restart
+diagnostics. Stock headless Agent remains global even with a separately mounted
+audit preset. Refuse preset-managed/global-headless mismatch before ready/turn,
+never label that separate scope as consumer readiness. Global headless remains
+supported; real stock Web sessionController create/prompt must prove preset-aware
+consumer readiness. Same five-file owner, original profile bytes preserved.
+
+**ai-vv1t9 review → acceptance transaction.** Frozen five-file launcher inspected;
+worker relevant native/regression871/871 and coordinator own47/47 pass. Root
+mypy84/Ruff5/Black5/embedded Node syntax/whitespace exit0; SHA values match.
+Actual global headless and actual standard-preset Web SessionController prove
+audit-before-ready/turn, argv/env/profile-relative resources and exit propagation.
+Required-row/scoped-provider failures release no ready/surface/turn. Original
+profile/home bytes stay intact; public EntryTree/Entry.update staging preserves
+immutable owned tree, official HMR is disabled with restart diagnostics. Public
+Entry.evaluate/disabled/isJsExpr used, no private disabledOf or synthetic audit
+session. Active root/nested providers refuse unrepresentable shared Codex scoped
+blocks; disabled/custom candidates pass; native DEFERRED skills/provider checks
+pass. Private request file is mode0600 and credentials are absent from argv.
+RC2 headless with preset refuses COMPOSITION_NOT_SELECTED; docs owner must state
+this and HMR limits. Prepare six ticks/move/usage in one launcher commit. Local
+registry activation remains an explicit parent hold: after migration/reconcile
+producer APIs exist, budget the bounded launcher join before final native gates.
+Do not invent registry schemas or activate serialized config.json. Next serial
+owner ai-nzmc8 supplies fresh originals/provenance and per-layout merge contract.
+
+**ai-vv1t9 acceptance → done transaction.** tm acceptance6/6 and move done
+exit0; source/ticks/task relocation/usage/current journal are prepared together.
+Verify one feat(ai-vv1t9) commit against parent23610458 before migration; no
+extra source writes or publication. The global/catalog launcher gate is proven,
+while named-child final acceptance and local producer activation remain open.
+
 ## Acceptance criteria
 
 - [ ] All 20 subtasks are complete with their concrete acceptance gates checked.
