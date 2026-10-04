@@ -2,7 +2,7 @@
 export const name = 'ai-dotfiles-audit';
 export const inject = ['loader'];
 export const schemaVersion = 1;
-export const generator = 1;
+export const generator = 2;
 
 // Public Cordis FiberState constants in the pinned release (const enum).
 const PENDING = 0;
@@ -58,20 +58,52 @@ export class DshReadinessError extends Error {
   }
 }
 
+function selectedTree(ctx, presets, scope, services) {
+  if (presets === undefined || scope?.ctx === undefined) return ctx.fiber.entry?.parent.tree;
+  // serviceFor selects this scope's standing revision. Public Cordis Impl
+  // records identify its providing Fiber, whose Entry owns the detached tree.
+  const store = ctx.reflect.store;
+  for (const name of new Set(['aiDotfilesAudit', 'aiDotfilesBridge', ...services])) {
+    const service = presets.serviceFor(scope, name);
+    if (service === undefined) continue;
+    for (const key of Object.getOwnPropertySymbols(store)) {
+      const impl = store[key];
+      if (impl?.name === name && impl.value === service) {
+        const tree = impl.fiber.entry?.parent.tree;
+        if (tree !== undefined) return tree;
+      }
+    }
+  }
+}
+
 /** Await from the HOST after boot, never from this plugin's pending apply. */
 export async function auditReady(ctx, input, { scope } = {}) {
   const config = validateAuditConfig(input);
   const failures = [];
   const diagnostics = [];
   const add = (id, code, reason) => failures.push({ id, code, reason });
+  const presets = ctx.get('agentPresets');
+  const serviceFor = service => (scope?.ctx === undefined ? undefined : presets?.serviceFor(scope, service))
+    ?? scope?.ctx?.get(service) ?? ctx.get(service);
   const loader = ctx.get('loader');
+  let entries = [];
   if (loader === undefined) {
     add('loader', 'MISSING_SERVICE', 'native Loader is absent; activate the required provider');
   } else {
     await loader.await();
+    const tree = selectedTree(ctx, presets, scope, config.requiredServices);
+    if (presets !== undefined && scope?.ctx !== undefined && tree === undefined) {
+      add('composition', 'SCOPED_TREE_UNAVAILABLE', 'cannot prove the selected native preset tree through its service providers; refuse readiness');
+    }
+    if (tree !== undefined) {
+      await tree.await();
+      await loader.await();
+    }
     // Cordis traces services per lookup; proxy identity is not lifecycle state.
     if (ctx.get('loader') === undefined) add('loader', 'INACTIVE_SERVICE', 'Loader was disposed during startup');
-    const entries = [...loader.entries()];
+    // Root Includes may already enumerate the same Entry objects. Distinct
+    // objects sharing a leaf id must remain distinct for collision detection.
+    entries = [...new Set([...loader.entries(), ...(tree?.entries() ?? [])])];
     const matches = id => entries.filter(entry => entry.id === id || entry.options.id === id);
     for (const id of config.requiredIds) {
       const found = matches(id);
@@ -83,7 +115,7 @@ export async function auditReady(ctx, input, { scope } = {}) {
     // foreign optional failures are reported without changing native policy.
     for (const entry of entries) {
       const required = config.requiredIds.some(id => entry.id === id || entry.options.id === id)
-        || ctx.get('aiDotfilesBridge')?.config.agents.some(agent => agent.rowId === entry.options.id);
+        || serviceFor('aiDotfilesBridge')?.config.agents.some(agent => agent.rowId === entry.options.id);
       const report = (id, code, reason) => (required ? failures : diagnostics).push({ id, code, reason });
       let disabled;
       try { disabled = entry.disabled; }
@@ -105,10 +137,7 @@ export async function auditReady(ctx, input, { scope } = {}) {
       } else report(entry.id, 'INACTIVE_ROW', `native plugin is inactive (FiberState ${fiber.state})`);
     }
   }
-  const presets = ctx.get('agentPresets');
   if (presets !== undefined && scope === undefined) add('composition', 'COMPOSITION_NOT_SELECTED', 'audit of the chosen native composition is pending; the host must pass its unpublished/idle scoped Agent before starting the surface');
-  const serviceFor = service => (scope?.ctx === undefined ? undefined : presets?.serviceFor(scope, service))
-    ?? scope?.ctx?.get(service) ?? ctx.get(service);
   for (const service of config.requiredServices) {
     if (serviceFor(service) === undefined) add(service, 'MISSING_SERVICE', 'required native service is missing; this custom profile cannot activate the managed contributions');
   }
@@ -125,7 +154,7 @@ export async function auditReady(ctx, input, { scope } = {}) {
       add(provider, 'PROVIDER_CAPABILITY', 'spawn provider lacks the required native child-composition capabilities');
     }
   }
-  const bridge = ctx.get('aiDotfilesBridge');
+  const bridge = serviceFor('aiDotfilesBridge');
   if (bridge === undefined || bridge.schemaVersion !== 1 || bridge.generator !== 1 || typeof bridge.verify !== 'function') {
     add('aiDotfilesBridge', 'MISSING_BRIDGE', 'the versioned literal/policy bridge did not activate');
   } else {
@@ -134,7 +163,7 @@ export async function auditReady(ctx, input, { scope } = {}) {
     for (const agent of bridge.config.agents) {
       agent.requiredTools.forEach(tool => required.add(tool));
       required.add(agent.toolName);
-      const matches = loader === undefined ? [] : [...loader.entries()].filter(entry => entry.options.id === agent.rowId);
+      const matches = entries.filter(entry => entry.options.id === agent.rowId);
       if (matches.length !== 1) add(agent.rowId, 'MANAGED_AGENT_ROW', 'expected exactly one generated native agent row');
       else {
         const value = matches[0].fiber?.config;

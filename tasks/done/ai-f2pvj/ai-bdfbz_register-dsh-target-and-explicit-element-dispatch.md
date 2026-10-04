@@ -13,6 +13,8 @@ dependencies:
 - ai-7xrwf
 executor_agent: claude
 size: M
+mode: write
+phase: 1
 status_history:
 - at: '2026-10-04T11:57:42+00:00'
   status: backlog
