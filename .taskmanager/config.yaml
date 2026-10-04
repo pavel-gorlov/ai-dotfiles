@@ -1,5 +1,6 @@
 project_slug: ai
 default_assignee: claude
+buckets: [closed]
 transitions:
   allow:
   - backlog->to_do
