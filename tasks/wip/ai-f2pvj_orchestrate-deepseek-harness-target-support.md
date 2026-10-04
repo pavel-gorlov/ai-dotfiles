@@ -1,7 +1,7 @@
 ---
 id: ai-f2pvj
 kind: task
-status: to_do
+status: wip
 created_at: '2026-10-04T11:50:07+00:00'
 parent: ai-47xpm
 dependencies: []
@@ -10,6 +10,8 @@ status_history:
   status: backlog
 - at: '2026-10-04T12:09:42+00:00'
   status: to_do
+- at: '2026-10-04T12:27:18+00:00'
+  status: wip
 ---
 
 # Orchestrate DeepSeek Harness target support
@@ -148,6 +150,26 @@ subtask parent ai-f2pvj, whereas the previous cut used parent ai-47xpm.
 Relinked the existing 19 ids with tm link; scope, acceptance and Q3 approval
 are unchanged. Mode detection must use frontmatter across all buckets, not
 directory names. No implementation was dispatched during this repair.
+
+**to_do → wip.** Owner invoked orchestrate ai-f2pvj. Execution uses
+/private/tmp/ai-dotfiles-ai-47xpm on epic/ai-47xpm, bootstrap b8bfd428.
+All 19 child parents are ai-f2pvj. Phase/row order and one writer at a time
+are binding. Main baseline: 1104 tests passed, mypy/Ruff/Black clean.
+Local Poetry .venv imports worktree src; cache/config live under
+/private/tmp/ai-dotfiles-ai-47xpm-cache. Gates: poetry run pytest --cov
+(>=80%), required pinned DSH native smoke, mypy src/, ruff check src/ tests/,
+black --check src/ tests/, pre-commit run --all-files. Merge remains an
+owner action and is excluded from the agent-verifiable goal.
+
+**ai-7xrwf → ai-bdfbz.** Path/layout acceptance is 5/5 after actual diff
+inspection and 133 focused/regression tests; mypy74/Ruff/Black clean.
+APIs: paths.dsh_home(configured), dsh_absolute_path, find_dsh_project_root;
+DshLayout/project_layout/global_layout; DshTargetPlan and project/global
+target planners. Native customSkillDirs is list[str]; merge its additions
+with effective provider config, never replace unrelated native fields.
+Global plan has no cwd/native root; owned_roots bounds scans only and
+does not own foreign files. Next target-dispatch row starts only after
+this transaction's commit is verified. No native runtime acceptance yet.
 
 ## Acceptance criteria
 

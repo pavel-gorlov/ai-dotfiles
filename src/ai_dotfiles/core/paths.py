@@ -82,6 +82,47 @@ def codex_home() -> Path:
     return Path.home() / ".codex"
 
 
+def dsh_home(configured: str | Path | None = None) -> Path:
+    """Return the native DeepSeek Harness home as an absolute path.
+
+    Match ``resolveDshHome`` in DSH 0.2.0-rc.2: an explicit configured
+    value wins over ``DSH_HOME``, followed by ``~/.dsh``. Empty or blank
+    environment overrides are unset; non-blank values retain whitespace.
+    Only ``~``, ``~/`` and ``~\\`` prefixes expand, and normalization
+    does not resolve symlinks or create directories.
+    """
+    override = os.environ.get("DSH_HOME")
+    selected = (
+        str(configured)
+        if configured is not None
+        else override if override is not None and override.strip() else None
+    )
+    if selected is None:
+        candidate = Path.home() / ".dsh"
+    elif selected == "~":
+        candidate = Path.home()
+    elif selected.startswith(("~/", "~\\")):
+        candidate = Path(f"{Path.home()}{os.sep}{selected[2:]}")
+    else:
+        candidate = Path(selected)
+    return dsh_absolute_path(candidate)
+
+
+def dsh_absolute_path(path: str | Path) -> Path:
+    """Normalize a native DSH path like Node's platform ``path.resolve``.
+
+    Keep symlink spelling. POSIX Node collapses a double leading slash,
+    unlike Python's ``normpath``; Windows retains its native UNC spelling.
+    """
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        candidate = current_dir() / candidate
+    normalized = os.path.normpath(candidate)
+    if os.name == "posix":
+        normalized = "/" + normalized.lstrip("/")
+    return Path(normalized)
+
+
 def backup_dir() -> Path:
     """Location where conflicting files are moved (``~/.dotfiles-backup``)."""
     return Path.home() / ".dotfiles-backup"
@@ -151,6 +192,29 @@ def find_project_root(start: Path | None = None) -> Path | None:
     return None
 
 
+def find_dsh_project_root(start: Path | None = None) -> Path:
+    """Return the native skill provider's nearest Git root or starting cwd.
+
+    Unlike :func:`find_project_root`, DSH does not inspect manifests.
+    A ``.git`` directory or worktree file is sufficient. Failed marker
+    probes are skipped, matching the native skill provider (the separate
+    instruction loader has stricter I/O-error semantics). Paths normalize
+    lexically, without resolving symlinks, as Node's ``path.resolve`` does.
+    """
+    origin = dsh_absolute_path(start if start is not None else current_dir())
+    current = origin
+    while True:
+        try:
+            if (current / ".git").exists():
+                return current
+        except OSError:
+            pass
+        parent = current.parent
+        if parent == current:
+            return origin
+        current = parent
+
+
 def project_manifest_path(root: Path) -> Path:
     """Project manifest path (``<root>/ai-dotfiles.json``)."""
     return root / "ai-dotfiles.json"
@@ -179,3 +243,18 @@ def project_codex_skills_dir(root: Path) -> Path:
 def project_codex_agents_dir(root: Path) -> Path:
     """Project-level Codex agents directory (``<root>/.codex/agents``)."""
     return project_codex_dir(root) / "agents"
+
+
+def project_dsh_dir(root: Path) -> Path:
+    """Project-level DeepSeek Harness directory (``<root>/.dsh``)."""
+    return root / ".dsh"
+
+
+def project_dsh_skills_dir(root: Path) -> Path:
+    """Native project DSH skills directory (``<root>/.dsh/skills``)."""
+    return project_dsh_dir(root) / "skills"
+
+
+def project_dsh_owned_dir(root: Path) -> Path:
+    """ai-dotfiles' bounded project resource tree (``.dsh/ai-dotfiles``)."""
+    return project_dsh_dir(root) / "ai-dotfiles"
