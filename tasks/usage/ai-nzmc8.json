@@ -1,0 +1,167 @@
+{
+  "format": 1,
+  "task": "ai-nzmc8",
+  "snapshot_at": "2026-10-04T23:32:18+00:00",
+  "last_exit": "2026-10-04T23:32:18+00:00",
+  "partial": {
+    "recorded": [],
+    "computed": []
+  },
+  "unparsed": 0,
+  "totals": {
+    "tokens": {
+      "gpt-6.1-sol": {
+        "input": 435630,
+        "cache_read": 20010496,
+        "cache_write": 0,
+        "output": 65273,
+        "reasoning": 33998
+      },
+      "codex-auto-review": {
+        "input": 33547,
+        "cache_read": 72960,
+        "cache_write": 0,
+        "output": 196,
+        "reasoning": 197
+      }
+    },
+    "time": {
+      "wall_clock": 2227.0,
+      "active": 2226.837,
+      "owner_wait": 0.0,
+      "idle": 0.163
+    },
+    "unattributed": {
+      "tokens": 0,
+      "share": 0.0
+    },
+    "stages": {
+      "skill": {},
+      "agent": {}
+    }
+  },
+  "intervals": {
+    "wall_clock": [
+      [
+        "2026-10-04T22:55:11+00:00",
+        "2026-10-04T23:32:18+00:00"
+      ]
+    ],
+    "active": [
+      [
+        "2026-10-04T22:55:11+00:00",
+        "2026-10-04T23:32:17.837000+00:00"
+      ]
+    ],
+    "owner_wait": [],
+    "idle": [
+      [
+        "2026-10-04T23:32:17.837000+00:00",
+        "2026-10-04T23:32:18+00:00"
+      ]
+    ]
+  },
+  "codex_roots": {
+    "01a10349-af5a-7b11-8503-9a19885a66b3": "01a10349-af5a-7b11-8503-9a19885a66b3"
+  },
+  "commits": [],
+  "uncommitted_tail": {
+    "tokens": {
+      "gpt-6.1-sol": {
+        "input": 435630,
+        "cache_read": 20010496,
+        "cache_write": 0,
+        "output": 65273,
+        "reasoning": 33998
+      },
+      "codex-auto-review": {
+        "input": 33547,
+        "cache_read": 72960,
+        "cache_write": 0,
+        "output": 196,
+        "reasoning": 197
+      }
+    },
+    "time": {
+      "wall_clock": 2227.0,
+      "active": 2226.837,
+      "owner_wait": 0.0,
+      "idle": 0.163
+    },
+    "after": null
+  },
+  "sessions": [
+    {
+      "harness": "codex",
+      "id": "01a10349-af5a-7b11-8503-9a19885a66b3",
+      "bound": true,
+      "first": "2026-10-03T19:42:38.332000+00:00",
+      "last": "2026-10-04T23:32:17.837000+00:00",
+      "tokens": {
+        "gpt-6.1-sol": {
+          "input": 435630,
+          "cache_read": 20010496,
+          "cache_write": 0,
+          "output": 65273,
+          "reasoning": 33998
+        },
+        "codex-auto-review": {
+          "input": 33547,
+          "cache_read": 72960,
+          "cache_write": 0,
+          "output": 196,
+          "reasoning": 197
+        }
+      },
+      "time": {
+        "wall_clock": 2226.837,
+        "active": 2226.837,
+        "owner_wait": 0.0,
+        "idle": 0.0
+      },
+      "stages": {
+        "skill": {},
+        "agent": {}
+      },
+      "unattributed": {
+        "tokens": 0,
+        "share": 0.0
+      },
+      "unparsed": 0,
+      "caveats": [
+        "autocompaction tokens are missing from Codex totals"
+      ],
+      "intervals": {
+        "active": [
+          [
+            "2026-10-04T22:55:11+00:00",
+            "2026-10-04T23:32:17.837000+00:00"
+          ]
+        ],
+        "owner_wait": []
+      },
+      "slices": [
+        {
+          "at": null,
+          "subject": null,
+          "tokens": {
+            "gpt-6.1-sol": {
+              "input": 435630,
+              "cache_read": 20010496,
+              "cache_write": 0,
+              "output": 65273,
+              "reasoning": 33998
+            },
+            "codex-auto-review": {
+              "input": 33547,
+              "cache_read": 72960,
+              "cache_write": 0,
+              "output": 196,
+              "reasoning": 197
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

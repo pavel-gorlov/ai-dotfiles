@@ -111,6 +111,9 @@ an execution request, as stated in the approved epic.
   sources. Command owners integrate the same core collectors, including existing
   Codex prune/remove call sites that could delete DSH-shared project blocks.
 - Phase 4 rechecks real native readiness and invocation with isolated fake services.
+  Before its native gate, ai-wkpk8 completes the recorded fresh local-producer/
+  guarded-value collector/launcher join after Phase 3 APIs exist. Its exact five
+  files and same collectors retain original guards; no stored snapshot activation.
   Failed gates return to the responsible write owner before epic close. There is
   no parallel write dispatch; the final verification task is read-only.
 
@@ -162,6 +165,7 @@ that integration and may test/document it without introducing another owner.
 | ai-k1w43 | Wire DSH install add and remove in both scopes | M | general-purpose | 1–2 d · 5 files · ~+450/−60 LOC | `src/ai_dotfiles/commands/install.py`, `src/ai_dotfiles/commands/add.py`, `src/ai_dotfiles/commands/remove.py`, `tests/e2e/test_dsh_install.py`, `tests/e2e/test_dsh_global.py` |
 | ai-gbrqm | Wire DSH status reconcile and migration CLI | M | general-purpose | 0.5–1.5 d · 5 files · ~+300/−40 LOC | `src/ai_dotfiles/commands/status.py`, `src/ai_dotfiles/commands/reconcile.py`, `src/ai_dotfiles/commands/migrate.py`, `src/ai_dotfiles/core/completions.py`, `tests/e2e/test_dsh_migrate.py` |
 | ai-b8jes | Wire DSH domain add and remove lifecycle | M | general-purpose | 0.5–1 d · 2 files · ~+200/−30 LOC | `src/ai_dotfiles/commands/domain.py`, `tests/e2e/test_dsh_domain.py` |
+| ai-wkpk8 | Join guarded local DSH activation | M | general-purpose | 0.5–1 d · 5 files · ~+300/−60 LOC | `src/ai_dotfiles/core/dsh_config.py`, `src/ai_dotfiles/core/dsh_hooks.py`, `src/ai_dotfiles/core/dsh_launch.py`, `src/ai_dotfiles/core/dsh_migrate.py`, `tests/e2e/test_dsh_launch.py` |
 | ai-f2bcb | Build required isolated pinned DSH runtime acceptance | M | general-purpose | 1.5–2.5 d · 3 files · ~+650/−20 LOC | `tests/integration/test_dsh_runtime.py`, `tests/conftest.py`, `pyproject.toml` |
 | ai-rr48w | Document DSH lifecycle launcher and compatibility contract | S | general-purpose | 0.5–1 d · 3 files · ~+300/−30 LOC | `README.md`, `src/ai_dotfiles/scaffold/templates/builtin_ai_dotfiles_skill.md`, `docs/dsh-target.md` |
 | ai-6w1qz | Sync scaffold references and native fragment example | S | general-purpose | 0.25–0.5 d · 3 files · ~+100/−10 LOC | `src/ai_dotfiles/scaffold/templates/global_readme.md`, `src/ai_dotfiles/scaffold/templates/root_readme.md`, `src/ai_dotfiles/scaffold/templates/example_dsh_fragment.json` |
@@ -623,9 +627,103 @@ Verify one feat(ai-vv1t9) commit against parent23610458 before migration; no
 extra source writes or publication. The global/catalog launcher gate is proven,
 while named-child final acceptance and local producer activation remain open.
 
+**ai-vv1t9 → ai-nzmc8.** Commit1976ead5271a776837f105be04c9c0b5fcf2b7ed
+independently verified: parent23610458, exact9paths +2511/-60, ticks/move/usage
+and source together. Pinned pre-commit/commit-msg/whitespace exit0, no formatter
+mutations; worktree/index clean and main baseline unchanged. Phase3 gate passes.
+Promote only five-file Phase4 migration owner; local discovery must exclude both
+catalog domain symlinks and copy-ownership entries, preserve original raw settings/
+MCP/hooks, classify gaps and expose guarded current producer inputs for later
+reconciliation and launcher join. Never activate stored aggregate snapshots.
+No local-producer join may silently omit or duplicate one layout's render plan.
+The bounded launcher continuation remains a required later acceptance hold.
+
+**ai-nzmc8 to_do → wip.** tm ready/next confirm parentai-f2pvj, modewrite,
+phase4. The sole current-model worker reads full generated434-line context,
+whole epic/orchestrator and applicable instructions; exact five-file ownership.
+Fresh typed local-original producer, shared protection registry, copy exclusion
+and zero-write dry-run are the gate. No concurrent writer/read fan-out; original
+launcher join remains held for its bounded continuation after concrete APIs.
+
+**ai-nzmc8 producer review → guarded-value integration hold.** Root/worker
+confirm public DshConfigSource and DshHookSource are path-only; owned settings/
+MCP need a fresh guarded user-only projection to avoid catalog duplication.
+Same five-file migration owner supplies typed original path/hash/value/ledger
+guards and an explicit temporary REFACTOR boundary diagnostic. No snapshots,
+private API or guessed flags. The already required bounded local-launcher join
+must also adapt these two public collectors and complete projected migration
+classification/activation. Budget at most five files in a Phase5 continuation
+before required native acceptance; keep Phase4's five concerns and Q3 unchanged.
+This is necessary existing full-feasible local delivery, not a new user fork.
+
+**ai-nzmc8 original ledger review → ambiguous fields.** Existing settings
+ownership proves permission/hook contributions only; env/scalar origin is absent.
+Producer retains originals/ledger guards and explicit unproven_fields; later join
+must diagnose unresolved original provenance and never infer it by catalog-value
+equality. Supported tracked projections/MCP server ownership remain eligible.
+Keep this genuine source-provenance limitation distinct from the guarded-value
+API continuation, which still must implement supported local activation.
+
+**Documentation recheck → pinned release retained.** 2026-10-04T23:03Z:
+current official apps/cli/README.md read through web; its native layer order is
+bundles/profile/home/CLI and changes without HMR apply on restart. Public npm
+view dist-tags exit0 with credentials/config disabled and temporary-only cache:
+latest=0.2.0-rc.2, next=0.2.0-rc.2, alpha=0.2.1-alpha.1. Initial sandbox DNS
+failure resolved with read-only public-registry escalation, no package install.
+Delivery remains approved RC2; preview docs are not treated as shipped runtime.
+
+**ai-nzmc8 producer → lifecycle hand-off.** Concrete DshLocalInputs boundary
+returns one catalog/local install and fresh original/projection/ledger guards.
+plan_dsh_migration composes supplied original catalog/global sources once.
+Recorded catalog inventory without fresh catalog_plan refuses, preserving other
+contributors. Next ai-m4s7p must support verified own local-rule refresh through
+an in-memory union plan, preserving Codex/user protection; no temporary registry
+deletion. Report any actual public-installer gap before adding owned files.
+The guarded-value/launcher continuation remains before Phase5 native acceptance.
+
+**Local activation hold → ai-wkpk8 bounded cut.** tm create allocates the
+single five-file continuation, after Phase4 lifecycle and before Phase5 native
+acceptance. It joins actual fresh local originals/projections/ledger guards with
+the same public config/hooks collectors and launcher, one plan per layout, and
+completes supported migration classifications. Ambiguous original env remains a
+specific source-provenance gap, never guessed; no new user flag/engine/schema.
+Cut now has21 children (M x18, S x3), phase concerns3/4/4/5/5. Scope/Q3 unchanged;
+whole-cut fresh critic and tm cut-check must pass before continuation dispatch.
+No critic read fan-out while the ai-nzmc8 writer is active. Task remains backlog.
+
+**ai-nzmc8 initial74 → original-presence correction.** Own74/native2 and
+mypy86 pass on draft. Root actual temp probe creates settings.local.json deny
+Bash after raw_sources0 planning; verify accepts stale set. Same sole writer
+adds finite raw-source absence/presence proof and fail-before-write tests before
+freeze. No new files or changed scope; acceptance/next writer remain held.
+
+
+**21-child cut → accepted continuation.** Fresh-context critic reads whole epic,
+orchestrator and all21 children, checks1–7 with BLOCKING0. Actual tm cut-check
+ai-f2pvj exits0, stdout '+ ai-f2pvj: cut-check passed', stderr empty. Coordinator
+structural check and tm validate --all also exit0 (49valid/33legacy skipped).
+ai-wkpk8 stays backlog until Phase4 completion; original Q3/full-feasible scope
+unchanged. No concurrent source writer during critique.
+
+**ai-nzmc8 frozen producer → acceptance proof.** Exact five-file diff reviewed;
+worker unchanged22-suite command passes1045/1045 (15.62s), exit0, no skips, with
+real published RC2 runtime. Coordinator own80/80 (1.34s), native2, mypy86,
+Ruff/Black5 and whitespace all exit0. The initial source-presence defect is
+corrected for all four raw JSON originals; stale original/ledger/projection
+inputs fail before writes. Strict registry source/output generator provenance,
+READY-to-MANUAL custody, copy/domain-link exclusion and zero-write dry-run pass.
+Five producer ticks are proven; projected local activation remains ai-wkpk8 and
+verified own-rule refresh/retirement remains ai-m4s7p. No stored aggregate is
+activated and ambiguous env/scalar origin stays MANUAL with exact fields.
+
+**ai-nzmc8 wip → done.** tm acceptance5/5 and move done exit0; exact five
+source files, ticks, relocation, usage and21-child cut metadata prepare one
+transaction. Verify against parent1976ead5 before ai-m4s7p promotion; no extra
+source writes, publication or concurrent owner.
+
 ## Acceptance criteria
 
-- [ ] All 20 subtasks are complete with their concrete acceptance gates checked.
+- [ ] All 21 subtasks are complete with their concrete acceptance gates checked.
 - [ ] Every surface in the epic matrix is implemented faithfully or has its explicit native limitation diagnostic; no permission/rule broadening is introduced.
 - [ ] Project/global lifecycle, local retirement and mixed Codex/DSH ownership preserve user content; check/dry-run produce zero writes.
 - [ ] Required pinned native runtime acceptance passes with real child invocation and audited managed plugin readiness.
