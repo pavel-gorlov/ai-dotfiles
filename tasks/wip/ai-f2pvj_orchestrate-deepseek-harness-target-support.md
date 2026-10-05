@@ -52,8 +52,8 @@ chains while preserving the approved five-phase delivery sequence.
 | 0 — contract/ownership / 1 | Typed target/path contract, native roots and shared-block union tests pass. |
 | 1 — elements/bridge / 2 | Rendered rows and policy data agree with literal/readiness bridge; safe install and focused native fixture pass. |
 | 2 — configuration/launch / 3 | Native composition includes one merged hooks/MCP/agent set with origin resources; audited launch and fake-service cases pass. |
-| 3 — migration/lifecycle / 4, then 5 | Local registry/retirement and catalog/shared union pass at4; status/reconcile/migrate and domain CLI follow at5, preserving recorded originals before lifecycle acceptance. |
-| 4 — acceptance/docs / 6 | Required guarded local activation, native smoke, published references/examples and all final gates pass. |
+| 3 — migration/lifecycle / 4, then 5, then 6 | Local registry/retirement and catalog/shared union pass at4; status/reconcile/migrate follow at5 and domain CLI at6, preserving recorded originals and source custody before lifecycle acceptance. |
+| 4 — acceptance/docs / 7 | Required guarded local activation, native smoke, published references/examples and all final gates pass. |
 
 Membership and mode are explicit in each child's frontmatter. The classification
 table below retains serial row order. During the bounded correction ai-ckvng
@@ -166,8 +166,8 @@ that integration and may test/document it without introducing another owner.
 | ai-m4s7p | Reconcile DSH drift retired sources and bounded prune | M | general-purpose | 1–2 d · 5 files · ~+550/−30 LOC | `src/ai_dotfiles/core/dsh_reconcile.py`, `src/ai_dotfiles/core/dsh_install.py` (verified own-local-rule custody only), `src/ai_dotfiles/core/gitignore.py`, `tests/integration/test_dsh_reconcile.py` (includes prune cases), `tests/integration/test_dsh_target.py` (install-generator expectations only) |
 | ai-k1w43 | Wire DSH install add and remove in both scopes | M | general-purpose | 1–2 d · 5 files · ~+450/−60 LOC | `src/ai_dotfiles/commands/install.py`, `src/ai_dotfiles/commands/add.py`, `src/ai_dotfiles/commands/remove.py`, `src/ai_dotfiles/core/dsh_migrate.py` (registered-local selection only), `tests/e2e/test_dsh_install.py` (project/global cases) |
 | ai-gbrqm | Wire DSH status reconcile and migration CLI | M | general-purpose | 0.5–1.5 d · 5 files · ~+300/−40 LOC | `src/ai_dotfiles/commands/status.py`, `src/ai_dotfiles/commands/reconcile.py`, `src/ai_dotfiles/commands/migrate.py`, `src/ai_dotfiles/core/dsh_migrate.py` (fresh registered-original preservation), `tests/e2e/test_dsh_migrate.py` (includes Choice completion) |
-| ai-b8jes | Wire DSH domain add and remove lifecycle | M | general-purpose | 0.5–1 d · 2 files · ~+200/−30 LOC | `src/ai_dotfiles/commands/domain.py`, `tests/e2e/test_dsh_domain.py` |
-| ai-wkpk8 | Join guarded local DSH activation | M | general-purpose | 0.5–1 d · 5 files · ~+300/−60 LOC | `src/ai_dotfiles/core/dsh_config.py`, `src/ai_dotfiles/core/dsh_hooks.py`, `src/ai_dotfiles/core/dsh_launch.py`, `src/ai_dotfiles/core/dsh_migrate.py`, `tests/e2e/test_dsh_launch.py` |
+| ai-b8jes | Wire DSH domain add and remove lifecycle | M | general-purpose | 0.5–1 d · 3 files · ~+250/−30 LOC | `src/ai_dotfiles/commands/domain.py`, `src/ai_dotfiles/core/dsh_migrate.py`, `tests/e2e/test_dsh_domain.py` |
+| ai-wkpk8 | Join guarded local DSH activation | M | general-purpose | 0.5–1 d · 5 files · ~+300/−60 LOC | `src/ai_dotfiles/core/dsh_config.py`, `src/ai_dotfiles/core/dsh_hooks.py`, `src/ai_dotfiles/core/dsh_launch.py`, `src/ai_dotfiles/core/dsh_migrate.py`, `tests/integration/test_dsh_migrate.py` |
 | ai-f2bcb | Build required isolated pinned DSH runtime acceptance | M | general-purpose | 1.5–2.5 d · 3 files · ~+650/−20 LOC | `tests/integration/test_dsh_runtime.py`, `tests/conftest.py`, `pyproject.toml` |
 | ai-rr48w | Document DSH lifecycle launcher and compatibility contract | S | general-purpose | 0.5–1 d · 3 files · ~+300/−30 LOC | `README.md`, `src/ai_dotfiles/scaffold/templates/builtin_ai_dotfiles_skill.md`, `docs/dsh-target.md` |
 | ai-6w1qz | Sync scaffold references and native fragment example | S | general-purpose | 0.25–0.5 d · 3 files · ~+100/−10 LOC | `src/ai_dotfiles/scaffold/templates/global_readme.md`, `src/ai_dotfiles/scaffold/templates/root_readme.md`, `src/ai_dotfiles/scaffold/templates/example_dsh_fragment.json` |
@@ -988,6 +988,90 @@ usage written. Source5 plus this task relocation/ticks, orchestrator journal
 and six future-task phase-only recut records form one15-path transaction.
 Hold ai-b8jes until parent983d7bad, exact frozen5 SHA/allowlist, successful
 hooks/msg and clean worktree/main preservation are independently verified.
+
+**ai-gbrqm → ai-b8jes.** Atomic8f7d871b parent983d7bad independently
+verified: exact15 paths +1277/-103, final5 SHA in HEAD/worktree, done5/5,
+usage/journal/six phase-only records same commit. Pinned hooks/msg/whitespace0,
+no mutations; index/tree clean, original main HEAD/status unchanged. Full
+2332/2332 and root49/probe/static gates remain green. Queue the next listed
+phase5 domain owner, exact2 source/test paths; guarded local join remains held.
+
+**ai-b8jes backlog → to_do.** Previous CLI child committed/verified
+at8f7d871b, whole2332 gate green. Queue exact2-path domain lifecycle owner;
+actual readiness/next must confirm phase5 before source dispatch.
+
+**ai-b8jes to_do → wip.** Actual ready/next selects the only permitted
+phase5 modewrite row. Dispatch one current-model owner with entire generated
+context/approved epic/current journal and exact2 paths. Five criteria open;
+selected project/global DSH targets and source/resources/shared ownership must
+be demonstrated through pure core collectors and existing machinery. Return
+any actual extra source boundary before writing it; no overlapping writers.
+
+**Guarded-join test boundary → bounded five-file recut.** Read actual
+integration migration lines294–344: supported projected permissions/hooks/MCP
+assert temporary HELD/LOCAL_VALUE_INPUT_PENDING and mutation refusal. The join
+must update that existing provisional test atomically with its four core files.
+Replace ai-wkpk8's E2E slot with tests/integration/test_dsh_migrate.py, keeping
+exactfive paths/allsix criteria/all21 children and current scheduling/Q3/five
+milestones/onePR. Owned integration suite carries collector/migration/native
+launcher proof. Existing E2E launcher test's malformed {"rule_blocks":{}} stays
+an accurate pre-Ready registry-validation refusal with its existing integration
+diagnostic prefix; no valid-registry broad hold or compatibility shim remains.
+No source writes or new flag/format/surface. ai-b8jes source owner remains the
+only writer; fresh whole-cut critic waits for that writer's frozen result before
+review, and must PASS before dispatching the guarded join.
+
+**Domain retirement boundary → ordered three-file cut.** Worker stayed FROZEN
+with no source diff. Root read both complete probe reports: exit0, empty stderr;
+Codex source classification disappears after deletion while its span remains,
+and desired DSH retirement refuses custody after current preflight passes.
+Assign the existing migration core's narrow staging/removal helpers to ai-b8jes
+with its wrapper/tests, exactthree files. Every affected scope must preflight
+while the source is reversibly staged outside catalog resources, before first
+target mutation; restore original source on refusal. Keep default helper calls
+and fresh surviving union. No new format, flag, framework or scope multiplier.
+The completed lifecycle owner remains unchanged; move this WIP owner's barrier
+one step later and the five untouched final children to the next barrier.
+Twenty-one children and the five approved milestones/one PR stay unchanged;
+no chain of three dependencies. Combine this with the pending guarded join's
+five-file integration-test correction in one fresh whole-cut critic before
+resuming the same owner with a complete regenerated context. Acceptance open.
+
+**Whole-cut critic → resumed domain owner.** Fresh no-context critic reads all23
+files/3838lines; checks1–7 PASS, BLOCKING0/advisory0. Actual tm cut-check
+ai-f2pvj exit0, stdout "+ ai-f2pvj: cut-check passed", stderr empty; complete
+evidence /private/tmp/dsh-domain-join-cut-critic-report.json read by root.
+Validation49/33legacy and whitespace0. Both bounded recuts accepted,21 children
+unchanged. ai-b8jes remains WIP; resume same current-model owner with regenerated
+entire context, approved epic and current journal. Exactthree source/test paths
+only; allfive criteria open, no source writes occurred before this clearance.
+
+**Frozen domain owner → available current-model worker.** Host returns
+"agent thread limit reached" for both archived-owner follow-up and new worker
+spawn. Reuse the available completed launcher worker as the sole writer, with
+full3058-line regenerated context and exactthree-file ownership/five criteria.
+No source changes by the prior owner; model inherits this session unchanged.
+This changes executor availability only, not plan, scope, gate or ordering.
+
+**Frozen result → coordinator acceptance.** Entire three-file diff (+804/-121),
+all372 test lines and allfive criterion proofs read. Worker own62/affected413/
+full2372 exit0; complete commands/stdout/stderr read, mypy87/Ruff3/Black3/
+whitespace0. Initial test assertions corrected to actual row.id/native patches
+and empty hooks metadata with beta-only origin; contribution is None, no removed
+handler row. Two known sandbox127.0.0.1 EPERM repeat identical gates with isolated
+loopback permission, no exclusion. Root independent62/62 and two CLI probes0:
+missing historical custody in later scope refuses desired retirement after
+current preflight passes, restores source bytes/mode/mtime and ALL project/global
+file+directory bytes/modes/mtimes; proved retirement removes Codex blocks while
+raw CRLF user text survives both scopes. Source threeSHA match frozen report;
+root-review /private/tmp/dsh-b8jes-root-reviewed.json. Allfive ticks demonstrated.
+
+**ai-b8jes wip → done.** Actual tm acceptance5/5 exit0 then tm move done
+exit0. Prepare source3, task ticks/rename, usage journal and five future bounded
+cut records in the same transaction; no source changes after frozen SHA.
+Git executor must verify HEAD parent8f7d871b, exactallowlist, pinnedprecommit
+and commit-msg/whitespace0, unchanged3 SHA and clean tree before nextdispatch.
+No final contract/PR readiness claim yet; five final children remain queued.
 
 ## Acceptance criteria
 

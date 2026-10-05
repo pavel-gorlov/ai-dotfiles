@@ -19,24 +19,19 @@ from pathlib import Path
 import click
 
 from ai_dotfiles import ui
-from ai_dotfiles.core import manifest, symlinks
+from ai_dotfiles.commands.install import _report_dsh_result
+from ai_dotfiles.core import manifest
 from ai_dotfiles.core.completions import (
     complete_domain_elements,
     complete_domain_names,
     make_completer,
 )
+from ai_dotfiles.core.dsh_migrate import mutate_domain_member
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError, ElementError
 from ai_dotfiles.core.paths import (
-    backup_dir,
     catalog_dir,
-    claude_global_dir,
-    find_project_root,
-    global_manifest_path,
-    project_claude_dir,
-    project_manifest_path,
     storage_root,
 )
-from ai_dotfiles.scaffold.generator import generate_element_from_template
 
 _ELEMENT_TYPES = ("skill", "agent", "rule")
 _DOMAIN_SUBDIRS = ("skills", "agents", "rules", "hooks")
@@ -72,65 +67,6 @@ def _find_usage(name: str) -> list[Path]:
             hits.append(global_manifest)
 
     return hits
-
-
-def _element_dest(domain_root: Path, element_type: str, element_name: str) -> Path:
-    if element_type == "skill":
-        return domain_root / "skills" / element_name
-    if element_type == "agent":
-        return domain_root / "agents" / f"{element_name}.md"
-    if element_type == "rule":
-        return domain_root / "rules" / f"{element_name}.md"
-    raise ElementError(f"Unknown element type: {element_type!r}")
-
-
-def _element_subpath(element_type: str, element_name: str) -> Path:
-    """Path of the element relative to a ``.claude/`` directory."""
-    if element_type == "skill":
-        return Path("skills") / element_name
-    if element_type == "agent":
-        return Path("agents") / f"{element_name}.md"
-    if element_type == "rule":
-        return Path("rules") / f"{element_name}.md"
-    raise ElementError(f"Unknown element type: {element_type!r}")
-
-
-def _element_exists(dest: Path, element_type: str) -> bool:
-    if element_type == "skill":
-        return dest.is_dir()
-    return dest.is_file()
-
-
-def _domain_install_targets(name: str) -> list[tuple[str, Path]]:
-    """Return ``(label, claude_dir)`` for every manifest where ``@name`` lives.
-
-    Best effort — only inspects the global manifest and the project at cwd.
-    Other projects are out of reach from a single CLI invocation.
-    """
-    specifier = f"@{name}"
-    targets: list[tuple[str, Path]] = []
-
-    global_manifest = global_manifest_path()
-    if global_manifest.is_file():
-        try:
-            pkgs = manifest.get_packages(global_manifest)
-        except ConfigError:
-            pkgs = []
-        if specifier in pkgs:
-            targets.append(("global", claude_global_dir()))
-
-    project_root = find_project_root()
-    if project_root is not None:
-        proj_manifest = project_manifest_path(project_root)
-        if proj_manifest.is_file():
-            try:
-                pkgs = manifest.get_packages(proj_manifest)
-            except ConfigError:
-                pkgs = []
-            if specifier in pkgs:
-                targets.append((project_root.name, project_claude_dir(project_root)))
-
-    return targets
 
 
 @click.group()
@@ -251,35 +187,20 @@ def list_domain(name: str) -> None:
 def add_element(name: str, element_type: str, element_name: str) -> None:
     """Create an ELEMENT_TYPE element named ELEMENT_NAME inside domain NAME.
 
-    If ``@<NAME>`` is already in the global or current-project manifest, the
-    new element is symlinked into the corresponding ``.claude/`` directory
-    so users do not have to chase a follow-up ``install`` invocation.
+    Refresh selected targets where @NAME is installed globally or in the
+    current project. Other projects refresh on their next install.
     """
     try:
-        domain_root = _require_domain_exists(name)
-        dest = _element_dest(domain_root, element_type, element_name)
-
-        if _element_exists(dest, element_type):
-            raise ConfigError(
-                f"{element_type.capitalize()} {element_name!r} already exists "
-                f"in domain @{name}"
-            )
-
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        if element_type == "skill":
-            dest.mkdir(parents=True, exist_ok=True)
-        generate_element_from_template(element_type, element_name, dest)
-
+        result = mutate_domain_member(
+            name, element_type, element_name, catalog_dir(), removing=False
+        )
         ui.success(f"Created {element_type} {element_name} in domain @{name}")
-
-        targets = _domain_install_targets(name)
-        if targets:
-            sub = _element_subpath(element_type, element_name)
-            backup = backup_dir()
-            for label, claude_dir in targets:
-                target = claude_dir / sub
-                symlinks.safe_symlink(dest, target, backup)
-                ui.success(f"Linked {sub} into {label}/.claude/")
+        for label, sub in result.linked:
+            ui.success(f"Linked {sub} into {label}/.claude/")
+        for report in result.reports:
+            _report_dsh_result(report)
+        for warning in result.warnings:
+            ui.warn(warning)
     except AiDotfilesError as exc:
         ui.error(str(exc))
         sys.exit(exc.exit_code)
@@ -295,30 +216,19 @@ def add_element(name: str, element_type: str, element_name: str) -> None:
 def remove_element(name: str, element_type: str, element_name: str) -> None:
     """Remove ELEMENT_NAME (of ELEMENT_TYPE) from domain NAME.
 
-    Any matching symlinks under installed scopes (global / current project)
-    are unlinked first so they don't dangle once the catalog entry is gone.
+    Retire owned outputs in selected global/current-project targets before
+    deleting the catalog original. Refused retirement restores that original.
     """
     try:
-        domain_root = _require_domain_exists(name)
-        dest = _element_dest(domain_root, element_type, element_name)
-
-        if not _element_exists(dest, element_type):
-            raise ElementError(
-                f"{element_type.capitalize()} {element_name!r} not found in "
-                f"domain @{name}"
-            )
-
-        sub = _element_subpath(element_type, element_name)
-        for label, claude_dir in _domain_install_targets(name):
-            target = claude_dir / sub
-            if symlinks.remove_symlink(target):
-                ui.info(f"Unlinked {sub} from {label}/.claude/")
-
-        if element_type == "skill":
-            shutil.rmtree(dest)
-        else:
-            dest.unlink()
-
+        result = mutate_domain_member(
+            name, element_type, element_name, catalog_dir(), removing=True
+        )
+        for label, sub in result.unlinked:
+            ui.info(f"Unlinked {sub} from {label}/.claude/")
+        for report in result.reports:
+            _report_dsh_result(report)
+        for warning in result.warnings:
+            ui.warn(warning)
         ui.success(f"Removed {element_type} {element_name} from domain @{name}")
     except AiDotfilesError as exc:
         ui.error(str(exc))
