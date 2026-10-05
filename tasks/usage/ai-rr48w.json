@@ -1,0 +1,162 @@
+{
+  "format": 1,
+  "task": "ai-rr48w",
+  "snapshot_at": "2026-10-05T06:09:39+00:00",
+  "last_exit": "2026-10-05T06:09:39+00:00",
+  "partial": {
+    "recorded": [],
+    "computed": []
+  },
+  "unparsed": 0,
+  "totals": {
+    "tokens": {
+      "gpt-6.1-sol": {
+        "input": 373596,
+        "cache_read": 13828224,
+        "cache_write": 0,
+        "output": 41284,
+        "reasoning": 26401
+      },
+      "codex-auto-review": {
+        "input": 25959,
+        "cache_read": 34304,
+        "cache_write": 0,
+        "output": 126,
+        "reasoning": 155
+      }
+    },
+    "time": {
+      "wall_clock": 1839.0,
+      "active": 1839.0,
+      "owner_wait": 0.0,
+      "idle": 0.0
+    },
+    "unattributed": {
+      "tokens": 0,
+      "share": 0.0
+    },
+    "stages": {
+      "skill": {},
+      "agent": {}
+    }
+  },
+  "intervals": {
+    "wall_clock": [
+      [
+        "2026-10-05T05:39:00+00:00",
+        "2026-10-05T06:09:39+00:00"
+      ]
+    ],
+    "active": [
+      [
+        "2026-10-05T05:39:00+00:00",
+        "2026-10-05T06:09:39+00:00"
+      ]
+    ],
+    "owner_wait": [],
+    "idle": []
+  },
+  "codex_roots": {
+    "01a10349-af5a-7b11-8503-9a19885a66b3": "01a10349-af5a-7b11-8503-9a19885a66b3"
+  },
+  "commits": [],
+  "uncommitted_tail": {
+    "tokens": {
+      "gpt-6.1-sol": {
+        "input": 373596,
+        "cache_read": 13828224,
+        "cache_write": 0,
+        "output": 41284,
+        "reasoning": 26401
+      },
+      "codex-auto-review": {
+        "input": 25959,
+        "cache_read": 34304,
+        "cache_write": 0,
+        "output": 126,
+        "reasoning": 155
+      }
+    },
+    "time": {
+      "wall_clock": 1839.0,
+      "active": 1839.0,
+      "owner_wait": 0.0,
+      "idle": 0.0
+    },
+    "after": null
+  },
+  "sessions": [
+    {
+      "harness": "codex",
+      "id": "01a10349-af5a-7b11-8503-9a19885a66b3",
+      "bound": true,
+      "first": "2026-10-03T19:42:38.332000+00:00",
+      "last": "2026-10-05T06:09:39.576000+00:00",
+      "tokens": {
+        "gpt-6.1-sol": {
+          "input": 373596,
+          "cache_read": 13828224,
+          "cache_write": 0,
+          "output": 41284,
+          "reasoning": 26401
+        },
+        "codex-auto-review": {
+          "input": 25959,
+          "cache_read": 34304,
+          "cache_write": 0,
+          "output": 126,
+          "reasoning": 155
+        }
+      },
+      "time": {
+        "wall_clock": 1839.0,
+        "active": 1839.0,
+        "owner_wait": 0.0,
+        "idle": 0.0
+      },
+      "stages": {
+        "skill": {},
+        "agent": {}
+      },
+      "unattributed": {
+        "tokens": 0,
+        "share": 0.0
+      },
+      "unparsed": 0,
+      "caveats": [
+        "autocompaction tokens are missing from Codex totals"
+      ],
+      "intervals": {
+        "active": [
+          [
+            "2026-10-05T05:39:00+00:00",
+            "2026-10-05T06:09:39+00:00"
+          ]
+        ],
+        "owner_wait": []
+      },
+      "slices": [
+        {
+          "at": null,
+          "subject": null,
+          "tokens": {
+            "gpt-6.1-sol": {
+              "input": 373596,
+              "cache_read": 13828224,
+              "cache_write": 0,
+              "output": 41284,
+              "reasoning": 26401
+            },
+            "codex-auto-review": {
+              "input": 25959,
+              "cache_read": 34304,
+              "cache_write": 0,
+              "output": 126,
+              "reasoning": 155
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

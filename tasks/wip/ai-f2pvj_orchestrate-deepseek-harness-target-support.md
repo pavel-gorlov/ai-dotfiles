@@ -1229,6 +1229,43 @@ source bytes match, worker repeated full-final on the correction. Root proof:
 usage, this journal and three source files must share one successful commit.
 No live homes/credentials/external providers, skipped gate or production edit.
 
+**ai-f2bcb → ai-rr48w.** Atomic8df291590 parentdbb5f88d independently
+verified: exact7 rawpaths +1453/-55, all6 live/committedSHA and final source3,
+done5/5 plus usage/journal in one commit. Required precommit/msg/whitespace
+and commit0; no formatter mutation, clean index/worktree and original main
+HEAD/status preserved. Final2426/2426, coverage92.04%, native15/15 and root
+independent15+final negative1 are demonstrated. Eighteen children complete.
+Queue only next listed three-file docs owner: README, builtin skill and guide.
+Document actual CLI/native matrix including RC2 headless+preset refusal,
+restart-only managed lifecycle, current parent model with alias diagnostic,
+whole-config replacement, source/provenance limits and exact no-broadening.
+No implementation edits, new target default/flag/profile or automatic install.
+
+**ai-rr48w to_do → wip.** Actualready/next selects sole modewriteS phase7
+row; tm move wip0. Dispatch current-model worker, whole actualgeneratedcontext,
+approvedepic/currentjournal and exact3 docs paths. Four ticks remain open until
+whole diff, actual help/reference/examples and native boundary evidence reviewed.
+No overlapping writer/read fanout or Git operation. Keep existing documentation
+language and unchanged defaults/vendor catalog-only workflows; no invented flags.
+
+**ai-rr48w wip → done (atomic acceptance prepared).** Root read the whole
+910-line captured three-doc diff plus final editorial increment (final912),
+verified all3 frozen source SHA, actual30 command outputs/exits/output SHA and
+primary current/pinned comparison. README/builtin cover three scopes/targets,
+actual lifecycle/help/defaults/domain/vendor flow; guide covers roots/binding,
+whole-config/CLI-vs-UI precedence, current-parent aliases, all matrix/hook/MCP/
+source-custody limits and no broadening. Narrow18helps/8JSON/11launchargv/
+11links/7unchangedvendor flows and7events pass. Real published RC2 notice plugin
+boot/public settled audit proves whole-config replacement and loaded Fiber config,
+warnings empty; Node/whitespace0. Root independently verifies8JSON/11 production
+launch parsings and native origin binding0 with unchanged docs, plus both vendor
+list helps and published logger/helper path. Temporary probe mistakes in both
+worker and root are retained; only probes were corrected, no product defect or
+implementation edits. Final guide removes internal integration history. Evidence:
+/private/tmp/dsh-rr48w-report.json and /private/tmp/dsh-rr48w-root-reviewed.json.
+Four ticks now demonstrated; source/ticks/move/usage/journal must share one
+successful commit. Broad final quality remains ai-pwjnx; next templates stay held.
+
 ## Acceptance criteria
 
 - [ ] All 21 subtasks are complete with their concrete acceptance gates checked.
