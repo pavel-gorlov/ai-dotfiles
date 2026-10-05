@@ -34,16 +34,27 @@ from ai_dotfiles.core.dsh_config import (
     inspect_dsh_configuration,
     validate_native_fragment,
 )
-from ai_dotfiles.core.dsh_hooks import attach_dsh_hook_outputs, collect_dsh_hooks
+from ai_dotfiles.core.dsh_hooks import (
+    DshHookSource,
+    attach_dsh_hook_outputs,
+    collect_dsh_hooks,
+)
 from ai_dotfiles.core.dsh_install import (
     DshInstallPlan,
     DshOutput,
+    InstallMode,
     apply_dsh_install,
     collect_dsh_elements,
     plan_dsh_install,
     preflight_dsh_install,
 )
 from ai_dotfiles.core.dsh_layout import DshLayout, global_layout, project_layout
+from ai_dotfiles.core.dsh_local_registry import load_dsh_local_registry
+from ai_dotfiles.core.dsh_migrate import (
+    DshLocalInputs,
+    collect_dsh_local_inputs,
+    verify_dsh_local_inputs,
+)
 from ai_dotfiles.core.dsh_native import (
     DshNativeRuntime,
     compose_module_text,
@@ -53,7 +64,7 @@ from ai_dotfiles.core.dsh_native import (
 from ai_dotfiles.core.dsh_render import DshDiagnostic, DshProvenance, render_rule
 from ai_dotfiles.core.dsh_targets import project_target_plan
 from ai_dotfiles.core.elements import Element, parse_elements
-from ai_dotfiles.core.errors import ConfigError, ExternalError
+from ai_dotfiles.core.errors import AiDotfilesError, ConfigError, ExternalError
 from ai_dotfiles.core.shared_instructions import project_instruction_plan
 from ai_dotfiles.core.targets import Target
 
@@ -69,8 +80,8 @@ RESTART_NOTICE = (
 # Their rows are restored verbatim only after the managed audit succeeds.
 _HOST_MODULE = r"""
 import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
+import { readFileSync, lstatSync, realpathSync } from 'node:fs';
+import { isAbsolute, resolve, relative, dirname, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 const state = { trees: [], released: false, requiredIds: new Set() };
@@ -282,16 +293,42 @@ async function validateBeforeRelease(ctx, scope, request) {
   }
 }
 
+function verifySourceGuards(request) {
+  for (const [filename, digest] of Object.entries(request.sourceHashes)) {
+    if (createHash('sha256').update(readFileSync(filename)).digest('hex') !== digest)
+      throw new Error(`Managed DSH source changed before readiness: ${filename}`);
+  }
+  for (const guard of request.localSourceGuards ?? []) {
+    let present = true, existing = guard.path;
+    try { lstatSync(existing); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; present = false; }
+    while (true) {
+      try { lstatSync(existing); break; }
+      catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        existing = dirname(existing);
+      }
+    }
+    const bounded = relative(realpathSync(request.localSourceRoot),
+      realpathSync(existing));
+    if (bounded === '..' || bounded.startsWith(`..${sep}`) || isAbsolute(bounded))
+      throw new Error('Local DSH original/ownership resolves outside project: '
+        + guard.path);
+    const digest = present
+      ? createHash('sha256').update(readFileSync(guard.path)).digest('hex') : null;
+    if (digest !== guard.source_sha256)
+      throw new Error('Local DSH original/ownership changed before readiness: '
+        + guard.path);
+  }
+}
+
 export async function runManaged(request, args) {
   if (request.runtimeAnchor !== runtimeAnchor)
     throw new Error('Managed host runtime anchor changed');
   const cmdline = await load('@deepseek-ai/dsh-cmdline');
   const environment = await load('@deepseek-ai/dsh-launch-environment');
   const proxy = await load('@deepseek-ai/dsh-http-proxy');
-  for (const [filename, digest] of Object.entries(request.sourceHashes)) {
-    if (createHash('sha256').update(readFileSync(filename)).digest('hex') !== digest)
-      throw new Error(`Managed DSH source changed before host boot: ${filename}`);
-  }
+  verifySourceGuards(request);
   for (const name of ['boot', 'PluginPackages', 'createRuntimeResolution',
     'prepareProfilePatches', 'auditStartupEntries'])
     if (typeof native.boot[name] !== 'function')
@@ -384,6 +421,7 @@ export async function runManaged(request, args) {
         if (report.ready !== true)
           throw new Error('Managed DSH audit did not report readiness');
         await validateBeforeRelease(ctx, scope, request);
+        verifySourceGuards(request);
         ready.commit();
       } });
     if (requestedExit !== undefined) return;
@@ -425,6 +463,7 @@ class DshLaunchPlan:
     installs: tuple[DshInstallPlan, ...]
     request: Mapping[str, object]
     diagnostics: tuple[DshDiagnostic, ...]
+    local_inputs: tuple[DshLocalInputs, ...] = ()
 
 
 def parse_dsh_launch_arguments(args: Sequence[str], *, cwd: Path) -> DshLaunchArguments:
@@ -530,8 +569,10 @@ def _collect_plan(
     cwd: Path,
     env: Mapping[str, str],
     targets: Sequence[Target],
+    *,
+    mode: InstallMode = "link",
 ) -> DshInstallPlan:
-    plan = collect_dsh_elements(elements, layout, catalog, targets=targets)
+    plan = collect_dsh_elements(elements, layout, catalog, targets=targets, mode=mode)
     deferred = tuple(
         result.provenance.source
         for result in (*plan.skills, *plan.agents, *plan.rules)
@@ -540,7 +581,12 @@ def _collect_plan(
     if deferred:
         metadata = native_frontmatter(runtime, deferred, cwd=cwd, env=env)
         plan = collect_dsh_elements(
-            elements, layout, catalog, targets=targets, native_frontmatter=metadata
+            elements,
+            layout,
+            catalog,
+            targets=targets,
+            mode=mode,
+            native_frontmatter=metadata,
         )
     return plan
 
@@ -588,10 +634,9 @@ def prepare_dsh_launch(
 ) -> DshLaunchPlan:
     """Collect current global/project originals and inspect without profile writes.
 
-    Extra inputs are an internal composition boundary, not local migration
-    activation. Existing local registries are refused until the lifecycle owner
-    supplies a proved raw-source producer and merges render plans per layout.
-    Serialized config.json is never activation input.
+    Registered project-local originals are freshly rendered by their producer
+    into the same catalog plan. Extra inputs remain an internal typed boundary.
+    Serialized config.json and registry values are never activation inputs.
     """
     cwd = Path(os.path.abspath(cwd))
     arguments = parse_dsh_launch_arguments(args, cwd=cwd)
@@ -601,19 +646,32 @@ def prepare_dsh_launch(
     catalog = paths.catalog_dir()
     installs: list[DshInstallPlan] = []
     sources: list[DshConfigSource] = []
+    hook_sources: list[DshHookSource] = []
+    local_inputs: list[DshLocalInputs] = []
     enabled = False
     instruction_guards: list[dict[str, str]] = []
     for manifest_path, scope_layout in (
         (paths.global_manifest_path(), global_layout()),
         (paths.project_manifest_path(root), layout),
     ):
-        if scope_layout.local_registry_path.exists():
-            raise ConfigError(
-                f"Local DSH registry {scope_layout.local_registry_path} cannot "
-                "yet be consumed by managed launch; local migration "
-                "integration is required before activation"
-            )
+        registered = scope_layout.local_registry_path.exists()
+        registry = None
+        if registered:
+            try:
+                if scope_layout.project_root is None:
+                    raise ConfigError(
+                        "Local migration is supported only in project scope"
+                    )
+                registry = load_dsh_local_registry(root)
+            except AiDotfilesError as exc:
+                raise ConfigError(
+                    f"Local DSH registry {scope_layout.local_registry_path} "
+                    f"cannot pass local migration integration validation: {exc}"
+                ) from exc
         names = manifest.get_targets(manifest_path)
+        mode: InstallMode = (
+            "copy" if manifest.get_link_mode(manifest_path) == "copy" else "link"
+        )
         try:
             targets = [Target(name) for name in names]
         except ValueError as exc:
@@ -623,8 +681,58 @@ def prepare_dsh_launch(
         elements = topological_sort(
             catalog, parse_elements(manifest.get_packages(manifest_path))
         )
-        if scope_layout.project_root is not None:
-            instructions = project_instruction_plan(elements, targets, root, catalog)
+        instructions = (
+            project_instruction_plan(elements, targets, root, catalog)
+            if scope_layout.project_root is not None
+            else None
+        )
+        plan = (
+            _collect_plan(
+                elements,
+                scope_layout,
+                catalog,
+                runtime,
+                cwd,
+                process_env,
+                targets,
+                mode=mode,
+            )
+            if "dsh" in names
+            else plan_dsh_install(scope_layout, instructions=instructions)
+        )
+        if "dsh" in names:
+            sources.extend(collect_dsh_config_sources(elements, catalog, scope_layout))
+        local = None
+        if registered:
+            local = collect_dsh_local_inputs(
+                root,
+                manifest_packages=manifest.get_packages(manifest_path),
+                catalog_plan=plan,
+                mode=mode,
+                registered_only=True,
+            )
+            deferred = tuple(
+                result.provenance.source
+                for result in (*local.local_results, *local.commands)
+                if result.status == "DEFERRED"
+            )
+            if deferred:
+                metadata = native_frontmatter(
+                    runtime, deferred, cwd=cwd, env=process_env
+                )
+                local = collect_dsh_local_inputs(
+                    root,
+                    manifest_packages=manifest.get_packages(manifest_path),
+                    catalog_plan=plan,
+                    mode=mode,
+                    registered_only=True,
+                    native_frontmatter=metadata,
+                )
+            local_inputs.append(local)
+            plan = local.install
+            sources.extend(local.config_sources)
+            hook_sources.extend(local.hook_sources)
+        if instructions is not None:
             for block in instructions.blocks:
                 if Target.DSH in block.contributors:
                     continue
@@ -654,14 +762,42 @@ def prepare_dsh_launch(
                     }
                 )
             for path, block_names in instructions.protected_blocks.items():
-                for name in block_names - instructions.wanted_blocks.get(path, set()):
+                proved_local = {
+                    result.payload.name
+                    for result in plan.shared_rules
+                    if result.provenance.origin == "local"
+                    and result.payload is not None
+                    and path == root / "AGENTS.md"
+                }
+                for name in (
+                    block_names
+                    - instructions.wanted_blocks.get(path, set())
+                    - proved_local
+                ):
                     start, end = block_markers(name)
+                    original = (
+                        next(
+                            (
+                                root / source
+                                for source, record in registry.sources.items()
+                                if record["kind"] == "rule"
+                                and record["element"] == f"rule:{name}"
+                            ),
+                            None,
+                        )
+                        if registry is not None
+                        else None
+                    )
                     instruction_guards.append(
                         {
                             "path": str(path),
                             "name": name,
-                            "source": str(root / ".codex/.ai-dotfiles-local.json"),
-                            "field": "rule_blocks",
+                            "source": str(
+                                original or root / ".codex/.ai-dotfiles-local.json"
+                            ),
+                            "field": (
+                                "source" if original is not None else "rule_blocks"
+                            ),
                             "start": start,
                             "end": end,
                             "reason": (
@@ -672,23 +808,11 @@ def prepare_dsh_launch(
                             ),
                         }
                     )
-        if "dsh" not in names:
-            _refuse_retired_discovery(
-                plan_dsh_install(
-                    scope_layout,
-                    instructions=(
-                        instructions if scope_layout.project_root is not None else None
-                    ),
-                )
-            )
+        if "dsh" not in names and local is None:
+            _refuse_retired_discovery(plan)
             continue
         enabled = True
-        installs.append(
-            _collect_plan(
-                elements, scope_layout, catalog, runtime, cwd, process_env, targets
-            )
-        )
-        sources.extend(collect_dsh_config_sources(elements, catalog, scope_layout))
+        installs.append(plan)
     if not enabled and not extra_install_plans:
         raise ConfigError(
             'DSH target is not enabled; add "dsh" to targets in '
@@ -702,7 +826,7 @@ def prepare_dsh_launch(
         (root / ".claude/settings.local.json", "settings", "project"),
     )
     for source, kind, scope in originals:
-        if source.is_file():
+        if source.is_file() and not (scope == "project" and local_inputs):
             sources.append(
                 DshConfigSource(
                     source, kind, scope, str(source), str(source), source.parent
@@ -716,7 +840,7 @@ def prepare_dsh_launch(
         ),
         (root / ".mcp.json", "mcp", root / ".claude/.ai-dotfiles-mcp-ownership.json"),
     ):
-        if source.is_file() and not ledger.exists():
+        if source.is_file() and not ledger.exists() and not local_inputs:
             sources.append(
                 DshConfigSource(
                     source, kind, "project", str(source), str(source), source.parent
@@ -733,14 +857,22 @@ def prepare_dsh_launch(
     current = next(
         (plan for plan in installs if plan.layout == layout), plan_dsh_install(layout)
     )
-    hooks = collect_dsh_hooks(sources, layout, project_root=root)
+    hooks = collect_dsh_hooks((*sources, *hook_sources), layout, project_root=root)
     contribution = hooks.contribution()
     skill_results = {
         result.payload.name: result
         for plan in sorted(
             installs, key=lambda item: item.layout.project_root is not None
         )
-        for result in plan.skills
+        for result in (
+            *plan.skills,
+            *(
+                command
+                for local in local_inputs
+                if local.layout == plan.layout
+                for command in local.commands
+            ),
+        )
         if result.status == "READY" and result.payload is not None
     }
     contributions = [] if contribution is None else [contribution]
@@ -825,7 +957,21 @@ def prepare_dsh_launch(
     source_hashes.update(
         {str(item["source"]): str(item["source_sha256"]) for item in config.sources}
     )
+    for local in local_inputs:
+        verify_dsh_local_inputs(local)
+        source_hashes.update(
+            {
+                str(result.provenance.source): result.provenance.source_sha256
+                for result in local.commands
+            }
+        )
     request: dict[str, object] = {
+        "localSourceRoot": str(root),
+        "localSourceGuards": [
+            {"path": str(guard.path), "source_sha256": guard.source_sha256}
+            for local in local_inputs
+            for guard in local.guards
+        ],
         "runtimeAnchor": str(runtime.install_anchor),
         "helperUrl": helper_path.as_uri(),
         "rootPath": str(root_path),
@@ -871,12 +1017,21 @@ def prepare_dsh_launch(
         *(item for plan in installs for item in plan.diagnostics),
     )
     return DshLaunchPlan(
-        runtime, cwd, arguments, config, tuple(installs), request, tuple(diagnostics)
+        runtime,
+        cwd,
+        arguments,
+        config,
+        tuple(installs),
+        request,
+        tuple(diagnostics),
+        tuple(local_inputs),
     )
 
 
 def execute_dsh_launch(plan: DshLaunchPlan, *, process_env: Mapping[str, str]) -> int:
     """Materialize guarded outputs and run the installed native host shell-free."""
+    for local in plan.local_inputs:
+        verify_dsh_local_inputs(local)
     for install in plan.installs:
         _refuse_retired_discovery(install)
     for install in plan.installs:

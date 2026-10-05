@@ -27,6 +27,7 @@ from ai_dotfiles.core import (
     codex_hooks,
     codex_install,
     codex_layout,
+    codex_local_registry,
     codex_rules,
     manifest,
     mcp_ownership,
@@ -145,8 +146,8 @@ class DshLocalSource:
     unproven_fields names retained aggregate fields whose user origin cannot be
     reconstructed. Consumers must exclude these fields and keep their diagnostic
     restriction; equality with a current catalog fragment is not origin proof.
-    requires_value_input distinguishes an owned projection from an unowned raw
-    original that existing public path-only collectors can consume directly.
+    requires_value_input identifies ledger-backed input that collectors must
+    consume through the freshly guarded projection instead of its aggregate.
     """
 
     path: Path
@@ -227,11 +228,7 @@ class DshMigrationPlan:
     def blocked(self) -> bool:
         # A MANUAL agent/rule stays recorded and produces no native contribution.
         # Unsupported config/hooks must not silently release a partial guard.
-        return (
-            any(source.requires_value_input for source in self.inputs.raw_sources)
-            or self.config.blocked
-            or self.hooks.blocked
-        )
+        return self.config.blocked or self.hooks.blocked
 
     @property
     def retired_source_keys(self) -> frozenset[str]:
@@ -263,25 +260,53 @@ class DshMigrateReport:
 def _guard_file(project_root: Path, path: Path) -> DshSourceGuard:
     guard_local_path(project_root, path)
     try:
-        return DshSourceGuard(path, _sha(path.read_bytes()) if path.exists() else None)
+        return DshSourceGuard(
+            path,
+            _sha(path.read_bytes()) if path.exists() or path.is_symlink() else None,
+        )
     except OSError as exc:
         raise LinkError(f"Cannot read local DSH original/ownership: {path}") from exc
+
+
+def read_dsh_local_source(
+    project_root: Path, source: DshLocalSource
+) -> dict[str, object]:
+    """Return a fresh user-only projection after proving original and ledger bytes.
+
+    This is the common config/hooks value boundary. Recorded registry values and
+    caller-mutated projections never authorize activation; ambiguous aggregate
+    fields remain excluded and must retain their blocking source diagnostics.
+    """
+    root = project_root.absolute()
+    for guard in source.guards:
+        if _guard_file(root, guard.path) != guard:
+            raise LinkError(f"Local DSH original/ownership changed: {guard.path}")
+    fresh = next(
+        (item for item in _local_json_sources(root) if item.path == source.path), None
+    )
+    if fresh != source:
+        raise LinkError(f"Local DSH projection changed after planning: {source.path}")
+    return {
+        key: deepcopy(value)
+        for key, value in source.value.items()
+        if key not in source.unproven_fields
+    }
 
 
 def verify_dsh_local_inputs(inputs: DshLocalInputs) -> None:
     """Prove original/ledger bytes and local bundle containment before writes."""
     assert inputs.layout.project_root is not None
     root = inputs.layout.project_root
-    for guard in inputs.guards:
-        current = _guard_file(root, guard.path)
-        if current != guard:
-            raise LinkError(f"Local DSH original/ownership changed: {guard.path}")
     fresh = {source.path: source for source in _local_json_sources(root)}
     observed = inputs.observed_raw_sources
     if observed is None:
         observed = inputs.raw_sources
     if set(fresh) != {source.path for source in observed}:
         raise LinkError("Local DSH original JSON source set changed after planning")
+    for guard in inputs.guards:
+        current = _guard_file(root, guard.path)
+        if current != guard:
+            raise LinkError(f"Local DSH original/ownership changed: {guard.path}")
     for source in (*observed, *inputs.raw_sources):
         if fresh.get(source.path) != source:
             raise LinkError(
@@ -494,7 +519,23 @@ def collect_dsh_local_inputs(
     agents: list[DshRenderResult[DshAgentPayload]] = []
     rules: list[DshRenderResult[DshRulePayload]] = []
     actions: list[DshMigrationAction] = []
-    guards = [registry_guard, _guard_file(root, claude / ".ai-dotfiles-copies.json")]
+    guards = [
+        registry_guard,
+        *(_guard_file(root, root / source) for source in registry.sources),
+        _guard_file(root, codex_local_registry.registry_path(root)),
+        _guard_file(root, claude / ".ai-dotfiles-copies.json"),
+        *(
+            _guard_file(root, path)
+            for path in (
+                claude / "settings.json",
+                claude / "settings.local.json",
+                claude / "hooks.json",
+                root / ".mcp.json",
+                settings_ownership.ownership_path(claude),
+                mcp_ownership.ownership_path(claude),
+            )
+        ),
+    ]
     results: list[RenderResult] = []
     eligible = {
         element.source_path
@@ -613,17 +654,6 @@ def collect_dsh_local_inputs(
     for source in raw_sources:
         guards.extend(source.guards)
         diagnostics = []
-        if source.requires_value_input:
-            diagnostics.append(
-                DshDiagnostic(
-                    "LOCAL_VALUE_INPUT_PENDING",
-                    "local",
-                    source.provenance.element,
-                    source.kind,
-                    "Owned merged input requires a guarded in-memory projection; "
-                    "current path-only collectors cannot activate its local view",
-                )
-            )
         for field_name in source.unproven_fields:
             diagnostics.append(
                 DshDiagnostic(
@@ -651,12 +681,14 @@ def collect_dsh_local_inputs(
                 tuple(diagnostics),
             )
         )
-        if source.requires_value_input:
-            continue
         if source.kind == "hooks":
             hook_sources.append(
                 DshHookSource(
-                    source.path, "project", "local", source.provenance.element
+                    source.path,
+                    "project",
+                    "local",
+                    source.provenance.element,
+                    local_source=source,
                 )
             )
         else:
@@ -668,6 +700,7 @@ def collect_dsh_local_inputs(
                     "local",
                     source.provenance.element,
                     root,
+                    local_source=source,
                 )
             )
     local = plan_dsh_install(
@@ -813,7 +846,7 @@ def plan_dsh_migration(
     """Compose raw sources once, with exactly one combined hook contribution.
 
     External sources are original catalog/global inputs, not merged snapshots.
-    Owned local projections remain in inputs with an explicit activation hold.
+    Guarded local projections join the same public config/hooks collectors.
     """
     verify_dsh_local_inputs(inputs)
     sources = (*config_sources, *inputs.config_sources)
@@ -832,11 +865,7 @@ def plan_dsh_migration(
         sources, inputs.layout, contributions=contributions
     )
     install = inputs.install
-    if (
-        not config.blocked
-        and not hooks.blocked
-        and not any(source.requires_value_input for source in inputs.raw_sources)
-    ):
+    if not config.blocked and not hooks.blocked:
         assert inputs.layout.project_root is not None
         config = compose_dsh_configuration(
             config,

@@ -1073,6 +1073,75 @@ Git executor must verify HEAD parent8f7d871b, exactallowlist, pinnedprecommit
 and commit-msg/whitespace0, unchanged3 SHA and clean tree before nextdispatch.
 No final contract/PR readiness claim yet; five final children remain queued.
 
+**ai-b8jes → ai-wkpk8.** Atomiced854eec parent8f7d871b independently
+verified: exact12 rawpaths +1207/-186, frozen3 SHA, done5/5, usage/journal
+and five approved future cut records samecommit. Full2372, worker62/413,
+root62+two custodyprobes0; pinnedprecommit/commitmsg/whitespace0 and no
+formattermutations. All11 existing committed/worktree SHA match; cleanindex/tree.
+Originalmaina8912c3c/status preserved. Sixteen children complete; next exactfive
+path guarded-local join, corrected integration-test slot already freshcritic
+checks1–7PASS/BLOCKING0. Promote sole candidate then actualready/next must
+confirm modewrite and final barrier before dispatch; allsixcriteria stayopen.
+
+**ai-wkpk8 backlog → to_do.** Previous owner committed and independently
+verifieded854eec, full2372 green. Sole guarded-local producer/consumer join
+candidate, five-file integration-test correction already wholecutcriticPASS0.
+Queue promotion does not prove eligibility; actualready/next must select this
+modewrite final-barrier row before claiming it. Six criteria remainopen.
+
+**ai-wkpk8 to_do → wip.** Actualready lists solewriteM phase7 row;
+tm next selects this exactchild, tm move wip exit0. Dispatch one available
+current-model worker with entire generatedcontext, approvedepic and current
+fulljournal, exactfourcore+oneintegrationtest paths; allsixcriteriaopen.
+Consume actualDshLocalInputs/Source/Guard schema/freshproducer, guardedvalues
+through sameconfig/hooks collectors, freshregistered launch with onecombined
+plan/layout+hooks. Raworiginal/ledger/registryguards survive apply and samehost
+nativeReady boundary. Unproven env/scalars stay explicitrefusals; no snapshots
+as activationinput, temp-source files, registry deletion or guessed schema.
+Correct ownedprovisional HELD assertion as integrated nativeproof completes;
+malformedE2Eregistry stillrefusesaccurately with existingdiagnosticprefix.
+Headless/preset limitation and immutableHMR preserve nativecontracts. No other
+writer or Git activity; source edits uncommitted until coordinatoracceptance.
+
+**Guarded join review → copy-mode fidelity correction.** Coordinator read
+all prior five-file diff and 692 test-diff lines. Worker isolated prepare probe
+/private/tmp/dsh-wkpk8-copy-mode-probe.json demonstrates manifest linkMode copy
+and copied migrated skill, but fresh launch output mode link. Existing approved
+mode contract requires correction in these same five files, no new choice or
+scope. Complete current full gate before edits, then preserve manifest mode
+through catalog/local collection and prove actual native joined copy launch.
+Repeat affected/full/static gates on final immutable source; six ticks stay open.
+Named-child invocation remains the following ai-f2bcb acceptance owner.
+
+**Frozen guarded join → verified six-criterion acceptance.** Coordinator read the
+complete five-file diff (+1040/-99), SHA69dc854d, all native child stdout/stderr/
+status and actual Ready proof. Worker own106/affected1218/full2411 pass; complete
+commands and stdout/stderr/exit inspected. Root independently repeats106/106 in
+11.85s, exit0, and actual mid-boot absent MCP ledger→external symlink probe
+refuses before Ready/turn, preserving outside sentinel and profile bytes.
+Supported original projections flow through the same config/hooks collectors,
+with original path/SHA plus present/absent ledger and registry guards. No stored
+aggregate or temporary activation sources; ambiguous env/scalar provenance and
+unsupported restrictions still refuse. Migration dry-run and classification,
+registered-only launch, one plan/layout, combined hooks, precedence and retired
+shared provider guards are proved. Native16 cases:4 actual Ready→turn and12
+refusals/zero Ready/turn; actual named-child invocation remains ai-f2bcb.
+Manifest copy/link is preserved in catalog/local collection and final native
+outputs, whole skill/reference raw CRLF bytes and inventory mode. Final literal
+formatting is independently AST-byte-identical (SHA93c09c30), four core SHA
+unchanged; final own106 and mypy87/Ruff5/Black25.1 five/Node/whitespace all0.
+Existing full2411/affected1218 therefore retain identical program/fixture
+semantics; final whole-epic coverage remains ai-pwjnx. Full failed chains retained,
+only known loopback EPERM required isolated permission; no exclusions/skips.
+Frozen source5 SHA match root review; all six ticks now reflect actual evidence.
+
+**ai-wkpk8 wip → done.** Actual tm acceptance6/6 and tm move done exit0.
+Prepare frozen five source/test files, six ticks, task relocation, usage and
+current journal in one subtask transaction against parented854eec. No source
+edits after freeze; Git executor must prove exact nine raw paths, all frozen
+SHA, required hooks/commit-msg/whitespace and clean worktree before ai-f2bcb.
+Whole named-child/runtime packaging acceptance remains that next owner.
+
 ## Acceptance criteria
 
 - [ ] All 21 subtasks are complete with their concrete acceptance gates checked.
