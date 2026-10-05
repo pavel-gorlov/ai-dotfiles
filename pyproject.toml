@@ -67,6 +67,7 @@ addopts = "-v --tb=short --strict-markers"
 markers = [
     "slow: marks tests as slow",
     "integration: integration tests (filesystem, symlinks)",
+    "dsh_runtime: required published RC2 runtime and installed-package acceptance",
 ]
 
 [tool.coverage.run]

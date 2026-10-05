@@ -4,6 +4,20 @@ from pathlib import Path
 
 import pytest
 
+from tests.integration.test_dsh_bridge import (
+    bridge_native_runtime as _bridge_native_runtime,
+)
+
+# Existing native suites keep their fixture imports. The required acceptance
+# suite shares the same pinned, disposable setup rather than an optional skip.
+bridge_native_runtime = _bridge_native_runtime
+
+
+@pytest.fixture(scope="session")
+def dsh_native_runtime(bridge_native_runtime: Path) -> Path:
+    """Resolve exact official RC2; setup errors fail this required fixture."""
+    return bridge_native_runtime
+
 
 @pytest.fixture
 def tmp_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
