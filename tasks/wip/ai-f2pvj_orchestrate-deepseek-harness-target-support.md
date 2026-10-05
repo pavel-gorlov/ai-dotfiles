@@ -53,13 +53,17 @@ chains while preserving the approved five-phase delivery sequence.
 | 1 — elements/bridge / 2 | Rendered rows and policy data agree with literal/readiness bridge; safe install and focused native fixture pass. |
 | 2 — configuration/launch / 3 | Native composition includes one merged hooks/MCP/agent set with origin resources; audited launch and fake-service cases pass. |
 | 3 — migration/lifecycle / 4, then 5, then 6 | Local registry/retirement and catalog/shared union pass at4; status/reconcile/migrate follow at5 and domain CLI at6, preserving recorded originals and source custody before lifecycle acceptance. |
-| 4 — acceptance/docs / 7 | Required guarded local activation, native smoke, published references/examples and all final gates pass. |
+| 4 — acceptance/docs / 7, then 8, then 9 | Required guarded local activation, native smoke and published references/examples pass at7; bounded final-gate corrections at8 precede the fresh immutable final verification at9. |
 
 Membership and mode are explicit in each child's frontmatter. The classification
 table below retains serial row order. During the bounded correction ai-ckvng
 may remain wip after its worker returns idle: dispatch ai-arqyy as the sole
 writer, accept/commit that correction, then resume ai-ckvng for its scoped gate
 before hooks or launch. No overlapping workers or dependency bypass is allowed.
+After the failed final audit, ai-pwjnx remains idle wip at its later barrier:
+ai-fcbgs is the sole corrective writer, then the verifier resumes only after
+that writer's acceptance and independently verified atomic commit. No read-only
+fan-out, source edit or Git executor runs concurrently with either worker.
 
 ## Branches and PRs
 
@@ -146,6 +150,9 @@ that integration and may test/document it without introducing another owner.
 - Process: ai-f2bcb owns test markers/helper packaging; ai-6w1qz owns reference
   templates and ai-pwjnx verifies existing pre-commit gates. New CI/hook/rule
   policy is not needed because the approved required gates use existing checks.
+- Final corrective coverage: ai-fcbgs resolves only the two demonstrated
+  help/formatter blockers; it consumes existing tooling and documents exact
+  semantic preservation. ai-pwjnx retains sole full final-gate ownership.
 
 ## Subtask classification
 
@@ -171,6 +178,7 @@ that integration and may test/document it without introducing another owner.
 | ai-f2bcb | Build required isolated pinned DSH runtime acceptance | M | general-purpose | 1.5–2.5 d · 3 files · ~+650/−20 LOC | `tests/integration/test_dsh_runtime.py`, `tests/conftest.py`, `pyproject.toml` |
 | ai-rr48w | Document DSH lifecycle launcher and compatibility contract | S | general-purpose | 0.5–1 d · 3 files · ~+300/−30 LOC | `README.md`, `src/ai_dotfiles/scaffold/templates/builtin_ai_dotfiles_skill.md`, `docs/dsh-target.md` |
 | ai-6w1qz | Sync scaffold references and native fragment example | S | general-purpose | 0.25–0.5 d · 3 files · ~+100/−10 LOC | `src/ai_dotfiles/scaffold/templates/global_readme.md`, `src/ai_dotfiles/scaffold/templates/root_readme.md`, `src/ai_dotfiles/scaffold/templates/example_dsh_fragment.json` |
+| ai-fcbgs | Align final help and formatter gates | S | general-purpose | 0.1–0.25 d · 2 files written · ~+2/−2 LOC | `src/ai_dotfiles/commands/add.py`, `src/ai_dotfiles/core/codex_rules.py`, `src/ai_dotfiles/scaffold/templates/builtin_ai_dotfiles_skill.md` (read-only), `docs/dsh-target.md` (read-only) |
 | ai-pwjnx | Verify final DSH epic acceptance and existing regressions | S | general-purpose | 0.25–0.5 d · 0 files written · ~+30/−0 LOC of gate evidence | `pyproject.toml`, `poetry.lock`, `.pre-commit-config.yaml`, `tests/integration/test_dsh_runtime.py`, `README.md` |
 
 ## Planning verification
@@ -1298,9 +1306,105 @@ assertions preserved and corrected only in tmp; source stayed frozen. Four ticks
 now demonstrated; atomic commit source/move/usage/journal before ai-pwjnx.
 Evidence /private/tmp/dsh-6w1qz-root-reviewed.json and full worker report.
 
+**ai-6w1qz → ai-pwjnx.** Atomicbd7d8b0 parenta438dd1 independently
+verified exact7 rawpaths/all6 HEAD+liveSHA, source3 frozen, done4/4 plus usage/
+journal; normal precommit/msg/whitespace/commit0, no mutations, clean tree/index
+and original main HEAD/status preserved. All20 writing children accepted and
+committed. Native15/full2426/92.04% prior evidence is retained; required final
+gates must now run after last docs/templates, not inherit that result. Read-only
+owner must freeze all source bytes, inspect actual help/matrix/packaging and run
+CI-mirroring full coverage plus types/lint/format/all precommit/whitespace. No
+implementation writes, skips/waivers, live homes/credentials or external providers.
+Evidence /private/tmp/dsh-6w1qz-root-commit-verified.json.
+
+**ai-pwjnx backlog → to_do.** Queue the sole final read-onlyS phase7 row
+after every source writer's verified commit. Actual ready must confirm this
+selection before claim/dispatch; all6 criteria remain open. No Git mutation or
+other source writer runs alongside verification.
+
+**Generic add-help observation → final audit.** Actual add --help retains
+"link them into the Claude dir" prose, byte-identical to maina8912c3 function
+docstring although that baseline already dispatches Codex. New DSH/migrate/
+reconcile help and all observed flag/argument grammar are correct. Record this
+legacy observation for independent final agreement assessment; no source change
+or gate waiver is made by the three-template owner. The auditor must report any
+material contract disagreement, with origin and responsible write owner, rather
+than silently declaring all generic prose exact or editing read-only sources.
+
+**ai-pwjnx to_do → wip.** Actual tm ready confirms sole read-onlyS
+phase7 row; claim known ID directly before full-context current-model dispatch.
+All6 criteria open. No source writer or Git executor active; full final quality
+and exact native15/no skips are required. Source bytes/status frozen before/
+after even precommit; failure routes to responsible write owner, not a waiver.
+
+**ai-pwjnx → bounded final-gate correction.** Frozen FAILED report
+/private/tmp/dsh-pwjnx-report.json SHAffff5ded1121e77619536eead6b2317773009c8817c86f5b8c7695e340244258
+contains actual full2426/native15 with0skip, coverage92.04% and mypy87/Ruff/
+PoetryBlack24.10 passes before any mutation. Required pre-commit Black25.1 exited1
+and added exactly one comma in baseline core/codex_rules.py:_expected_text;
+whole340 byte/mode/link comparison confirms no other source or metadata change,
+AST identical. The auditor stopped without restoring/fixing. AFTER_STOP real
+DSH-only add produced .dsh/skills/probe and no .claude, contradicting the old
+commands/add.py help docstring. These are actual final criteria4/5 blockers;
+their pre-existing origin does not waive approved final acceptance. All sessions
+ended before metadata changes or a corrective dispatch. Root independently
+verified log SHA, full2426 PASSED records/JUnit0bad/native15/Cov92.04 and exact
+source mutation in /private/tmp/dsh-pwjnx-root-initial-verification.json.
+
+**21-child cut → bounded 22-child cut.** tm create allocated ai-fcbgs for
+the two finite final-audit repairs under exacttwo-file ownership (~+2/-2), S;
+grouped finite gate repairs avoid a standalone comma-only task. Docs references
+are read-only and already agree in this PR. No behavior/flag/default/tooling,
+native contract, scope multiplier, branch/live step or Q3 decision changes.
+Twenty done children remain untouched. Scheduling counts now3/4/4/3/1/1/4/1/1,
+M x18/S x4; the approved fifth milestone extends internally through7,8,9.
+The original final verifier stays idle wip with all6 ticks open, moved only in
+frontmatter to9; corrective writer is at8. Fresh whole22-child critic and actual
+cut-check/validation must pass before its promotion/dispatch. Then one atomic
+corrective commit carries source/acceptance/relocation/usage/current-cut notes,
+is independently verified, and a fresh whole-source final audit follows.
+
+**22-child cut → verified corrective continuation.** Fresh-context critic
+read every24 file/4556 lines against manifest SHA; checks1–7 PASS, BLOCKING0,
+advisory0. Its own actual tm cut-check exited0/stdout
+"+ ai-f2pvj: cut-check passed"/stderr empty, no source/task/Git mutation and
+all processes ended. Root actual cut-check0/validate50/33legacy/whitespace0.
+Evidence /private/tmp/dsh-final-corrective-cut-critic-report.json. New bounded
+writer may proceed; native/final quality, onePR and owner merge remain held.
+
+**ai-fcbgs backlog → to_do.** Promote the sole corrective S writer only
+after verified whole-cut critic0; later ai-pwjnx remains idle wip9/all6 open.
+Exactsource ownership add help plus existing Codex comma, four concrete criteria
+open. Actual ready and next must select this member before wip/dispatch.
+
+**ai-fcbgs to_do → wip.** Actual ready/next sole writeS phase8 ID matches
+the checked classification and hold. Claim and dispatch complete current tm
+context/epic/journal under exacttwo-file ownership. No concurrent worker, audit
+or Git executor; ai-pwjnx idle. All four corrective ticks and all six final
+verifier ticks remain open pending actual outputs/root review/atomic commit.
+
+
+**ai-fcbgs wip → done.** Frozen two-line repair accepted after whole diff, all27
+actual command/output/exit records and their disk SHA, plus independent semantic
+AST/source/help verification. Existing120 tests/0skip and focused mypy/Ruff/
+Poetry Black24.10/configured pinned Black25.1.0 source/six precommit hooks/
+whitespace all0; no behavior/options/tooling changes. Pinned binary actually
+prints0.1.dev1+g8a737e727 from the shallow SCM fallback; clean official release
+checkout/FETCH_HEAD/cache DB and all25 installed source hashes prove the configured
+25.1.0 source. Scratch-only failed probes remain recorded, no gate waived.
+All339 nonowned paths/index/HEAD/main unchanged. Report SHA
+6eead59ca406d40b7950a0db9a5ab9b6e8b5ec9dff05cd642c71844bba853c48 at
+/private/tmp/dsh-fcbgs-report.json; root review and independent proof are
+/private/tmp/dsh-fcbgs-root-reviewed.json and
+/private/tmp/dsh-fcbgs-root-independent-proof.json. Four corrective ticks
+checked; normal acceptance/transition/validation followed by one source+done+
+usage+cut/journal commit. Final ai-pwjnx stays idle wip9/all6 open until root
+independently verifies the exact atomic commit, then receives fresh whole context
+and owns fresh whole-source/native/full-quality acceptance.
+
 ## Acceptance criteria
 
-- [ ] All 21 subtasks are complete with their concrete acceptance gates checked.
+- [ ] All 22 subtasks are complete with their concrete acceptance gates checked.
 - [ ] Every surface in the epic matrix is implemented faithfully or has its explicit native limitation diagnostic; no permission/rule broadening is introduced.
 - [ ] Project/global lifecycle, local retirement and mixed Codex/DSH ownership preserve user content; check/dry-run produce zero writes.
 - [ ] Required pinned native runtime acceptance passes with real child invocation and audited managed plugin readiness.
