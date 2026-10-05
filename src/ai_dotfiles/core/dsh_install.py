@@ -28,7 +28,8 @@ from pathlib import Path
 from typing import Literal, TypedDict, cast
 
 from ai_dotfiles.core import agents_md
-from ai_dotfiles.core.codex_local_registry import registry_path
+from ai_dotfiles.core.codex_local_registry import load_local_registry, registry_path
+from ai_dotfiles.core.codex_render import split_body
 from ai_dotfiles.core.dsh_audit import (
     DSH_AUDIT_GENERATOR_VERSION,
     DSH_AUDIT_ROW_ID,
@@ -42,6 +43,7 @@ from ai_dotfiles.core.dsh_audit import (
     build_bridge_config,
 )
 from ai_dotfiles.core.dsh_layout import DshLayout
+from ai_dotfiles.core.dsh_local_registry import load_dsh_local_registry
 from ai_dotfiles.core.dsh_permissions import DshPermissionPolicy
 from ai_dotfiles.core.dsh_render import (
     DshAgentPayload,
@@ -64,8 +66,9 @@ from ai_dotfiles.core.shared_instructions import (
 from ai_dotfiles.core.symlinks import safe_symlink
 from ai_dotfiles.core.targets import Target
 
-DSH_INSTALL_GENERATOR_VERSION = 1
+DSH_INSTALL_GENERATOR_VERSION = 2
 DSH_OWNERSHIP_SCHEMA_VERSION = 1
+DSH_SHARED_CUSTODY_GENERATOR_VERSION = 1
 InstallMode = Literal["link", "copy"]
 _EMPTY_PERMISSIONS = DshPermissionPolicy()
 TreeInventory = dict[str, dict[str, str | int]]
@@ -242,6 +245,7 @@ class DshInventory:
     records: dict[str, DshOwnershipRecord] = field(default_factory=dict)
     source_records: dict[str, dict[str, object]] = field(default_factory=dict)
     rule_blocks: dict[str, list[str]] = field(default_factory=dict)
+    shared_rule_records: dict[str, dict[str, object]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -431,6 +435,57 @@ def _source_record[T](result: DshRenderResult[T]) -> dict[str, object]:
 
 def _source_id(provenance: DshProvenance) -> str:
     return _sha(_json([provenance.origin, provenance.element, str(provenance.source)]))
+
+
+def _validate_shared_custody(key: str, value: object) -> dict[str, object]:
+    if (
+        not isinstance(value, dict)
+        or value.get("schema_version") != 1
+        or type(value.get("schema_version")) is not int
+        or value.get("generator") != DSH_SHARED_CUSTODY_GENERATOR_VERSION
+        or type(value.get("generator")) is not int
+        or not isinstance(value.get("source_record"), dict)
+    ):
+        raise ConfigError(f"Invalid DSH historical rule custody: {key}")
+    record = cast(dict[str, object], value["source_record"])
+    provenance, text, body, name = (
+        record.get("provenance"),
+        record.get("source_text"),
+        record.get("body"),
+        record.get("name"),
+    )
+    if (
+        record.get("managed_by") != "ai-dotfiles"
+        or record.get("target") != "dsh"
+        or record.get("status") != "READY"
+        or record.get("activation") != "shared"
+        or type(record.get("generator")) is not int
+        or not isinstance(provenance, dict)
+        or not all(
+            isinstance(provenance.get(field), str) and provenance[field]
+            for field in ("source", "origin", "element", "source_sha256")
+        )
+        or type(provenance.get("generator")) is not int
+        or not isinstance(text, str)
+        or _sha(text.encode()) != provenance.get("source_sha256")
+        or not isinstance(body, str)
+        or split_body(text.replace("\r\n", "\n").replace("\r", "\n")) != body
+        or not isinstance(name, str)
+        or key
+        != _sha(
+            _json([provenance["origin"], provenance["element"], provenance["source"]])
+        )
+    ):
+        raise ConfigError(f"Conflicting DSH historical rule custody: {key}")
+    agents_md.block_markers(name)
+    return record
+
+
+def _historical_shared_rules(inventory: DshInventory) -> dict[str, dict[str, object]]:
+    return {
+        key: _validate_shared_custody(key, value)
+        for key, value in inventory.shared_rule_records.items()
+    }
 
 
 def plan_dsh_install(
@@ -827,7 +882,16 @@ def read_dsh_inventory(layout: DshLayout) -> DshInventory:
         for key, value in blocks.items()
     ):
         raise ConfigError(f"Invalid DSH contribution metadata: {path}")
-    return DshInventory(cast(dict[str, DshOwnershipRecord], records), sources, blocks)
+    historical = data.get("shared_rule_records", {})
+    if not isinstance(historical, dict) or not all(
+        isinstance(key, str) for key in historical
+    ):
+        raise ConfigError(f"Invalid DSH historical rule registry: {path}")
+    for key, value in historical.items():
+        _validate_shared_custody(key, value)
+    return DshInventory(
+        cast(dict[str, DshOwnershipRecord], records), sources, blocks, historical
+    )
 
 
 def _verify_owned(path: Path, record: DshOwnershipRecord | None) -> None:
@@ -861,7 +925,124 @@ def verify_dsh_owned_output(
     return True
 
 
-def preflight_dsh_install(plan: DshInstallPlan) -> DshInventory:
+def verify_dsh_local_rule_custody(
+    layout: DshLayout,
+    name: str,
+    source_relative: str,
+    *,
+    inventory: DshInventory | None = None,
+) -> str:
+    """Prove an old local shared block from both original ownership records.
+
+    The current original may have changed or disappeared. Its *previous* bytes
+    must agree with the local source hash and the install source record, and an
+    existing marker must still contain that exact body. This is not permission
+    to replace a separately protected Codex/catalog contribution.
+    """
+    root = layout.project_root
+    if root is None:
+        raise ConfigError("Local DSH rule custody is project-only")
+    _guard_local_registries(layout)
+    registry = load_dsh_local_registry(root)
+    source = root / source_relative
+    if (
+        not _safe_relative(Path(source_relative))
+        or str(source.relative_to(root)) != source_relative
+        or not source_relative.startswith(".claude/rules/")
+        or source.suffix != ".md"
+    ):
+        raise ConfigError(f"Invalid local DSH rule custody source: {source_relative}")
+    agents_md.block_markers(name)
+    local = registry.sources.get(source_relative)
+    records = inventory if inventory is not None else read_dsh_inventory(layout)
+    candidates = _historical_shared_rules(records) or records.source_records
+    previous = [
+        record
+        for record in candidates.values()
+        if isinstance(record.get("provenance"), dict)
+        and cast(dict[str, object], record["provenance"]).get("source") == str(source)
+        and cast(dict[str, object], record["provenance"]).get("origin") == "local"
+    ]
+    if (
+        local is None
+        or local.get("kind") != "rule"
+        or local.get("element") != f"rule:{source.stem}"
+        or name not in registry.rule_blocks.get("AGENTS.md", [])
+        or name not in records.rule_blocks.get("AGENTS.md", [])
+        or len(previous) != 1
+    ):
+        raise LinkError(f"Unproven local DSH rule custody: {name}")
+    current = [
+        record
+        for record in records.source_records.values()
+        if isinstance(record.get("provenance"), dict)
+        and cast(dict[str, object], record["provenance"]).get("source") == str(source)
+        and cast(dict[str, object], record["provenance"]).get("origin") == "local"
+    ]
+    if len(current) != 1:
+        raise LinkError(f"Unproven current local DSH rule custody: {name}")
+    present = current[0]
+    present_provenance = cast(dict[str, object], present["provenance"])
+    present_text = present.get("source_text")
+    if (
+        present_provenance.get("element") != local["element"]
+        or present_provenance.get("source_sha256") != local["source_sha256"]
+        or present.get("status") != local["status"]
+        or not isinstance(present_text, str)
+        or _sha(present_text.encode()) != local["source_sha256"]
+        or (
+            present.get("status") == "READY"
+            and (
+                present.get("activation") not in ("shared", "literal")
+                or not isinstance(present.get("body"), str)
+                or split_body(
+                    present_text.replace("\r\n", "\n").replace("\r", "\n")
+                    if present.get("activation") == "shared"
+                    else present_text
+                )
+                != cast(str, present["body"]).strip()
+            )
+        )
+    ):
+        raise LinkError(f"Conflicting current local DSH rule custody: {name}")
+    prior = previous[0]
+    provenance = cast(dict[str, object], prior["provenance"])
+    text, body = prior.get("source_text"), prior.get("body")
+    if (
+        prior.get("managed_by") != "ai-dotfiles"
+        or prior.get("target") != "dsh"
+        or prior.get("status") != "READY"
+        or prior.get("activation") != "shared"
+        or prior.get("name") != name
+        or provenance.get("element") != local["element"]
+        or (
+            not records.shared_rule_records
+            and provenance.get("source_sha256") != local["source_sha256"]
+        )
+        or not isinstance(text, str)
+        or _sha(text.encode("utf-8")) != provenance.get("source_sha256")
+        or not isinstance(body, str)
+        or split_body(text.replace("\r\n", "\n").replace("\r", "\n")) != body
+    ):
+        raise LinkError(f"Conflicting local DSH rule custody: {name}")
+    target = layout.root_agents_md
+    _guard(target, root)
+    if target.is_symlink() or (target.exists() and not target.is_file()):
+        raise LinkError(f"Refusing foreign DSH AGENTS.md type: {target}")
+    actual = target.read_bytes().decode("utf-8") if target.exists() else ""
+    start, end = agents_md.block_markers(name)
+    if actual.count(start) != actual.count(end) or actual.count(start) > 1:
+        raise LinkError(f"Malformed/duplicate shared DSH block: {name}")
+    if start in actual:
+        _verify_shared_block(actual, name)
+        if not agents_md.block_matches(name, body, actual):
+            raise LinkError(f"Conflicting local DSH rule body: {name}")
+    return body
+
+
+def preflight_dsh_install(
+    plan: DshInstallPlan, *, local_rule_custody: Mapping[str, str] | None = None
+) -> DshInventory:
     """Check all outputs, registry and shared blocks before any materialization.
 
     Later lifecycle owners can reuse the same exact record/tree verification;
@@ -871,6 +1052,36 @@ def preflight_dsh_install(plan: DshInstallPlan) -> DshInventory:
     _validate_output_plan(plan)
     _guard_local_registries(plan.layout)
     inventory = read_dsh_inventory(plan.layout)
+    # Retained history must still describe the actual block before any output
+    # refresh, including a repeat migrate that now classifies the source MANUAL.
+    historical = _historical_shared_rules(inventory)
+    for record in historical.values():
+        name = cast(str, record["name"])
+        target = plan.layout.root_agents_md
+        _guard(target, _anchor(plan.layout))
+        if target.is_symlink() or (target.exists() and not target.is_file()):
+            raise LinkError(f"Refusing foreign DSH AGENTS.md type: {target}")
+        text = target.read_bytes().decode() if target.exists() else ""
+        start, end = agents_md.block_markers(name)
+        if text.count(start) != text.count(end) or text.count(start) > 1:
+            raise LinkError(f"Malformed/duplicate shared DSH block: {name}")
+        if start in text:
+            _verify_shared_block(text, name)
+            if not agents_md.block_matches(name, cast(str, record["body"]), text):
+                raise LinkError(f"Conflicting historical DSH rule body: {name}")
+    custody = local_rule_custody or {}
+    for name, source in custody.items():
+        if plan.layout.project_root is None:
+            raise LinkError("Local DSH rule custody requires a project layout")
+        verify_dsh_local_rule_custody(plan.layout, name, source, inventory=inventory)
+        if not any(
+            result.provenance.origin == "local"
+            and result.provenance.source == plan.layout.project_root / source
+            and result.payload is not None
+            and result.payload.name == name
+            for result in plan.shared_rules
+        ):
+            raise LinkError(f"Local DSH refresh has no matching desired rule: {name}")
     for result in (*plan.skills, *plan.agents, *plan.rules):
         _source_record(result)
     for output in plan.outputs:
@@ -916,9 +1127,17 @@ def preflight_dsh_install(plan: DshInstallPlan) -> DshInventory:
                 if rule.name in protected and not agents_md.block_matches(
                     rule.name, rule.body, text
                 ):
-                    raise LinkError(
-                        f"Conflicting locally protected DSH block: {rule.name}"
+                    codex_names = (
+                        load_local_registry(plan.layout.project_root)[
+                            "rule_blocks"
+                        ].get("AGENTS.md", [])
+                        if plan.layout.project_root is not None
+                        else []
                     )
+                    if rule.name not in custody or rule.name in codex_names:
+                        raise LinkError(
+                            f"Conflicting locally protected DSH block: {rule.name}"
+                        )
     return inventory
 
 
@@ -971,16 +1190,50 @@ def _record(output: DshOutput) -> DshOwnershipRecord:
     }
 
 
-def apply_dsh_install(plan: DshInstallPlan) -> DshInstallResult:
+def apply_dsh_install(
+    plan: DshInstallPlan, *, local_rule_custody: Mapping[str, str] | None = None
+) -> DshInstallResult:
     """Materialize a wholly preflighted plan, preserving unchanged bytes/mtimes.
 
     Existing primitives are destructive; DSH calls them only after proving exact
     ownership for every planned output. No adopt/backup-and-clobber is used.
     Old records are retained for later explicit retirement; this is not prune.
     """
-    previous = preflight_dsh_install(plan)
+    previous = preflight_dsh_install(plan, local_rule_custody=local_rule_custody)
     records, sources = dict(previous.records), dict(previous.source_records)
     blocks = {key: list(names) for key, names in previous.rule_blocks.items()}
+    historical = deepcopy(previous.shared_rule_records)
+    # Capture prior authoritative READY bytes before current source_records can
+    # replace them. Existing history was already validated against actual blocks.
+    for key, prior in previous.source_records.items():
+        if (
+            prior.get("status") == "READY"
+            and prior.get("activation") == "shared"
+            and key not in historical
+        ):
+            _guard(plan.layout.root_agents_md, _anchor(plan.layout))
+            if plan.layout.root_agents_md.is_symlink():
+                raise LinkError("Refusing symlinked historical DSH instructions")
+            candidate = {
+                "schema_version": 1,
+                "generator": DSH_SHARED_CUSTODY_GENERATOR_VERSION,
+                "source_record": deepcopy(prior),
+            }
+            _validate_shared_custody(key, candidate)
+            name = cast(str, prior["name"])
+            text = (
+                plan.layout.root_agents_md.read_bytes().decode()
+                if plan.layout.root_agents_md.exists()
+                else ""
+            )
+            start, end = agents_md.block_markers(name)
+            if text.count(start) != text.count(end) or text.count(start) > 1:
+                raise LinkError(f"Malformed/duplicate shared DSH block: {name}")
+            if start in text:
+                _verify_shared_block(text, name)
+                if not agents_md.block_matches(name, cast(str, prior["body"]), text):
+                    raise LinkError(f"Conflicting historical DSH rule body: {name}")
+            historical[key] = candidate
     changed: list[Path] = []
     try:
         for output in plan.outputs:
@@ -1033,7 +1286,12 @@ def apply_dsh_install(plan: DshInstallPlan) -> DshInstallResult:
             block_key = str(target.relative_to(_anchor(plan.layout)))
             if rule.name not in blocks.setdefault(block_key, []):
                 blocks[block_key].append(rule.name)
-        inventory = DshInventory(records, sources, blocks)
+            historical[_source_id(result.provenance)] = {
+                "schema_version": 1,
+                "generator": DSH_SHARED_CUSTODY_GENERATOR_VERSION,
+                "source_record": deepcopy(sources[_source_id(result.provenance)]),
+            }
+        inventory = DshInventory(records, sources, blocks, historical)
         data = _json(
             {
                 "managed_by": "ai-dotfiles",
@@ -1043,6 +1301,7 @@ def apply_dsh_install(plan: DshInstallPlan) -> DshInstallResult:
                 "records": records,
                 "source_records": sources,
                 "rule_blocks": blocks,
+                "shared_rule_records": historical,
             }
         )
         registry = plan.layout.provenance_path

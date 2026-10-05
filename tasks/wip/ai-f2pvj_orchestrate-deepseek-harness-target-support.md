@@ -36,8 +36,10 @@ Give each worker its explicit file ownership; workers are not alone and must
 preserve other owners' changes. Commit/acceptance/transitions stay with the
 orchestrator, through the applicable git-workflow and taskmanager policies.
 
-Dependency fields use ai-7xrwf as the common layout prerequisite and contain
-no chain of three nodes. Remaining producer/consumer prerequisites are explicit
+Dependency fields use ai-7xrwf as the common layout prerequisite, except the
+completed migration producer whose lower-phase gate already supplies it. The
+catalog CLI owner explicitly depends on that producer to order their narrow
+same-phase overlap; there is no chain of three nodes. Other prerequisites are explicit
 phase barriers and serial order below; never dispatch a later row just because
 its common dependency is done. Check prior rows and the current phase barrier
 before selecting a task. These milestone barriers avoid unbounded dependency
@@ -161,8 +163,8 @@ that integration and may test/document it without introducing another owner.
 | ai-4m4hj | Translate supported DSH command hooks and resource bindings | M | general-purpose | 0.5–1.5 d · 2 files · ~+350/−0 LOC | `src/ai_dotfiles/core/dsh_hooks.py`, `tests/unit/test_dsh_hooks.py` |
 | ai-vv1t9 | Launch managed DSH with audited patches and environment | M | general-purpose | 1–2 d · 5 files · ~+450/−0 LOC | `src/ai_dotfiles/core/dsh_launch.py`, `src/ai_dotfiles/commands/dsh.py`, `src/ai_dotfiles/cli.py`, `tests/unit/test_dsh_launch.py`, `tests/e2e/test_dsh_launch.py` |
 | ai-nzmc8 | Migrate local Claude elements with DSH source registry | M | general-purpose | 1–2 d · 5 files · ~+550/−30 LOC | `src/ai_dotfiles/core/dsh_migrate.py`, `src/ai_dotfiles/core/dsh_local_registry.py`, `src/ai_dotfiles/core/local_discovery.py`, `tests/integration/test_dsh_migrate.py`, `tests/integration/test_local_discovery.py` |
-| ai-m4s7p | Reconcile DSH drift retired sources and bounded prune | M | general-purpose | 1–2 d · 4 files · ~+500/−20 LOC | `src/ai_dotfiles/core/dsh_reconcile.py`, `src/ai_dotfiles/core/gitignore.py`, `tests/integration/test_dsh_reconcile.py`, `tests/integration/test_dsh_prune.py` |
-| ai-k1w43 | Wire DSH install add and remove in both scopes | M | general-purpose | 1–2 d · 5 files · ~+450/−60 LOC | `src/ai_dotfiles/commands/install.py`, `src/ai_dotfiles/commands/add.py`, `src/ai_dotfiles/commands/remove.py`, `tests/e2e/test_dsh_install.py`, `tests/e2e/test_dsh_global.py` |
+| ai-m4s7p | Reconcile DSH drift retired sources and bounded prune | M | general-purpose | 1–2 d · 5 files · ~+550/−30 LOC | `src/ai_dotfiles/core/dsh_reconcile.py`, `src/ai_dotfiles/core/dsh_install.py` (verified own-local-rule custody only), `src/ai_dotfiles/core/gitignore.py`, `tests/integration/test_dsh_reconcile.py` (includes prune cases), `tests/integration/test_dsh_target.py` (install-generator expectations only) |
+| ai-k1w43 | Wire DSH install add and remove in both scopes | M | general-purpose | 1–2 d · 5 files · ~+450/−60 LOC | `src/ai_dotfiles/commands/install.py`, `src/ai_dotfiles/commands/add.py`, `src/ai_dotfiles/commands/remove.py`, `src/ai_dotfiles/core/dsh_migrate.py` (registered-local selection only), `tests/e2e/test_dsh_install.py` (project/global cases) |
 | ai-gbrqm | Wire DSH status reconcile and migration CLI | M | general-purpose | 0.5–1.5 d · 5 files · ~+300/−40 LOC | `src/ai_dotfiles/commands/status.py`, `src/ai_dotfiles/commands/reconcile.py`, `src/ai_dotfiles/commands/migrate.py`, `src/ai_dotfiles/core/completions.py`, `tests/e2e/test_dsh_migrate.py` |
 | ai-b8jes | Wire DSH domain add and remove lifecycle | M | general-purpose | 0.5–1 d · 2 files · ~+200/−30 LOC | `src/ai_dotfiles/commands/domain.py`, `tests/e2e/test_dsh_domain.py` |
 | ai-wkpk8 | Join guarded local DSH activation | M | general-purpose | 0.5–1 d · 5 files · ~+300/−60 LOC | `src/ai_dotfiles/core/dsh_config.py`, `src/ai_dotfiles/core/dsh_hooks.py`, `src/ai_dotfiles/core/dsh_launch.py`, `src/ai_dotfiles/core/dsh_migrate.py`, `tests/e2e/test_dsh_launch.py` |
@@ -720,6 +722,140 @@ activated and ambiguous env/scalar origin stays MANUAL with exact fields.
 source files, ticks, relocation, usage and21-child cut metadata prepare one
 transaction. Verify against parent1976ead5 before ai-m4s7p promotion; no extra
 source writes, publication or concurrent owner.
+
+**ai-nzmc8 → ai-m4s7p.** Commit ebe655bb59ce7e1e1581dd6b20a67e44da8c5fc3
+independently verified: parent1976ead5, exact10paths +2706/-72, all five frozen
+source hashes and5/5 ticks match; source/move/usage/journal/cut together. Pinned
+Git gates exit0 with no source mutation, worktree/index clean, main unchanged.
+Promote only the next four-file Phase4 lifecycle owner. Fresh catalog/local
+producer drives ONE plan; retirement requires exact output custody proof and
+an in-memory shared Codex/DSH/catalog/local union. Never temporarily delete
+local protection to permit own-rule refresh; report actual installer API gaps.
+Check/dry-run remain zero bytes and global prune visits only explicit roots.
+Guarded-value/launcher join stays ai-wkpk8 before final native acceptance.
+
+**ai-m4s7p to_do → wip.** tm ready/next verify parentai-f2pvj, modewrite
+phase4. Dispatch sole four-file lifecycle owner with full deterministic context
+and approved contracts; six ticks remain open. No simultaneous writer/read
+fan-out. Own-source shared refresh must preserve other contributor protection.
+
+**ai-m4s7p four-file probe → five-file custody boundary.** Concrete disposable
+probe proves preflight rereads old local-rule registry protection and refuses
+changed own body despite current desired in-memory plan; registry unchanged.
+No source edits. Add only dsh_install.py to this M lifecycle owner (five files),
+optional proven own-source custody through preflight/apply, default preserving
+existing protection. Other Codex/catalog/user protection remains in memory;
+never temporarily delete/rewrite local registry to bypass it. Same21 children,
+phases3/4/4/5/5, approved decisions2/10/11 and Q3 unchanged. Freeze writer then
+whole-cut fresh critic/cut-check before same-leaf full-context continuation.
+
+**ai-m4s7p five-file cut → verified continuation.** Fresh-context critic reads
+whole approved epic/orchestrator/21children; checks1–7 no findings, BLOCKING0.
+Actual tm cut-check0, stdout '+ ai-f2pvj: cut-check passed', stderr empty;
+installer overlap is ordered phases2→4. Coordinator cut/validate49 and exact
+original boundary probe all exit0. No source edits before review. Resume same
+leaf/current-model worker with full five-file context and default-preserving
+verified custody API. Prior source_text SHA/provenance/marker must agree and
+other catalog/Codex ownership stays protected; no caller-name-set bypass.
+All six lifecycle ticks remain open. Scope/Q3/21-child ordering unchanged.
+
+**ai-m4s7p repeat-migrate probe → historical custody correction.** Own draft
+21/22 plus actual safe refusal proves a producer loss of prior shared body after
+READY→MANUAL and repeat migration; do not accept it as a native limitation.
+Worker freezes four files, then same five-file owner assesses/implements exact
+historical custody in authoritative installer inventory (apply is called by
+migrate), preserving fresh classification and other owners. No sixth-file scope
+or gitignore transfer yet. All six lifecycle ticks remain open; current original
+SHA is not historical proof and caller marker self-hash cannot authorize delete.
+
+**ai-m4s7p generator regression → five-file consolidation.** Installer2
+historical emission makes two hardcoded old-version assertions fail in existing
+target tests; worker/root unchanged gates both72pass/6fail78, exit1, native
+providers pass. Keep required generator bump and update only those two expected
+versions. Co-locate all reconcile/prune coverage in test_dsh_reconcile.py and
+replace the planned separate prune slot with test_dsh_target.py. Preserve the
+278-line prune draft at /private/tmp/dsh-orchestration-contexts/ai-m4s7p-prune-draft.py
+(SHA3ad33610...) for same-owner consolidation, no loss/weakening. Own48 currently
+47pass/1catalog fixture error; explicit rule:local intentionally excludes local
+source, use domain member fixture. Five final files, same lifecycle concern,
+21children/Q3 unchanged. Freeze source writer then fresh whole-cut critic0 and
+full context before further changes; no acceptance yet.
+
+**ai-m4s7p consolidation cut → verified continuation.** Fresh whole21-task
+critic checks1–7 no findings, BLOCKING0; actual cut-check0 stdout '+ ai-f2pvj:
+cut-check passed', stderr empty; coordinator cut/validate49 pass. Source writer
+frozen throughout. Resume final5 with preserved prune test consolidation and
+only two install2 assertions. Root actual multiline-CRLF probe finds false
+unchanged skill drift and invalid shared custody due raw-vs-normalized text.
+Same owner must fix source_text raw decoding/shared-only normalization and test
+idempotence/refresh/retirement before acceptance; literal native bytes retained.
+No new scope/flag, six criteria open.
+
+**ai-m4s7p fresh lifecycle probe → catalog-only selection boundary.** After
+CRLF correction worker own140/140 and mypy87 pass. Concrete disposable probe
+shows full opted-in reconciliation adopts a new unregistered skill after one
+earlier migration. Catalog-only install/add/remove must preserve recorded
+locals without performing that adoption. Same existing five-file lifecycle
+owner assesses fresh typed selection before one composition, preserving all
+original/source/registry guards; no stored snapshot, new user flag, sixth file
+or temporary registry changes. This is required existing catalog-only policy,
+not a new scope fork. Current six ticks and CLI dispatch remain held until the
+boundary and updated frozen checks are demonstrated.
+
+**Catalog-only probe → ai-k1w43 five-file producer integration.** Actual
+pre-return local command collision and four JSON source-set probes prove that
+selection must precede rendering, rather than filtering completed local inputs.
+Consolidate planned project/global CLI tests in one owned test file and assign
+the freed slot to dsh_migrate.py's narrow registered-local producer selection.
+Keep three wrappers thin, all six CLI criteria, full migration/reconcile defaults
+and complete observed-original guards. No sixth file, user flag or snapshot.
+Explicit ai-k1w43 dependency on ai-nzmc8 orders their same-phase write overlap;
+remove only the completed producer's redundant ai-7xrwf edge, whose lower-phase
+gate already requires the foundation. Lifecycle/history/ticks remain unchanged,
+21 children and approved five milestones/Q3 remain applicable. Freeze current
+writer, run fresh whole-cut critic and cut-check before any CLI dispatch.
+
+**ai-k1w43 bounded cut → verified typed lifecycle hand-off.** Fresh-context
+critic reads all23 current task files, checks1–7 with no findings, BLOCKING0.
+Actual cut-check exits0, stdout + ai-f2pvj: cut-check passed, stderr empty;
+coordinator same command/validate49 pass. Current source writer frozen. The
+selected fresh local producer also needs a public typed input into existing
+reconciliation, which otherwise recollects every local source. ai-m4s7p adds
+only that verified DshLocalInputs hand-off in its already owned planner, with
+layout/catalog/original/registry guards and one composition; no generic callback
+or selection implementation. Default full reconciliation remains unchanged.
+Repeat final frozen lifecycle gates before its commit; then dispatch producer
+selection and thin catalog CLI together under the verified five-file cut.
+
+**Mixed-target shared refresh probe → CLI ordering evidence.** Root actual
+disposable probe exits0: Codex-first changed-body update makes DSH historical
+custody refuse, whereas DSH-first refresh followed by Codex leaves clean check.
+ai-k1w43 must prove correct target ordering with fresh Claude originals/ledgers
+and the common shared union; never weaken custody to accept an earlier target
+mutation. This is its existing mixed-target preservation criterion, not new scope.
+
+
+**ai-m4s7p frozen implementation → verified acceptance.** Coordinator reviewed the whole
+five-file implementation and the typed hand-off increment. Final owned diff
++1959/-11, SHA1a49ce5e; frozen five SHA match the worker report. Independent
+focused reconcile/install gate169/169 exit0; worker same169/169 exit0. Whole
+unchanged regression gate2222/2222 in127.53s exit0, stderr empty, including
+required pinned native runtime. Initial sandbox-only loopback EPERM was followed
+by the same full gate with isolated network permission; no skipped/altered test.
+Root and worker mypy87, Ruff, pinned Black25.1 and whitespace all exit0.
+Six criteria now verified: guarded drift/retirement and historical custody,
+zero-write check, bounded prune/shared union and exact managed-link gitignore.
+Typed local_inputs preserves full-reconcile default and original/registry guards;
+registered-local selection belongs to ai-k1w43, guarded-value activation to
+ai-wkpk8. No fresh local adoption is promised by catalog-only CLI yet.
+Evidence: /private/tmp/dsh-m4s7p-typed-report.json and full stdout; source remains
+frozen before acceptance/move/atomic commit.
+
+
+**ai-m4s7p wip → done.** Acceptance6/6 and actual tm move done exit0,
+usage recorded. Commit together source, test, tick, relocation, usage, journal
+and the already critic-verified ai-k1w43/ai-nzmc8 dependency cut. Hold next
+writer until atomic commit parent/paths/frozen SHA and clean-tree proof.
 
 ## Acceptance criteria
 

@@ -8,10 +8,11 @@ context_files:
 - src/ai_dotfiles/commands/install.py
 - src/ai_dotfiles/commands/add.py
 - src/ai_dotfiles/commands/remove.py
+- src/ai_dotfiles/core/dsh_migrate.py
 - tests/e2e/test_dsh_install.py
-- tests/e2e/test_dsh_global.py
 dependencies:
 - ai-7xrwf
+- ai-nzmc8
 executor_agent: claude
 size: M
 mode: write
@@ -27,7 +28,7 @@ status_history:
 
 Connect existing catalog lifecycle commands and their applicable flags to DSH core services in project/global scope.
 
-Size driver: Three existing command wrappers and two CLI suites; all catalog mutation dispatch has one owner.
+Size driver: Three command wrappers, the narrow registered-local producer selection and one project/global CLI suite share one catalog lifecycle concern.
 
 ## Scope and ownership
 
@@ -42,8 +43,8 @@ write order beyond the common layout dependency.
 - src/ai_dotfiles/commands/install.py
 - src/ai_dotfiles/commands/add.py
 - src/ai_dotfiles/commands/remove.py
+- src/ai_dotfiles/core/dsh_migrate.py
 - tests/e2e/test_dsh_install.py
-- tests/e2e/test_dsh_global.py
 
 ## Definition of done
 
@@ -58,3 +59,24 @@ write order beyond the common layout dependency.
 
 You are not alone in the codebase: preserve other owners' edits and accommodate their APIs. Only this task owns writes to its listed context files; coordinate any additional write with the orchestrator.
 The orchestrator owns commits, acceptance ticks and lifecycle transitions.
+
+## Execution notes
+
+**Concrete lifecycle probe → bounded producer selection.** ai-m4s7p's full
+opted-in reconciliation correctly discovers new local sources, but catalog-only
+install/add/remove must not silently adopt them. Selection must happen before
+local rendering/collision and retain the complete observed original-source set
+for guards: post-filtering inputs either fails source-set proof or leaves an
+unregistered guarded projection active. This owner adds the narrow selection in
+dsh_migrate.py, using fresh registered originals, no stored snapshot or user flag.
+All project/global CLI cases consolidate in test_dsh_install.py, keeping exactly
+five owned files and all six acceptance criteria. Existing migrate/reconcile
+defaults remain full discovery. Fresh whole-cut critic must pass before dispatch.
+
+**Shared refresh probe → target mutation ordering.** Coordinator disposable
+probe exits0: after catalog shared rule body changes, Codex-first block mutation
+causes DSH historical custody refusal; DSH-first refresh followed by Codex gives
+clean check. The command owner must consume the union and preflight/current
+originals in the correct order, including Claude settings/ledger rebuilds; prove
+mixed-target repeated install and changed catalog rule refresh remain clean.
+No historical guard may be relaxed to compensate for earlier target writes.

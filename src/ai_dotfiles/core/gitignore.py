@@ -63,6 +63,36 @@ def collect_managed_paths(claude_dir: Path, storage: Path) -> list[str]:
     return results
 
 
+def collect_dsh_managed_paths(project_root: Path) -> list[str]:
+    """Return exact inventoried DSH link paths, never shared instruction files.
+
+    A recorded link must still match its ownership before it is ignored. No
+    directory scan adopts user links, and generated/copied portable files are
+    not added. Callers combine this list with existing target paths.
+    """
+    from ai_dotfiles.core.dsh_install import (
+        read_dsh_inventory,
+        verify_dsh_owned_output,
+    )
+    from ai_dotfiles.core.dsh_layout import project_layout
+
+    layout = project_layout(project_root)
+    inventory = read_dsh_inventory(layout)
+    results = []
+    for key, record in inventory.records.items():
+        path = layout.dsh_dir / key
+        if record["mode"] != "link" or not path.is_symlink():
+            continue
+        verify_dsh_owned_output(layout, key, inventory=inventory)
+        relative = path.relative_to(project_root).as_posix()
+        # Gitignore syntax is a pattern even for an anchored path.
+        escaped = "".join(
+            "\\" + char if char in "\\*?[] !#" else char for char in relative
+        )
+        results.append("/" + escaped)
+    return sorted(results)
+
+
 def parse_blocks(text: str) -> tuple[list[str], list[str], list[str]]:
     """Split ``text`` into ``(before, managed, after)``.
 
