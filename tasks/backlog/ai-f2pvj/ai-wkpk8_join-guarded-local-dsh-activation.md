@@ -13,7 +13,7 @@ context_files:
 executor_agent: claude
 size: M
 mode: write
-phase: 5
+phase: 6
 status_history:
 - at: '2026-10-04T23:11:17+00:00'
   status: backlog

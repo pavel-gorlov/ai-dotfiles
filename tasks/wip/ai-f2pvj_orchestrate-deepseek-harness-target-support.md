@@ -52,8 +52,8 @@ chains while preserving the approved five-phase delivery sequence.
 | 0 — contract/ownership / 1 | Typed target/path contract, native roots and shared-block union tests pass. |
 | 1 — elements/bridge / 2 | Rendered rows and policy data agree with literal/readiness bridge; safe install and focused native fixture pass. |
 | 2 — configuration/launch / 3 | Native composition includes one merged hooks/MCP/agent set with origin resources; audited launch and fake-service cases pass. |
-| 3 — migration/lifecycle / 4 | Local registry/retirement and shared union are integrated before command mutations; project/global CLI and existing lifecycle regressions pass. |
-| 4 — acceptance/docs / 5 | Required native smoke, published references/examples and all final gates pass. |
+| 3 — migration/lifecycle / 4, then 5 | Local registry/retirement and catalog/shared union pass at4; status/reconcile/migrate and domain CLI follow at5, preserving recorded originals before lifecycle acceptance. |
+| 4 — acceptance/docs / 6 | Required guarded local activation, native smoke, published references/examples and all final gates pass. |
 
 Membership and mode are explicit in each child's frontmatter. The classification
 table below retains serial row order. During the bounded correction ai-ckvng
@@ -165,7 +165,7 @@ that integration and may test/document it without introducing another owner.
 | ai-nzmc8 | Migrate local Claude elements with DSH source registry | M | general-purpose | 1–2 d · 5 files · ~+550/−30 LOC | `src/ai_dotfiles/core/dsh_migrate.py`, `src/ai_dotfiles/core/dsh_local_registry.py`, `src/ai_dotfiles/core/local_discovery.py`, `tests/integration/test_dsh_migrate.py`, `tests/integration/test_local_discovery.py` |
 | ai-m4s7p | Reconcile DSH drift retired sources and bounded prune | M | general-purpose | 1–2 d · 5 files · ~+550/−30 LOC | `src/ai_dotfiles/core/dsh_reconcile.py`, `src/ai_dotfiles/core/dsh_install.py` (verified own-local-rule custody only), `src/ai_dotfiles/core/gitignore.py`, `tests/integration/test_dsh_reconcile.py` (includes prune cases), `tests/integration/test_dsh_target.py` (install-generator expectations only) |
 | ai-k1w43 | Wire DSH install add and remove in both scopes | M | general-purpose | 1–2 d · 5 files · ~+450/−60 LOC | `src/ai_dotfiles/commands/install.py`, `src/ai_dotfiles/commands/add.py`, `src/ai_dotfiles/commands/remove.py`, `src/ai_dotfiles/core/dsh_migrate.py` (registered-local selection only), `tests/e2e/test_dsh_install.py` (project/global cases) |
-| ai-gbrqm | Wire DSH status reconcile and migration CLI | M | general-purpose | 0.5–1.5 d · 5 files · ~+300/−40 LOC | `src/ai_dotfiles/commands/status.py`, `src/ai_dotfiles/commands/reconcile.py`, `src/ai_dotfiles/commands/migrate.py`, `src/ai_dotfiles/core/completions.py`, `tests/e2e/test_dsh_migrate.py` |
+| ai-gbrqm | Wire DSH status reconcile and migration CLI | M | general-purpose | 0.5–1.5 d · 5 files · ~+300/−40 LOC | `src/ai_dotfiles/commands/status.py`, `src/ai_dotfiles/commands/reconcile.py`, `src/ai_dotfiles/commands/migrate.py`, `src/ai_dotfiles/core/dsh_migrate.py` (fresh registered-original preservation), `tests/e2e/test_dsh_migrate.py` (includes Choice completion) |
 | ai-b8jes | Wire DSH domain add and remove lifecycle | M | general-purpose | 0.5–1 d · 2 files · ~+200/−30 LOC | `src/ai_dotfiles/commands/domain.py`, `tests/e2e/test_dsh_domain.py` |
 | ai-wkpk8 | Join guarded local DSH activation | M | general-purpose | 0.5–1 d · 5 files · ~+300/−60 LOC | `src/ai_dotfiles/core/dsh_config.py`, `src/ai_dotfiles/core/dsh_hooks.py`, `src/ai_dotfiles/core/dsh_launch.py`, `src/ai_dotfiles/core/dsh_migrate.py`, `tests/e2e/test_dsh_launch.py` |
 | ai-f2bcb | Build required isolated pinned DSH runtime acceptance | M | general-purpose | 1.5–2.5 d · 3 files · ~+650/−20 LOC | `tests/integration/test_dsh_runtime.py`, `tests/conftest.py`, `pyproject.toml` |
@@ -916,6 +916,78 @@ they are not a permanent limitation contract. Evidence full report, stdout and
 usage; prepare one atomic nine-path source/acceptance/relocation/journal commit.
 Hold ai-gbrqm until parenta3b3e3a, final frozen five SHA, exact scope and clean
 worktree are verified. Supported local-value activation remains ai-wkpk8.
+
+
+**ai-k1w43 → ai-gbrqm bounded discovery cut.** Atomic983d7bad parenta3b3e3a
+verified:9paths +1396/-140, final five SHA in HEAD/worktree, done6/6, pinned
+pre-commit/msg/whitespace0, no mutations, clean index/tree and original main
+baseline preserved. Independent different-body Codex namesake install exits1
+with Conflicting shared target union, preserving local block bytes. Full DSH
+check then falsely labels that existing registered source/block retired due
+manifest-name exclusion; this belongs to the next full reconcile producer.
+Replace ai-gbrqm's completion source slot with dsh_migrate.py, retaining five
+files/all five criteria; generic completion data module has no target list,
+Click Choice proves target completion in owned CLI tests. Preserve generic
+discovery exclusions except fresh recorded original keys, catalog provenance
+filters/guards and safe same-name conflict refusal. No new flag/format/scope.
+Milestone3 now uses scheduling4 then5 (gbrqm/domain); final milestone uses6.
+This internal barrier orders same-file producers without a three-node chain.
+All21 children, five approved milestones/Q3 and one PR remain unchanged;
+current scheduling counts3/4/4/3/2/5. Writers/Git frozen during whole-cut critic.
+
+**Discovery cut → independently cleared dispatch.** Fresh-context critic read all
+23 files/3705 lines and all21 children: checks1–7 PASS, findings0,
+BLOCKING0. Its actual tm cut-check ai-f2pvj exits0, stdout
++ ai-f2pvj: cut-check passed, stderr empty. Report
+/private/tmp/dsh-gbrqm-cut-critic-report.json. The five-file registered-original
+exception and internal scheduling barrier are accepted within unchanged Q3;
+no writer or Git mutation ran during criticism. Queue ai-gbrqm next.
+
+**ai-gbrqm backlog → to_do.** Critic-cleared five-file CLI/producer owner
+queued after atomic983d7bad; preserve namesake original, existing default Codex
+and project-only migrate. Readiness must confirm phase5 before dispatch.
+
+**ai-gbrqm to_do → wip.** Actual ready/next selects the only permitted
+phase5 modewrite row under ai-f2pvj. Dispatch one current-model owner with
+whole generated context/epic/journal, exact five paths and five open criteria.
+No other source writer/read fan-out; required source/test/static evidence and
+coordinator review precede ticks or commit. Generic discovery exclusions remain
+except live recorded originals; guarded value activation stays ai-wkpk8.
+
+**Frozen CLI implementation → reviewed evidence / full-loopback hold.**
+Coordinator inspected complete final five-file diff +884/-35 SHA0324da7b,
+including all637 owned test lines; final five source SHA match worker freeze
+and root review. Worker own49/49, affected18-suite384/384 exit0; root independent
+own49/49 in10.23s, two-case live namesake check/raw bytes/mode/mtime probe0,
+mypy87/Ruff5/pinned Black25.1 five all0. Equal body has no false drift;
+different body refuses shared union before writes; catalog provenance exclusion,
+deleted-source retirement, native/hooks/MCP retention and default/project-only
+Choice remain demonstrated. Existing Codex full local discovery/aggregate exit
+is retained even with disabled catalog target. Initial whole2332 gate has only
+2 isolated-loopback EPERM failures/2330pass, stderr empty; unchanged command
+repeated with require_escalated, session76119 still running. Five ticks remain
+open until complete full stdout/stderr/exit. Evidence root-reviewed JSON,
+owned diff and worker logs under /private/tmp/dsh-gbrqm*.
+
+**Full-loopback hold → verified five-criterion acceptance.** Exact whole
+pytest command with pinned RC2 now2332/2332 in130.01s, exit0, stderr empty;
+coordinator reads complete successful stdout and both attempts, final report,
+initial fixture/import corrections and all5 SHA. No excluded/skipped tests or
+source edits between attempts. Successful log
+/private/tmp/dsh-gbrqm-logs/1791166166057405000.json; complete report
+/private/tmp/dsh-gbrqm-report.json. Combined owned diff SHA0324da7b matches
+independent root review, source5 frozen. Criteria1 project/global DSH drift and
+live namesake/local-only Codex;2 actual Choice/help/completion/default and no-g;
+3 origin/field/reason/classifications/refusals;4 bytes/link/mode/mtime snapshots,
+resource/generator drift and deletion;5 affected384/full2332 all demonstrated.
+Native host final matrix and supported guarded-value join remain later owners.
+Five ticks now reflect inspected evidence; prepare same-commit move/usage.
+
+**ai-gbrqm wip → done.** Actual acceptance5/5 and move done exit0,
+usage written. Source5 plus this task relocation/ticks, orchestrator journal
+and six future-task phase-only recut records form one15-path transaction.
+Hold ai-b8jes until parent983d7bad, exact frozen5 SHA/allowlist, successful
+hooks/msg and clean worktree/main preservation are independently verified.
 
 ## Acceptance criteria
 

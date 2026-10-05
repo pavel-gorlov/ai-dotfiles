@@ -34,6 +34,8 @@ from ai_dotfiles.core.codex_layout import CodexLayout, global_layout, project_la
 from ai_dotfiles.core.codex_local_registry import load_local_registry
 from ai_dotfiles.core.codex_targets import iter_codex_pairs, iter_codex_rule_plans
 from ai_dotfiles.core.copy_ownership import load_copy_ownership, relative_label
+from ai_dotfiles.core.dsh_migrate import plan_dsh_full_lifecycle
+from ai_dotfiles.core.dsh_reconcile import apply_dsh_reconciliation
 from ai_dotfiles.core.elements import Element, ElementType
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
 from ai_dotfiles.core.local_discovery import LocalElement, iter_local_elements
@@ -511,6 +513,51 @@ def _local_is_migrated(element: LocalElement, registry: dict[str, Any]) -> bool:
     return False
 
 
+def _print_dsh_target(
+    project_root: Path | None,
+    packages: list[str],
+    targets: list[str],
+    catalog: Path,
+    link_mode: str,
+) -> int:
+    plan = plan_dsh_full_lifecycle(
+        project_root,
+        packages,
+        catalog,
+        targets,
+        mode="copy" if link_mode == "copy" else "link",
+    )
+    if plan is None:
+        return 0
+    report = apply_dsh_reconciliation(plan, check_only=True)
+    ui.info("")
+    ui.info("  DSH target" if project_root is not None else "  DSH target (global)")
+    for label in report.drift:
+        ui.info(f"    {_BROKEN} {label} STALE")
+    if not report.drift:
+        ui.info(f"    {_OK} artefacts up to date")
+    for rendered in (*plan.install.skills, *plan.install.agents, *plan.install.rules):
+        source = rendered.provenance
+        if source.origin != "local":
+            ui.info(f"    source: {source.origin} {source.element} ({source.source})")
+    if plan.migration is not None:
+        for action in plan.migration.inputs.actions:
+            ui.info(
+                f"    [{action.classification}] local {action.element} "
+                f"({action.source})"
+            )
+    for diagnostic in report.diagnostics:
+        ui.warn(
+            f"    - {diagnostic.origin} {diagnostic.element} {diagnostic.field}: "
+            f"{diagnostic.reason} [{diagnostic.code}]"
+        )
+    ui.info("    Runtime audit: run 'ai-dotfiles dsh launch'.")
+    if report.drift:
+        command = "ai-dotfiles reconcile" + (" -g" if project_root is None else "")
+        ui.info(f"    Run '{command}' to reconcile DSH artefacts.")
+    return len(report.drift)
+
+
 @click.command("status")
 @click.option(
     "-g",
@@ -522,22 +569,20 @@ def _local_is_migrated(element: LocalElement, registry: dict[str, Any]) -> bool:
 def status(is_global: bool) -> None:
     """Show installation status and merged settings summary."""
     try:
-        manifest_path, claude_dir, label = _resolve_scope(is_global)
+        _run_status(is_global)
     except AiDotfilesError as exc:
         ui.error(str(exc))
         raise SystemExit(exc.exit_code) from exc
 
+
+def _run_status(is_global: bool) -> None:
+    manifest_path, claude_dir, label = _resolve_scope(is_global)
     ui.info(f"ai-dotfiles status ({label})")
     ui.info("")
 
     packages = manifest.get_packages(manifest_path)
     if not packages:
         ui.info("  No packages installed.")
-        if not is_global:
-            local_root = paths.find_project_root()
-            if local_root is not None:
-                _print_local_status(local_root, [])
-        raise SystemExit(0)
 
     catalog = paths.catalog_dir()
     storage = paths.storage_root()
@@ -556,7 +601,7 @@ def status(is_global: bool) -> None:
     copy_mode = link_mode == "copy"
 
     total_issues = 0
-    if "claude" in targets:
+    if "claude" in targets and packages:
         owned_copies = (
             frozenset(load_copy_ownership(claude_dir)) if copy_mode else frozenset()
         )
@@ -574,7 +619,7 @@ def status(is_global: bool) -> None:
             )
         _print_settings_summary(packages, catalog, claude_dir)
 
-    if "codex" in targets:
+    if "codex" in targets and packages:
         if is_global:
             total_issues += _print_codex_target(
                 parsed, packages, global_layout(), catalog
@@ -585,6 +630,14 @@ def status(is_global: bool) -> None:
                 total_issues += _print_codex_target(
                     parsed, packages, project_layout(project_root), catalog
                 )
+
+    total_issues += _print_dsh_target(
+        None if is_global else paths.find_project_root(),
+        packages,
+        targets,
+        catalog,
+        link_mode,
+    )
 
     if not is_global:
         local_root = paths.find_project_root()
