@@ -9,11 +9,11 @@ context_files:
 - src/ai_dotfiles/core/dsh_hooks.py
 - src/ai_dotfiles/core/dsh_launch.py
 - src/ai_dotfiles/core/dsh_migrate.py
-- tests/e2e/test_dsh_launch.py
+- tests/integration/test_dsh_migrate.py
 executor_agent: claude
 size: M
 mode: write
-phase: 6
+phase: 7
 status_history:
 - at: '2026-10-04T23:11:17+00:00'
   status: backlog
@@ -29,7 +29,7 @@ Complete faithful local activation by joining ai-nzmc8's fresh guarded producer
 to the same configuration/hooks collectors and audited managed launcher.
 
 Size driver: One producer/consumer join across four bounded core modules and
-their existing native CLI test file; no new runtime or user-facing format.
+the existing migration/native integration suite; no new runtime or user-facing format.
 
 ## Scope and ownership
 
@@ -47,7 +47,7 @@ local-input extension and its actual launcher/migration consumer integration.
 - src/ai_dotfiles/core/dsh_hooks.py
 - src/ai_dotfiles/core/dsh_launch.py
 - src/ai_dotfiles/core/dsh_migrate.py
-- tests/e2e/test_dsh_launch.py
+- tests/integration/test_dsh_migrate.py
 
 ## Definition of done
 
@@ -85,3 +85,18 @@ duplicate join child. tm create allocated this ID under ai-f2pvj. It resolves
 the concrete path-only collector gap and local launcher hold without adding a
 surface or changing owner choices. Fresh whole-cut critic and tm cut-check are
 required before dispatch; source implementation has not started.
+
+**Provisional migration assertion → owned integrated proof.** Coordinator reads
+actual tests/integration/test_dsh_migrate.py:294–344: supported ledger-proven
+permissions/hooks/MCP currently assert HELD/LOCAL_VALUE_INPUT_PENDING and write
+refusal. Completing this join requires correcting that provisional assertion in
+the same implementation commit. Replace the previous E2E test context slot with
+this integration suite; keep four core modules, exactfive paths, allsix criteria
+and same approved native-backed local activation. Add actual collector/migration/
+managed-launch integration proof there, retaining native fixture isolation. The
+existing E2E launcher test creates malformed {"rule_blocks":{}} registry; it must
+still refuse before Ready with accurate origin/reason, and keep its existing
+registry-integration diagnostic prefix. That invalid-input contract stays valid;
+no broad valid-registry hold, shim or permanent pending assertion is introduced.
+Additional necessary writes return to the coordinator before edits. Whole-cut
+fresh critic/cut-check must clear this five-file recut before join dispatch.

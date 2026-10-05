@@ -12,15 +12,37 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Iterable, Mapping, Sequence
+import shutil
+import tempfile
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
-from ai_dotfiles.core import codex_install, mcp_ownership, paths, settings_ownership
+from ai_dotfiles.core import (
+    claude_copy,
+    codex_config,
+    codex_hooks,
+    codex_install,
+    codex_layout,
+    codex_rules,
+    manifest,
+    mcp_ownership,
+    paths,
+    settings_merge,
+    settings_ownership,
+    symlinks,
+)
 from ai_dotfiles.core.codex_layout import CodexLayout
-from ai_dotfiles.core.codex_targets import iter_codex_rule_plans
+from ai_dotfiles.core.codex_targets import (
+    CodexPair,
+    CodexRulePlan,
+    iter_codex_pairs,
+    iter_codex_rule_plans,
+)
+from ai_dotfiles.core.dependencies import topological_sort
 from ai_dotfiles.core.dsh_config import (
     DshConfigPlan,
     DshConfigSource,
@@ -68,8 +90,19 @@ from ai_dotfiles.core.dsh_render import (
     validate_skill,
 )
 from ai_dotfiles.core.dsh_targets import project_target_plan
-from ai_dotfiles.core.elements import Element, ElementType, parse_elements
-from ai_dotfiles.core.errors import ConfigError, LinkError
+from ai_dotfiles.core.elements import (
+    Element,
+    ElementType,
+    parse_element,
+    parse_elements,
+    resolve_target_paths,
+)
+from ai_dotfiles.core.errors import (
+    AiDotfilesError,
+    ConfigError,
+    ElementError,
+    LinkError,
+)
 from ai_dotfiles.core.local_discovery import (
     is_catalog_managed_path,
     iter_local_elements,
@@ -77,6 +110,7 @@ from ai_dotfiles.core.local_discovery import (
 from ai_dotfiles.core.settings_merge import strip_owned
 from ai_dotfiles.core.shared_instructions import project_instruction_plan
 from ai_dotfiles.core.targets import Target
+from ai_dotfiles.scaffold.generator import generate_element_from_template
 
 if TYPE_CHECKING:
     from ai_dotfiles.core.dsh_reconcile import DshReconcilePlan, DshReconcileReport
@@ -1102,6 +1136,8 @@ def remove_codex_catalog_blocks(
     catalog: Path,
     packages: Sequence[str],
     targets: Sequence[str],
+    *,
+    rule_plans: Sequence[CodexRulePlan] | None = None,
 ) -> None:
     """Remove only rule spans absent from the surviving shared ownership union."""
     from ai_dotfiles.core.agents_md import rule_name_of
@@ -1114,7 +1150,11 @@ def remove_codex_catalog_blocks(
                     keep.setdefault(path.resolve(), set()).add(
                         rule_name_of(plan.source)
                     )
-    for plan in iter_codex_rule_plans(element, layout, catalog):
+    for plan in (
+        iter_codex_rule_plans(element, layout, catalog)
+        if rule_plans is None
+        else rule_plans
+    ):
         name = rule_name_of(plan.source)
         for path in plan.agents_md_paths:
             if name not in keep.get(path.resolve(), set()):
@@ -1136,3 +1176,364 @@ def catalog_managed_paths(project_root: Path, claude_dir: Path) -> list[str]:
             else set()
         )
     )
+
+
+@contextmanager
+def stage_catalog_source_removal(source: Path, catalog: Path) -> Iterator[Path]:
+    """Hide one original outside catalog resources; restore it on refusal.
+
+    Successful callers retire target custody before the staged original is
+    deleted. Classification collected beforehand is never activation input.
+    """
+    if not source.parent.resolve().is_relative_to(catalog.resolve()):
+        raise ConfigError(f"Catalog source is outside the catalog: {source}")
+    holding = Path(tempfile.mkdtemp(prefix="ai-dotfiles-retire-", dir=catalog.parent))
+    staged = holding / source.name
+    retired = False
+    try:
+        source.rename(staged)
+        try:
+            yield staged
+            retired = True
+        except BaseException:
+            if source.exists() or source.is_symlink():
+                raise LinkError(
+                    f"Cannot restore catalog source {source}; "
+                    f"original retained at {staged}"
+                ) from None
+            staged.rename(source)
+            raise
+    except OSError as exc:
+        raise LinkError(f"Cannot stage catalog source {source}: {exc}") from exc
+    finally:
+        # A concurrent replacement must not destroy the retained original.
+        if retired or not (staged.exists() or staged.is_symlink()):
+            shutil.rmtree(holding)
+
+
+@dataclass(frozen=True)
+class DomainCatalogScope:
+    """An installed domain's existing global or current-project target scope."""
+
+    label: str
+    manifest_path: Path
+    project_root: Path | None
+    claude_dir: Path
+    packages: tuple[str, ...]
+    targets: tuple[str, ...]
+    mode: InstallMode
+
+
+@dataclass(frozen=True)
+class DomainCatalogMutation:
+    """Target changes and diagnostics for the thin domain command."""
+
+    linked: tuple[tuple[str, Path], ...] = ()
+    unlinked: tuple[tuple[str, Path], ...] = ()
+    warnings: tuple[str, ...] = ()
+    reports: tuple[DshReconcileReport, ...] = ()
+
+
+def _domain_catalog_scopes(name: str, catalog: Path) -> tuple[DomainCatalogScope, ...]:
+    root = paths.find_project_root()
+    candidates: list[tuple[str, Path, Path | None, Path]] = [
+        ("global", paths.global_manifest_path(), None, paths.claude_global_dir())
+    ]
+    if root is not None:
+        candidates.append(
+            (
+                root.name,
+                paths.project_manifest_path(root),
+                root,
+                paths.project_claude_dir(root),
+            )
+        )
+    scopes = []
+    for label, manifest_path, project_root, claude_dir in candidates:
+        packages = manifest.get_packages(manifest_path)
+        if f"@{name}" not in packages:
+            continue
+        ordered = topological_sort(catalog, parse_elements(packages))
+        scopes.append(
+            DomainCatalogScope(
+                label,
+                manifest_path,
+                project_root,
+                claude_dir,
+                tuple(element.raw for element in ordered),
+                tuple(manifest.get_targets(manifest_path)),
+                (
+                    "copy"
+                    if project_root and manifest.get_link_mode(manifest_path) == "copy"
+                    else "link"
+                ),
+            )
+        )
+    return tuple(scopes)
+
+
+def _domain_member_source(
+    name: str, element_type: str, element_name: str, catalog: Path
+) -> tuple[Element, Element, Path]:
+    domain = parse_element(f"@{name}")
+    member = parse_element(f"{element_type}:{element_name}")
+    domain_root = catalog / name
+    if not domain_root.is_dir():
+        raise ElementError(f"Domain @{name} not found at {domain_root}")
+    sub = f"{element_type}s"
+    leaf = element_name if member.type is ElementType.SKILL else f"{element_name}.md"
+    source = domain_root / sub / leaf
+    if not source.parent.resolve().is_relative_to(catalog.resolve()):
+        raise ConfigError(
+            f"Catalog member parent is redirected outside catalog: {source}"
+        )
+    return domain, member, source
+
+
+def _rebuild_domain_claude(
+    scope: DomainCatalogScope, catalog: Path, warnings: list[str]
+) -> None:
+    if scope.project_root is not None:
+        from ai_dotfiles.core.mcp_apply import rebuild_claude_config
+
+        rebuild_claude_config(
+            manifest_path=scope.manifest_path,
+            claude_dir=scope.claude_dir,
+            catalog=catalog,
+            project_root=scope.project_root,
+            backup_root=paths.backup_dir(),
+            warn=warnings.append,
+        )
+        return
+    fragments = settings_merge.collect_domain_fragments(list(scope.packages), catalog)
+    target = scope.claude_dir / "settings.json"
+    existing = (
+        settings_merge.load_fragment(target)
+        if target.is_file() and not target.is_symlink()
+        else {}
+    )
+    base = strip_owned(
+        existing, settings_ownership.load_settings_ownership(scope.claude_dir)
+    )
+    settings = settings_merge.assemble_settings(fragments, base=base)
+    owned = settings_merge.collect_fragment_contributions(fragments)
+    if target.is_symlink():
+        target.unlink()
+    if settings:
+        settings_merge.write_settings(settings, target)
+    elif target.exists():
+        target.unlink()
+    if settings_ownership.is_empty(owned):
+        settings_ownership.delete_settings_ownership(scope.claude_dir)
+    else:
+        settings_ownership.save_settings_ownership(scope.claude_dir, owned)
+
+
+def _refresh_domain_targets(
+    domain: Element,
+    member: Element,
+    source: Path,
+    catalog: Path,
+    scopes: Sequence[DomainCatalogScope],
+    *,
+    removing: bool,
+    old_pairs: Mapping[DomainCatalogScope, Sequence[CodexPair]],
+    old_rules: Mapping[DomainCatalogScope, Sequence[CodexRulePlan]],
+) -> DomainCatalogMutation:
+    # No target writes until every scope proves its complete desired retirement.
+    for scope in scopes:
+        plan_dsh_catalog_lifecycle(
+            scope.project_root, scope.packages, catalog, scope.targets, mode=scope.mode
+        )
+    linked: list[tuple[str, Path]] = []
+    unlinked: list[tuple[str, Path]] = []
+    warnings: list[str] = []
+    reports = []
+    for scope in scopes:
+        selected = parse_elements(list(scope.packages))
+        if "claude" in scope.targets:
+            sub = source.relative_to(catalog / domain.name)
+            target = scope.claude_dir / sub
+            wanted = {
+                target
+                for element in selected
+                for _, target in resolve_target_paths(
+                    element, scope.claude_dir, catalog
+                )
+            }
+            if removing and target not in wanted:
+                if scope.mode == "copy":
+                    removed = claude_copy.remove_copied_element(
+                        member, scope.claude_dir, catalog
+                    )
+                    if removed:
+                        unlinked.append((scope.label, sub))
+                elif target.is_symlink() and target.resolve() == source.resolve():
+                    symlinks.remove_symlink(target)
+                    unlinked.append((scope.label, sub))
+            for element in selected:
+                if scope.mode == "copy":
+                    claude_copy.copy_element(element, scope.claude_dir, catalog)
+                else:
+                    for original, destination in resolve_target_paths(
+                        element, scope.claude_dir, catalog
+                    ):
+                        symlinks.safe_symlink(original, destination, paths.backup_dir())
+            if not removing:
+                linked.append((scope.label, sub))
+            _rebuild_domain_claude(scope, catalog, warnings)
+        report = apply_dsh_catalog_lifecycle(
+            scope.project_root, scope.packages, catalog, scope.targets, mode=scope.mode
+        )
+        if report is not None:
+            reports.append(report)
+        if "codex" not in scope.targets:
+            continue
+        layout = (
+            codex_layout.project_layout(scope.project_root)
+            if scope.project_root
+            else codex_layout.global_layout()
+        )
+        pairs = [
+            pair
+            for element in selected
+            for pair in iter_codex_pairs(element, layout, catalog)
+        ]
+        wanted_pairs = {pair.target for pair in pairs}
+        for pair in old_pairs.get(scope, ()):
+            if pair.target in wanted_pairs:
+                continue
+            if pair.element_type is ElementType.AGENT:
+                codex_install.remove_codex_agent(pair.target)
+            elif pair.target.is_symlink():
+                codex_install.remove_codex_skill_link(pair.target, catalog)
+            else:
+                codex_install.remove_codex_skill(pair.target)
+        remove_codex_catalog_blocks(
+            domain,
+            layout,
+            catalog,
+            scope.packages,
+            scope.targets,
+            rule_plans=old_rules.get(scope, ()),
+        )
+        for pair in pairs:
+            if pair.element_type is ElementType.AGENT:
+                codex_install.install_codex_agent(pair.source, pair.target)
+            elif pair.element_type is ElementType.RULE:
+                codex_install.install_codex_rule_skill(pair.source, pair.target)
+            elif layout.project_root is None and codex_install.skill_symlink_ok(
+                pair.source, pair.target.name
+            ):
+                codex_install.symlink_codex_skill(
+                    pair.source, pair.target, relative=False
+                )
+            else:
+                codex_install.install_codex_skill(pair.source, pair.target)
+        for element in selected:
+            for plan in iter_codex_rule_plans(element, layout, catalog):
+                if layout.project_root is None:
+                    from ai_dotfiles.core.codex_global import ensure_not_reserved
+
+                    ensure_not_reserved(plan.source)
+                codex_install.apply_codex_rule_blocks(plan.source, plan.agents_md_paths)
+        fragments = settings_merge.collect_domain_fragments(
+            list(scope.packages), catalog
+        )
+        contributions = [(path.parent.name, path) for path in fragments]
+        codex_config.write_codex_config(layout.codex_dir, contributions)
+        from ai_dotfiles.core.mcp_merge import collect_mcp_fragments
+
+        codex_config.write_codex_mcp(
+            layout.codex_dir, collect_mcp_fragments(list(scope.packages), catalog)
+        )
+        codex_hooks.write_codex_hooks(layout.codex_dir, contributions)
+        codex_rules.write_codex_rules(layout.codex_dir, contributions)
+    if scopes:
+        from ai_dotfiles.core.runtime import provision_domain_runtime
+
+        try:
+            runtime = provision_domain_runtime(catalog, domain.name)
+            warnings.extend(
+                f"@{domain.name}: bin/{name} skipped — {reason}"
+                for name, reason in runtime.shims_skipped
+            )
+            warnings.extend(
+                f"@{domain.name}: CLI tool '{tool}' is required but not on PATH"
+                for tool in runtime.missing_cli
+            )
+        except AiDotfilesError as exc:
+            warnings.append(f"@{domain.name}: runtime provisioning failed — {exc}")
+    return DomainCatalogMutation(
+        tuple(linked), tuple(unlinked), tuple(warnings), tuple(reports)
+    )
+
+
+def mutate_domain_member(
+    name: str, element_type: str, element_name: str, catalog: Path, *, removing: bool
+) -> DomainCatalogMutation:
+    """Refresh installed selected targets from fresh originals after a member edit."""
+    domain, member, source = _domain_member_source(
+        name, element_type, element_name, catalog
+    )
+    exists = source.is_dir() if member.type is ElementType.SKILL else source.is_file()
+    if not removing:
+        exists = source.exists() or source.is_symlink()
+    if exists != removing:
+        reason = "not found" if removing else "already exists"
+        error = ElementError if removing else ConfigError
+        raise error(
+            f"{element_type.capitalize()} {element_name!r} {reason} in domain @{name}"
+        )
+    scopes = _domain_catalog_scopes(name, catalog)
+    old_pairs: dict[DomainCatalogScope, Sequence[CodexPair]] = {}
+    old_rules: dict[DomainCatalogScope, Sequence[CodexRulePlan]] = {}
+    if removing:
+        for scope in scopes:
+            if "codex" not in scope.targets:
+                continue
+            layout = (
+                codex_layout.project_layout(scope.project_root)
+                if scope.project_root
+                else codex_layout.global_layout()
+            )
+            old_pairs[scope] = tuple(
+                pair
+                for pair in iter_codex_pairs(domain, layout, catalog)
+                if pair.source == source
+            )
+            old_rules[scope] = tuple(
+                plan
+                for plan in iter_codex_rule_plans(domain, layout, catalog)
+                if plan.source == source
+            )
+        with stage_catalog_source_removal(source, catalog):
+            return _refresh_domain_targets(
+                domain,
+                member,
+                source,
+                catalog,
+                scopes,
+                removing=True,
+                old_pairs=old_pairs,
+                old_rules=old_rules,
+            )
+    source.parent.mkdir(parents=True, exist_ok=True)
+    generate_element_from_template(element_type, element_name, source)
+    try:
+        return _refresh_domain_targets(
+            domain,
+            member,
+            source,
+            catalog,
+            scopes,
+            removing=False,
+            old_pairs={},
+            old_rules={},
+        )
+    except BaseException:
+        if source.is_dir():
+            shutil.rmtree(source)
+        else:
+            source.unlink()
+        raise
