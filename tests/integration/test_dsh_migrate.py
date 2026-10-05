@@ -11,7 +11,17 @@ import pytest
 
 from ai_dotfiles.core import mcp_ownership, settings_ownership
 from ai_dotfiles.core.claude_copy import copy_element
-from ai_dotfiles.core.dsh_install import collect_dsh_elements
+from ai_dotfiles.core.dsh_config import (
+    attach_dsh_config_outputs,
+    collect_dsh_configuration,
+)
+from ai_dotfiles.core.dsh_hooks import attach_dsh_hook_outputs, collect_dsh_hooks
+from ai_dotfiles.core.dsh_install import collect_dsh_elements, read_dsh_inventory
+from ai_dotfiles.core.dsh_launch import (
+    DshLaunchPlan,
+    execute_dsh_launch,
+    prepare_dsh_launch,
+)
 from ai_dotfiles.core.dsh_layout import global_layout, project_layout
 from ai_dotfiles.core.dsh_local_registry import (
     DshLocalRegistry,
@@ -24,17 +34,25 @@ from ai_dotfiles.core.dsh_migrate import (
     plan_dsh_migration,
     verify_dsh_local_inputs,
 )
-from ai_dotfiles.core.dsh_native import native_frontmatter, resolve_dsh_runtime
+from ai_dotfiles.core.dsh_native import (
+    DshNativeRuntime,
+    native_frontmatter,
+    resolve_dsh_runtime,
+)
 from ai_dotfiles.core.elements import parse_element
 from ai_dotfiles.core.errors import ConfigError, LinkError
 from ai_dotfiles.core.settings_merge import hook_signature
 from ai_dotfiles.core.shared_instructions import project_instruction_plan
+from tests.e2e.test_dsh_launch import _bytes
+from tests.e2e.test_dsh_launch import _run as _launch_run
+from tests.e2e.test_dsh_launch import managed_fixture as _managed_fixture
 from tests.integration.test_dsh_bridge import _env
 from tests.integration.test_dsh_bridge import (
     bridge_native_runtime as _bridge_native_runtime,
 )
 
 bridge_native_runtime = _bridge_native_runtime
+managed_fixture = _managed_fixture
 pytestmark = pytest.mark.integration
 
 
@@ -333,15 +351,35 @@ def test_owned_settings_mcp_expose_fresh_projection_and_ledger_guard_without_dup
     assert sources[mcp].value == {"mcpServers": {"local": {"command": "local-server"}}}
     assert all(source.requires_value_input for source in sources.values())
     assert all(len(source.guards) == 2 for source in sources.values())
-    assert not report.plan.inputs.config_sources
     assert all(
-        action.classification == "REFACTOR" and action.status == "HELD"
+        item.local_source is not None for item in report.plan.inputs.config_sources
+    )
+    assert all(
+        action.classification in ("MECHANICAL", "REFACTOR") and action.status == "READY"
         for action in report.actions
     )
-    assert all(item.code == "LOCAL_VALUE_INPUT_PENDING" for item in report.diagnostics)
-    with pytest.raises(ConfigError, match="guarded in-memory projection"):
-        migrate_to_dsh(tmp_path)
-    assert _snapshot(tmp_path) == before
+    assert all(not item.blocking for item in report.diagnostics)
+    assert report.plan.config.permissions.deny == ("bash",)
+    assert report.plan.hooks.hooks == {"PreToolUse": [local_hook]}
+    assert [item.name for item in report.plan.config.contributions] == [
+        "hooks",
+        "mcp:local",
+    ]
+    assert all(
+        item["source_sha256"]
+        == hashlib.sha256(Path(str(item["source"])).read_bytes()).hexdigest()
+        for item in report.plan.config.sources
+    )
+    installed = migrate_to_dsh(tmp_path)
+    assert not installed.plan.blocked
+    assert (
+        settings.read_bytes() == json.dumps(sources[settings].original_value).encode()
+    )
+    assert mcp.read_bytes() == json.dumps(sources[mcp].original_value).encode()
+    assert (
+        load_dsh_local_registry(tmp_path).sources[".claude/settings.json"]["status"]
+        == "READY"
+    )
 
 
 def test_aggregate_env_has_precise_unproven_origin_and_is_never_user_only(
@@ -961,3 +999,655 @@ def test_new_original_json_after_planning_is_rejected_before_any_write(
         plan_dsh_migration(inputs)
     assert _snapshot(tmp_path) == before
     assert not (tmp_path / ".dsh").exists()
+
+
+@pytest.mark.parametrize(
+    "consumer", ["config", "hooks", "config-attach", "hooks-attach"]
+)
+@pytest.mark.parametrize(
+    "change", ["original", "ledger", "projection", "absent-ledger"]
+)
+def test_public_collectors_and_attach_recheck_local_projection_guards(
+    tmp_path: Path, tmp_storage: Path, consumer: str, change: str
+) -> None:
+    source = _json(
+        tmp_path / ".claude/settings.json",
+        {"permissions": {"deny": ["Bash"]}, "hooks": {}},
+    )
+    if change != "absent-ledger":
+        settings_ownership.save_settings_ownership(
+            tmp_path / ".claude", {"permissions_deny": []}
+        )
+    inputs = collect_dsh_local_inputs(tmp_path)
+    config = collect_dsh_configuration(inputs.config_sources, inputs.layout)
+    hooks = collect_dsh_hooks(inputs.config_sources, inputs.layout)
+    if change == "original":
+        source.write_text('{"permissions":{"deny":["Read"]}}')
+    elif change == "projection":
+        inputs.raw_sources[0].value["permissions"] = {}
+    else:
+        settings_ownership.save_settings_ownership(
+            tmp_path / ".claude", {"permissions_deny": ["Bash"]}
+        )
+    before = _snapshot(tmp_path)
+    with pytest.raises(LinkError, match="changed"):
+        if consumer == "config":
+            collect_dsh_configuration(inputs.config_sources, inputs.layout)
+        elif consumer == "hooks":
+            collect_dsh_hooks(inputs.config_sources, inputs.layout)
+        elif consumer == "config-attach":
+            attach_dsh_config_outputs(inputs.install, config)
+        else:
+            attach_dsh_hook_outputs(inputs.install, hooks)
+    assert _snapshot(tmp_path) == before
+    assert not inputs.layout.dsh_dir.exists()
+
+
+def _run(
+    plan: DshLaunchPlan, env: dict[str, str], tmp_path: Path
+) -> subprocess.CompletedProcess[str]:
+    result = _launch_run(plan, env, tmp_path)
+    (tmp_path / "native.stdout").write_text(result.stdout)
+    (tmp_path / "native.stderr").write_text(result.stderr)
+    (tmp_path / "native.status").write_text(str(result.returncode))
+    return result
+
+
+def _local_native_profile(directory: Path, *, filesystem: bool = True) -> None:
+    """Add exact installed public providers to the isolated existing profile."""
+    patch_path = directory / "cordis.patch.yml"
+    patches = json.loads(patch_path.read_text())
+    rows = patches[0]["insert"]
+    for name in (
+        "subagent",
+        "subagent-spawn-in-process",
+        "subprocess-local",
+        "bash-local",
+        "skill",
+        "agent-instructions",
+        "fs-local",
+    ):
+        row = {"id": name, "name": "@deepseek-ai/dsh-" + name}
+        if name == "agent-instructions":
+            row["config"] = {"maxBytes": 16384}
+        rows.append(row)
+    if filesystem:
+        rows.append(
+            {
+                "id": "skill-filesystem",
+                "name": "@deepseek-ai/dsh-skill-filesystem",
+                "config": {"watch": False},
+            }
+        )
+    patch_path.write_text(json.dumps(patches))
+    provider = directory / "provider.mjs"
+    provider.write_text(
+        provider.read_text()
+        .replace(
+            "import { LlmAdapter }",
+            "import { defineTool } from '@deepseek-ai/dsh-tools';\n"
+            "import { LlmAdapter }",
+        )
+        .replace(
+            "export const inject = ['llm'];", "export const inject = ['llm', 'tools'];"
+        )
+        .replace(
+            "  class Local extends",
+            """
+  for (const name of ['read', 'read_image', 'bash'])
+    ctx.tools.register(defineTool({name, description:name, parameters:{},
+      output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
+      async execute(){throw new Error('Fixture tool body must remain denied');}}));
+  class Local extends""",
+        )
+        .replace(
+            "sessions: ctx.get('sessions').list().length",
+            """
+      sessions: ctx.get('sessions').list().length,
+      mcp: Boolean(ctx.tools.get('mcp__local__ping')),
+      localAgent: Boolean(ctx.tools.get('ai_dotfiles_agent_local')),
+      entries: [...ctx.get('loader').entries()].map(entry => entry.id)""",
+        )
+    )
+
+
+def _registered_local_sources(
+    project: Path, runtime: DshNativeRuntime
+) -> dict[str, Path]:
+    skill = _skill(project, body="  Skill {{raw}}\r\n")
+    agent = _agent(project, extra="tools: Read, Bash\nmodel: sonnet\n")
+    command = _command(project, body="  Command {{raw}}\r\n")
+    _write(project / "AGENTS.md", "User root instructions\n")
+    rule = _write(
+        project / ".claude/rules/shared.md",
+        "---\nalways_on: true\n---\nShared {{raw}}\n",
+    )
+    literal = _write(
+        project / ".claude/rules/literal.md",
+        "---\ndescription: Local unconditional\n---\n  Rule {{raw}}\r\n",
+    )
+    hook = _write(
+        project / ".claude/hooks/proof.sh",
+        """#!/bin/sh
+cat >/dev/null
+printf '{"event":"local-hook","cwd":"%s","project":"%s"}\\n' \
+  "$PWD" "$CLAUDE_PROJECT_DIR" >> "$PROOF"
+""",
+    )
+    hook.chmod(0o755)
+    catalog_hook = {
+        "hooks": [{"type": "command", "command": "must-not-run-catalog-handler"}]
+    }
+    user_hook = {
+        "hooks": [{"type": "command", "command": "bash .claude/hooks/proof.sh"}]
+    }
+    settings = _json(
+        project / ".claude/settings.json",
+        {
+            "permissions": {"deny": ["Read", "Bash"]},
+            "hooks": {"UserPromptSubmit": [catalog_hook, user_hook]},
+        },
+    )
+    settings_ownership.save_settings_ownership(
+        project / ".claude",
+        {
+            "permissions_deny": ["Read"],
+            "hooks_signatures": [hook_signature(catalog_hook)],
+        },
+    )
+    server = _write(
+        project / "fake-mcp.mjs",
+        r"""
+import { createInterface } from 'node:readline';
+const input = createInterface({input:process.stdin});
+input.on('line', line => {
+  const req = JSON.parse(line);
+  if (req.id === undefined) return;
+  const result = req.method === 'initialize'
+    ? {protocolVersion:req.params.protocolVersion, capabilities:{tools:{}},
+       serverInfo:{name:'isolated-local',version:'1'}}
+    : req.method === 'tools/list'
+      ? {tools:[{name:'ping',description:'Isolated migrated MCP',
+          inputSchema:{type:'object',properties:{}}}]}
+      : {content:[{type:'text',text:'local-only'}]};
+  process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result})+'\n');
+});
+""",
+    )
+    mcp = _json(
+        project / ".mcp.json",
+        {
+            "mcpServers": {
+                "catalog": {"command": "must-not-start-catalog-server"},
+                "local": {
+                    "command": str(runtime.node),
+                    "args": [str(server)],
+                    "env": {"FAKE_VALUE": "literal-local"},
+                },
+            }
+        },
+    )
+    mcp_ownership.save_ownership(project / ".claude", {"catalog": ["@catalog"]})
+    return {
+        "skill": skill,
+        "agent": agent,
+        "command": command,
+        "rule": rule,
+        "literal": literal,
+        "hook": hook,
+        "settings": settings,
+        "mcp": mcp,
+    }
+
+
+@pytest.mark.parametrize("mode", ["link", "copy"])
+@pytest.mark.parametrize("filesystem", [True, False])
+def test_actual_registered_local_join_audits_elements_mcp_hooks_before_same_host_ready(
+    managed_fixture: tuple[Path, Path, DshNativeRuntime, dict[str, str]],
+    tmp_path: Path,
+    filesystem: bool,
+    mode: str,
+) -> None:
+    project, directory, runtime, env = managed_fixture
+    _json(
+        project / "ai-dotfiles.json",
+        {
+            "targets": ["dsh"],
+            "packages": ["skill:catalog-mode"],
+            "link_mode": "copy" if mode == "copy" else "symlink",
+        },
+    )
+    catalog_root = Path(env["AI_DOTFILES_HOME"]) / "catalog"
+    catalog_skill = _write(
+        catalog_root / "skills/catalog-mode/SKILL.md",
+        "---\nname: catalog-mode\ndescription: Catalog mode sentinel\n"
+        "---\n  Catalog {{raw}}\r\n",
+    )
+    catalog_plan = collect_dsh_elements(
+        [parse_element("skill:catalog-mode")],
+        project_layout(project),
+        catalog_root,
+        mode=mode,
+    )
+    _local_native_profile(directory, filesystem=filesystem)
+    originals = _registered_local_sources(project, runtime)
+    originals["skill-asset"] = _write(
+        originals["skill"].parent / "references/raw.txt", "  Resource {{raw}}\r\n"
+    )
+    originals["catalog-skill"] = catalog_skill
+    original_bytes = {name: path.read_bytes() for name, path in originals.items()}
+    profiles_before = _bytes(Path(env["DSH_HOME"]))
+    home_before = _bytes(Path(env["HOME"]))
+    dry_before = _snapshot(project)
+    dry = migrate_to_dsh(
+        project,
+        manifest_packages=["skill:catalog-mode"],
+        catalog_plan=catalog_plan,
+        mode=mode,
+        dry_run=True,
+    )
+    assert not dry.plan.blocked
+    assert _snapshot(project) == dry_before
+    migrate_to_dsh(
+        project,
+        manifest_packages=["skill:catalog-mode"],
+        catalog_plan=catalog_plan,
+        mode=mode,
+    )
+    # Unregistered originals are guarded but are never adopted as activation.
+    _skill(project, name="unregistered")
+    _json(
+        project / ".claude/settings.local.json",
+        {"env": {"UNREGISTERED": "must-not-activate"}},
+    )
+    registry_before = project_layout(project).local_registry_path.read_bytes()
+    plan = prepare_dsh_launch(
+        ["proof", "task", "--json"], cwd=project, process_env=env, runtime=runtime
+    )
+    assert len(plan.local_inputs) == 1
+    assert (
+        len([item for item in plan.installs if item.layout == project_layout(project)])
+        == 1
+    )
+    assert {
+        item["element"] for item in plan.config.sources if item["origin"] == "local"
+    } == {".claude/settings.json", ".mcp.json"}
+    assert plan.config.permissions.deny == ("bash",)
+    assert not plan.config.environment
+    assert [item.name for item in plan.config.contributions].count("hooks") == 1
+    assert "mcp:catalog" not in [item.name for item in plan.config.contributions]
+    assert {item["name"] for item in plan.request["requiredSkills"]} == {
+        "local",
+        "local-command",
+        "catalog-mode",
+    }
+    for name in ("local", "catalog-mode"):
+        output = next(
+            item
+            for item in plan.installs[-1].outputs
+            if item.path == project_layout(project).skills_dir / name
+        )
+        assert output.mode == mode
+        assert output.path.is_symlink() == (mode == "link")
+    assert not plan.request["instructionGuards"]
+    result = _run(plan, env, tmp_path)
+    if filesystem:
+        assert result.returncode == 0, result.stdout + result.stderr
+        evidence = [
+            json.loads(line) for line in Path(env["PROOF"]).read_text().splitlines()
+        ]
+        ready = next(item for item in evidence if item["event"] == "ready")
+        assert ready["mcp"] and ready["localAgent"]
+        assert ready["sessions"] == 0
+        assert {
+            "ai-dotfiles-agent-local",
+            "ai-dotfiles-mcp-local",
+            "ai-dotfiles-hooks",
+        } <= {entry.rsplit(":", 1)[-1] for entry in ready["entries"]}
+        assert evidence[0]["event"] == "ready"
+        assert any(
+            item["event"] == "local-hook"
+            and item["cwd"] == str(project)
+            and item["project"] == str(project)
+            for item in evidence
+        )
+        turn = next(item for item in evidence if item["event"] == "turn")
+        assert "Shared {{raw}}" in json.dumps(turn["messages"])
+        assert "  Rule {{raw}}" in json.dumps(turn["messages"])
+        assert "must-not-run" not in result.stderr
+    else:
+        assert result.returncode != 0
+        assert "Missing active native filesystem skill provider" in result.stderr
+        assert not Path(env["PROOF"]).exists()
+    assert project_layout(project).local_registry_path.read_bytes() == registry_before
+    inventory = read_dsh_inventory(project_layout(project))
+    for name, original in (("local", "skill"), ("catalog-mode", "catalog-skill")):
+        destination = project_layout(project).skills_dir / name
+        assert destination.is_symlink() == (mode == "link")
+        assert (destination / "SKILL.md").read_bytes() == original_bytes[original]
+        assert inventory.records[f"skills/{name}"]["mode"] == mode
+    assert (
+        project / ".dsh/skills/local/references/raw.txt"
+    ).read_bytes() == original_bytes["skill-asset"]
+    assert (project / ".dsh/skills/local-command.md").read_bytes() == original_bytes[
+        "command"
+    ]
+    assert {
+        name: path.read_bytes() for name, path in originals.items()
+    } == original_bytes
+    assert originals["hook"].stat().st_mode & 0o111
+    assert _bytes(Path(env["DSH_HOME"])) == profiles_before
+    assert _bytes(Path(env["HOME"])) == home_before
+
+
+@pytest.mark.parametrize(
+    "guard",
+    [
+        ".claude/settings.json",
+        ".claude/.ai-dotfiles-settings-ownership.json",
+        ".claude/.ai-dotfiles-mcp-ownership.json",
+        ".dsh/ai-dotfiles/local.json",
+        ".codex/.ai-dotfiles-local.json",
+        ".claude/settings.local.json",
+    ],
+)
+def test_registered_launch_rechecks_every_guard_before_first_target_write(
+    managed_fixture: tuple[Path, Path, DshNativeRuntime, dict[str, str]],
+    guard: str,
+) -> None:
+    project, _directory, runtime, env = managed_fixture
+    _json(project / ".claude/settings.json", {"permissions": {"deny": ["Bash"]}})
+    settings_ownership.save_settings_ownership(
+        project / ".claude", {"permissions_deny": []}
+    )
+    migrate_to_dsh(project)
+    plan = prepare_dsh_launch(
+        ["proof", "task"], cwd=project, process_env=env, runtime=runtime
+    )
+    target = _write(project / guard, '{"changed":"guard sentinel"}')
+    before = _snapshot(project)
+    with pytest.raises(LinkError, match="changed"):
+        execute_dsh_launch(plan, process_env=env)
+    assert _snapshot(project) == before
+    assert target.read_text() == '{"changed":"guard sentinel"}'
+    assert not Path(env["PROOF"]).exists()
+
+
+@pytest.mark.parametrize(
+    "guard",
+    [
+        ".dsh/ai-dotfiles/local.json",
+        ".codex/.ai-dotfiles-local.json",
+        ".claude/.ai-dotfiles-settings-ownership.json",
+        ".claude/.ai-dotfiles-mcp-ownership.json",
+        ".claude/settings.local.json",
+    ],
+)
+def test_actual_native_rechecks_local_guards_before_ready(
+    managed_fixture: tuple[Path, Path, DshNativeRuntime, dict[str, str]],
+    tmp_path: Path,
+    guard: str,
+) -> None:
+    project, directory, runtime, env = managed_fixture
+    _json(project / ".claude/settings.json", {"hooks": {}})
+    settings_ownership.save_settings_ownership(
+        project / ".claude", {"permissions_deny": []}
+    )
+    migrate_to_dsh(project)
+    mutation = _write(
+        directory / "mutation.mjs",
+        """
+import {mkdirSync, writeFileSync} from 'node:fs';
+import {dirname} from 'node:path';
+export function apply() {
+  mkdirSync(dirname(process.env.GUARD_TARGET), {recursive:true});
+  writeFileSync(process.env.GUARD_TARGET, '{"native":"guard mutation"}');
+}
+""",
+    )
+    patches = json.loads((directory / "cordis.patch.yml").read_text())
+    patches[0]["insert"].append(
+        {"id": "native-guard-mutation", "name": "./mutation.mjs"}
+    )
+    (directory / "cordis.patch.yml").write_text(json.dumps(patches))
+    env["GUARD_TARGET"] = str(project / guard)
+    profile_before = _bytes(Path(env["DSH_HOME"]))
+    plan = prepare_dsh_launch(
+        ["proof", "task"], cwd=project, process_env=env, runtime=runtime
+    )
+    result = _run(plan, env, tmp_path)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "Local DSH original/ownership changed before readiness" in result.stderr
+    assert not Path(env["PROOF"]).exists()
+    assert mutation.read_text().startswith("\nimport")
+    assert _bytes(Path(env["DSH_HOME"])) == profile_before
+
+
+def test_actual_local_join_missing_parent_provider_refuses_before_ready_or_turn(
+    managed_fixture: tuple[Path, Path, DshNativeRuntime, dict[str, str]],
+    tmp_path: Path,
+) -> None:
+    project, directory, runtime, env = managed_fixture
+    _json(project / ".claude/settings.json", {"hooks": {}})
+    migrate_to_dsh(project)
+    patches = json.loads((directory / "cordis.patch.yml").read_text())
+    model = next(row for row in patches[0]["insert"] if row["id"] == "default-model")
+    model["config"]["provider"] = "missing-local-provider"
+    (directory / "cordis.patch.yml").write_text(json.dumps(patches))
+    before = _bytes(Path(env["DSH_HOME"]))
+    source_before = (project / ".claude/settings.json").read_bytes()
+    plan = prepare_dsh_launch(
+        ["proof", "task"], cwd=project, process_env=env, runtime=runtime
+    )
+    result = _run(plan, env, tmp_path)
+    assert result.returncode != 0
+    assert (
+        "Native model provider missing-local-provider is not mounted" in result.stderr
+    )
+    assert not Path(env["PROOF"]).exists()
+    assert _bytes(Path(env["DSH_HOME"])) == before
+    assert (project / ".claude/settings.json").read_bytes() == source_before
+
+
+@pytest.mark.parametrize("restriction", ["exact-deny", "unproven-env"])
+def test_registered_local_unsupported_restriction_refuses_without_target_writes(
+    managed_fixture: tuple[Path, Path, DshNativeRuntime, dict[str, str]],
+    tmp_path: Path,
+    restriction: str,
+) -> None:
+    project, _directory, runtime, env = managed_fixture
+    source = _json(project / ".claude/settings.json", {"hooks": {}})
+    settings_ownership.save_settings_ownership(
+        project / ".claude", {"permissions_deny": []}
+    )
+    migrate_to_dsh(project)
+    plan = prepare_dsh_launch(
+        ["proof", "task"], cwd=project, process_env=env, runtime=runtime
+    )
+    value = (
+        {"permissions": {"deny": ["Bash(echo)"]}}
+        if restriction == "exact-deny"
+        else {"env": {"AMBIGUOUS": "catalog-equal"}}
+    )
+    _json(source, value)
+    before = _snapshot(project)
+    with pytest.raises(
+        ConfigError, match="permissions.deny|LOCAL_ORIGINAL_UNPROVEN|aggregate field"
+    ):
+        prepare_dsh_launch(
+            ["proof", "task"], cwd=project, process_env=env, runtime=runtime
+        )
+    result = _run(plan, env, tmp_path)
+    assert result.returncode != 0
+    assert not Path(env["PROOF"]).exists()
+    assert _snapshot(project) == before
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_retired_registered_shared_rule_uses_effective_native_provider_guard(
+    managed_fixture: tuple[Path, Path, DshNativeRuntime, dict[str, str]],
+    tmp_path: Path,
+    enabled: bool,
+) -> None:
+    project, directory, runtime, env = managed_fixture
+    source = _write(
+        project / ".claude/rules/retired.md",
+        "---\nalways_on: true\n---\nRetired shared {{rule}}\n",
+    )
+    _write(project / "AGENTS.md", "Keep user bytes\n")
+    migrate_to_dsh(project)
+    source.unlink()
+    patches = json.loads((directory / "cordis.patch.yml").read_text())
+    patches[0]["insert"].extend(
+        [
+            {
+                "id": "instruction-provider",
+                "name": "@deepseek-ai/dsh-agent-instructions",
+                "config": {"maxBytes": 16384 if enabled else 0},
+            },
+            {"id": "fs-local", "name": "@deepseek-ai/dsh-fs-local"},
+        ]
+    )
+    (directory / "cordis.patch.yml").write_text(json.dumps(patches))
+    shared_before = (project / "AGENTS.md").read_bytes()
+    registry_before = project_layout(project).local_registry_path.read_bytes()
+    profile_before = _bytes(Path(env["DSH_HOME"]))
+    plan = prepare_dsh_launch(
+        ["proof", "task"], cwd=project, process_env=env, runtime=runtime
+    )
+    assert len(plan.request["instructionGuards"]) == 1
+    assert plan.request["instructionGuards"][0]["source"] == str(source)
+    result = _run(plan, env, tmp_path)
+    if enabled:
+        assert result.returncode != 0
+        assert "retired.md source: native instruction provider" in result.stderr
+        assert not Path(env["PROOF"]).exists()
+    else:
+        assert result.returncode == 0, result.stderr
+        evidence = [
+            json.loads(line) for line in Path(env["PROOF"]).read_text().splitlines()
+        ]
+        assert any(item["event"] == "turn" for item in evidence)
+        assert "Retired shared" not in json.dumps(evidence)
+    assert not source.exists()
+    assert (project / "AGENTS.md").read_bytes() == shared_before
+    assert project_layout(project).local_registry_path.read_bytes() == registry_before
+    assert _bytes(Path(env["DSH_HOME"])) == profile_before
+
+
+def test_registered_local_and_catalog_layers_have_one_plan_and_precise_precedence(
+    managed_fixture: tuple[Path, Path, DshNativeRuntime, dict[str, str]],
+) -> None:
+    project, _directory, runtime, env = managed_fixture
+    storage = Path(env["AI_DOTFILES_HOME"])
+    for scope in ("global", "project"):
+        domain = storage / "catalog" / scope
+        _json(
+            domain / "mcp.fragment.json", {"mcpServers": {"same": {"command": scope}}}
+        )
+        _json(
+            domain / "settings.fragment.json",
+            {
+                "hooks": {
+                    "UserPromptSubmit": [
+                        {"hooks": [{"type": "command", "command": scope + "-hook"}]}
+                    ]
+                }
+            },
+        )
+    _json(storage / "global.json", {"targets": ["dsh"], "packages": ["@global"]})
+    _json(project / "ai-dotfiles.json", {"targets": ["dsh"], "packages": ["@project"]})
+    _json(project / ".mcp.json", {"mcpServers": {"same": {"command": "user-local"}}})
+    _json(
+        project / ".claude/hooks.json",
+        {
+            "UserPromptSubmit": [
+                {"hooks": [{"type": "command", "command": "user-local-hook"}]}
+            ]
+        },
+    )
+    catalog = collect_dsh_elements(
+        [parse_element("@project")], project_layout(project), storage / "catalog"
+    )
+    migrate_to_dsh(project, manifest_packages=["@project"], catalog_plan=catalog)
+    plan = prepare_dsh_launch(
+        ["proof", "task"], cwd=project, process_env=env, runtime=runtime
+    )
+    assert len(plan.installs) == 2
+    assert len({item.layout for item in plan.installs}) == 2
+    same = next(row for row in plan.config.rows if row["id"] == "ai-dotfiles-mcp-same")
+    assert same["config"]["command"] == "user-local"
+    hooks = next(item for item in plan.config.contributions if item.name == "hooks")
+    assert len(hooks.rows) == 1
+    assert [part.origin for part in hooks.provenance] == [
+        "@global",
+        "@project",
+        "local",
+    ]
+    hook_output = next(
+        output
+        for output in plan.installs[-1].outputs
+        if output.path == project_layout(project).hooks_path
+    )
+    assert [
+        group["hooks"][0]["command"]
+        for group in json.loads(hook_output.content)["hooks"]["UserPromptSubmit"]
+    ] == ["global-hook", "project-hook", "user-local-hook"]
+
+
+def test_actual_registered_deferred_native_yaml_retries_originals_without_placeholders(
+    managed_fixture: tuple[Path, Path, DshNativeRuntime, dict[str, str]],
+    tmp_path: Path,
+) -> None:
+    project, directory, runtime, env = managed_fixture
+    _local_native_profile(directory)
+    skill = _write(
+        project / ".claude/skills/deferred/SKILL.md",
+        "---\nname: deferred\ndescription: |-\n  Native multiline description\n"
+        "  for a local skill\n---\n  Skill {{raw}}\r\n",
+    )
+    agent = _write(
+        project / ".claude/agents/deferred.md",
+        "---\nname: deferred\ndescription: |-\n  Native multiline agent\n"
+        "  description\n---\n  Persona {{raw}}\r\n",
+    )
+    first = migrate_to_dsh(project)
+    assert all(action.status == "DEFERRED" for action in first.actions)
+    originals = {path: path.read_bytes() for path in (skill, agent)}
+    profile_before = _bytes(Path(env["DSH_HOME"]))
+    plan = prepare_dsh_launch(
+        ["proof", "task"], cwd=project, process_env=env, runtime=runtime
+    )
+    assert all(
+        result.status == "READY" for result in plan.local_inputs[0].local_results
+    )
+    assert not any(item.field == "frontmatter" for item in plan.diagnostics)
+    result = _run(plan, env, tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert Path(env["PROOF"]).exists()
+    assert {path: path.read_bytes() for path in originals} == originals
+    assert _bytes(Path(env["DSH_HOME"])) == profile_before
+
+
+def test_actual_migrated_required_mcp_startup_failure_releases_no_ready_or_turn(
+    managed_fixture: tuple[Path, Path, DshNativeRuntime, dict[str, str]],
+    tmp_path: Path,
+) -> None:
+    project, _directory, runtime, env = managed_fixture
+    source = _json(
+        project / ".mcp.json",
+        {"mcpServers": {"local": {"command": str(tmp_path / "missing-local-mcp")}}},
+    )
+    migrate_to_dsh(project)
+    source_before = source.read_bytes()
+    profile_before = _bytes(Path(env["DSH_HOME"]))
+    plan = prepare_dsh_launch(
+        ["proof", "task"], cwd=project, process_env=env, runtime=runtime
+    )
+    result = _run(plan, env, tmp_path)
+    assert result.returncode != 0
+    assert "ai-dotfiles-mcp-local" in result.stderr
+    assert "ENOENT" in result.stderr
+    assert not Path(env["PROOF"]).exists()
+    assert source.read_bytes() == source_before
+    assert _bytes(Path(env["DSH_HOME"])) == profile_before

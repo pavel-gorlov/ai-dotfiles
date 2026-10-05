@@ -18,7 +18,7 @@ from collections.abc import Iterable
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from ai_dotfiles.core.dsh_audit import DshAuditRequirements
 from ai_dotfiles.core.dsh_config import DshConfigSource, DshNativeContribution
@@ -35,6 +35,10 @@ from ai_dotfiles.core.dsh_render import (
     native_tool_names,
 )
 from ai_dotfiles.core.errors import ConfigError
+
+if TYPE_CHECKING:
+    from ai_dotfiles.core.dsh_migrate import DshLocalSource
+
 
 DSH_HOOKS_GENERATOR_VERSION = 1
 DSH_HOOKS_SCHEMA_VERSION = 1
@@ -160,6 +164,7 @@ class DshHookSource:
     source_root: Path | None = None
     binding_root: Path | None = None
     required_semantics: tuple[str, ...] = ()
+    local_source: DshLocalSource | None = None
 
 
 @dataclass(frozen=True)
@@ -174,6 +179,7 @@ class DshHookPlan:
     resource_outputs: tuple[DshOutput, ...]
     provenance: tuple[DshProvenance, ...]
     diagnostics: tuple[DshDiagnostic, ...]
+    local_sources: tuple[DshLocalSource, ...] = ()
 
     @property
     def blocked(self) -> bool:
@@ -284,6 +290,7 @@ def _source(
                 and source.path.name == "settings.fragment.json"
                 else None
             ),
+            local_source=source.local_source,
             binding_root=(
                 binding
                 if binding.is_relative_to(layout.resources_dir.absolute())
@@ -529,6 +536,23 @@ def collect_dsh_hooks(
             raise ConfigError(
                 f"Original DSH hooks source must be an object: {source.path}"
             )
+        if source.local_source is not None:
+            from ai_dotfiles.core.dsh_migrate import read_dsh_local_source
+
+            if (
+                layout.project_root is None
+                or source.scope != "project"
+                or source.origin != "local"
+                or source.path != source.local_source.path
+                or source.local_source.kind not in ("hooks", "settings")
+                or source.element != source.local_source.provenance.element
+                or source.source_root is not None
+                or source.binding_root is not None
+            ):
+                raise ConfigError(
+                    f"Invalid local DSH hook source identity: {source.path}"
+                )
+            value = read_dsh_local_source(layout.project_root, source.local_source)
         root, binding = _binding(source, layout)
         part = DshProvenance(
             source.path,
@@ -674,6 +698,9 @@ def collect_dsh_hooks(
         tuple(item for item in planned.outputs if item.path in resource_paths),
         tuple(provenance),
         tuple(diagnostics),
+        tuple(
+            source.local_source for source in ordered if source.local_source is not None
+        ),
     )
 
 
@@ -689,6 +716,12 @@ def attach_dsh_hook_outputs(
     if install.layout != hooks.layout:
         raise ConfigError("DSH hook and install output layouts differ")
     hooks.require_activatable()
+    if hooks.local_sources:
+        from ai_dotfiles.core.dsh_migrate import read_dsh_local_source
+
+        assert hooks.layout.project_root is not None
+        for source in hooks.local_sources:
+            read_dsh_local_source(hooks.layout.project_root, source)
     for part in hooks.provenance:
         if hashlib.sha256(_read(part.source)).hexdigest() != part.source_sha256:
             raise ConfigError(f"DSH hook source changed after planning: {part.source}")

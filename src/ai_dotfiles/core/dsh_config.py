@@ -16,7 +16,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 from urllib.parse import urlsplit
 
 from ai_dotfiles.core.dependencies import topological_sort
@@ -49,6 +49,10 @@ from ai_dotfiles.core.dsh_render import DshDiagnostic, DshProvenance
 from ai_dotfiles.core.dsh_targets import DshTargetPlan
 from ai_dotfiles.core.elements import Element, ElementType, resolve_source_path
 from ai_dotfiles.core.errors import ConfigError
+
+if TYPE_CHECKING:
+    from ai_dotfiles.core.dsh_migrate import DshLocalSource
+
 
 DSH_CONFIG_SCHEMA_VERSION = 1
 DSH_CONFIG_GENERATOR_VERSION = 1
@@ -130,6 +134,7 @@ class DshConfigSource:
     origin: str
     element: str
     binding_root: Path
+    local_source: DshLocalSource | None = None
 
 
 @dataclass(frozen=True)
@@ -168,6 +173,7 @@ class DshConfigPlan:
     diagnostics: tuple[DshDiagnostic, ...]
     rows: tuple[dict[str, object], ...] = ()
     custom_skill_dirs: tuple[str, ...] = ()
+    local_sources: tuple[DshLocalSource, ...] = ()
 
     @property
     def blocked(self) -> bool:
@@ -445,7 +451,7 @@ def collect_dsh_config_sources(
     return tuple(sources)
 
 
-def _load(source: DshConfigSource) -> tuple[object, DshProvenance]:
+def _load(source: DshConfigSource, layout: DshLayout) -> tuple[object, DshProvenance]:
     try:
         raw = source.path.read_bytes()
         value = json.loads(
@@ -458,6 +464,22 @@ def _load(source: DshConfigSource) -> tuple[object, DshProvenance]:
         raise ConfigError(
             f"Cannot read DSH {source.origin} {source.path}: {exc}"
         ) from exc
+    if source.local_source is not None:
+        from ai_dotfiles.core.dsh_migrate import read_dsh_local_source
+
+        if (
+            layout.project_root is None
+            or source.scope != "project"
+            or source.origin != "local"
+            or source.path != source.local_source.path
+            or source.kind != source.local_source.kind
+            or source.element != source.local_source.provenance.element
+            or source.binding_root.absolute() != layout.project_root.absolute()
+        ):
+            raise ConfigError(
+                f"Invalid local DSH config source identity: {source.path}"
+            )
+        value = read_dsh_local_source(layout.project_root, source.local_source)
     return value, DshProvenance(
         source.path.absolute(),
         source.origin,
@@ -709,7 +731,18 @@ def collect_dsh_configuration(
             "native",
         ):
             raise ConfigError(f"Unknown DSH source scope/kind: {source.path}")
-        value, provenance = _load(source)
+        value, provenance = _load(source, layout)
+        if source.local_source is not None:
+            for field_name in source.local_source.unproven_fields:
+                diagnostics.append(
+                    _gap(
+                        source,
+                        field_name,
+                        "LOCAL_ORIGINAL_UNPROVEN",
+                        "Claude ownership ledger does not prove the original "
+                        "local-user origin of this aggregate field",
+                    )
+                )
         records.append(
             {
                 **provenance.as_dict(),
@@ -793,6 +826,9 @@ def collect_dsh_configuration(
         env,
         merge_permission_policies(policies),
         tuple(diagnostics),
+        local_sources=tuple(
+            source.local_source for source in ordered if source.local_source is not None
+        ),
     )
 
 
@@ -889,15 +925,7 @@ def attach_dsh_config_outputs(
     """Join generated outputs into the existing installer's ownership transaction."""
     if install.layout != config.layout:
         raise ConfigError("DSH config and install output layouts differ")
-    # Detect changed source bytes before any later installer write.
-    for source in config.sources:
-        path = Path(cast(str, source["source"]))
-        try:
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        except OSError as exc:
-            raise ConfigError(f"DSH config source became unavailable: {path}") from exc
-        if digest != source["source_sha256"]:
-            raise ConfigError(f"DSH config source changed after planning: {path}")
+    _verify_config_sources(config)
     resources = list(install.resources)
     for source in config.sources:
         provenance = DshProvenance(
@@ -988,6 +1016,12 @@ def inspect_dsh_configuration(
 
 
 def _verify_config_sources(config: DshConfigPlan) -> None:
+    if config.local_sources:
+        from ai_dotfiles.core.dsh_migrate import read_dsh_local_source
+
+        assert config.layout.project_root is not None
+        for local_source in config.local_sources:
+            read_dsh_local_source(config.layout.project_root, local_source)
     for source in config.sources:
         path = Path(cast(str, source["source"]))
         try:
