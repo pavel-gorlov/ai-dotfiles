@@ -16,9 +16,11 @@ from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
-from ai_dotfiles.core import mcp_ownership, paths, settings_ownership
+from ai_dotfiles.core import codex_install, mcp_ownership, paths, settings_ownership
+from ai_dotfiles.core.codex_layout import CodexLayout
+from ai_dotfiles.core.codex_targets import iter_codex_rule_plans
 from ai_dotfiles.core.dsh_config import (
     DshConfigPlan,
     DshConfigSource,
@@ -38,11 +40,12 @@ from ai_dotfiles.core.dsh_install import (
     InstallMode,
     RenderResult,
     apply_dsh_install,
+    collect_dsh_elements,
     plan_dsh_install,
     preflight_dsh_install,
     read_dsh_inventory,
 )
-from ai_dotfiles.core.dsh_layout import DshLayout, project_layout
+from ai_dotfiles.core.dsh_layout import DshLayout, global_layout, project_layout
 from ai_dotfiles.core.dsh_local_registry import (
     DSH_LOCAL_GENERATOR_VERSION,
     DshLocalRegistry,
@@ -64,13 +67,18 @@ from ai_dotfiles.core.dsh_render import (
     validate_skill,
 )
 from ai_dotfiles.core.dsh_targets import project_target_plan
-from ai_dotfiles.core.elements import ElementType
+from ai_dotfiles.core.elements import Element, ElementType, parse_elements
 from ai_dotfiles.core.errors import ConfigError, LinkError
 from ai_dotfiles.core.local_discovery import (
     is_catalog_managed_path,
     iter_local_elements,
 )
 from ai_dotfiles.core.settings_merge import strip_owned
+from ai_dotfiles.core.shared_instructions import project_instruction_plan
+from ai_dotfiles.core.targets import Target
+
+if TYPE_CHECKING:
+    from ai_dotfiles.core.dsh_reconcile import DshReconcilePlan, DshReconcileReport
 
 Classification = Literal["MECHANICAL", "REFACTOR", "MANUAL"]
 LocalSourceKind = Literal["settings", "mcp", "hooks"]
@@ -135,6 +143,8 @@ class DshLocalInputs:
     guarded originals/projections; config_sources/hook_sources contain only raw
     inputs the existing path-only collectors can faithfully consume. Commands
     have their own flat native outputs and never sweep the command directory.
+    Catalog consumers retain complete observed_raw_sources separately from the
+    registered subset eligible for activation, including original registry bytes.
     """
 
     layout: DshLayout
@@ -146,6 +156,7 @@ class DshLocalInputs:
     local_results: tuple[RenderResult, ...]
     actions: tuple[DshMigrationAction, ...]
     guards: tuple[DshSourceGuard, ...]
+    observed_raw_sources: tuple[DshLocalSource, ...] | None = None
 
     @property
     def current_source_keys(self) -> frozenset[str]:
@@ -231,9 +242,12 @@ def verify_dsh_local_inputs(inputs: DshLocalInputs) -> None:
         if current != guard:
             raise LinkError(f"Local DSH original/ownership changed: {guard.path}")
     fresh = {source.path: source for source in _local_json_sources(root)}
-    if set(fresh) != {source.path for source in inputs.raw_sources}:
+    observed = inputs.observed_raw_sources
+    if observed is None:
+        observed = inputs.raw_sources
+    if set(fresh) != {source.path for source in observed}:
         raise LinkError("Local DSH original JSON source set changed after planning")
-    for source in inputs.raw_sources:
+    for source in (*observed, *inputs.raw_sources):
         if fresh.get(source.path) != source:
             raise LinkError(
                 f"Local DSH projection changed after planning: {source.path}"
@@ -413,17 +427,23 @@ def collect_dsh_local_inputs(
     catalog_plan: DshInstallPlan | None = None,
     mode: InstallMode = "link",
     native_frontmatter: Mapping[Path, Mapping[str, object]] | None = None,
+    registered_only: bool = False,
 ) -> DshLocalInputs:
     """Discover fresh originals without snapshots, profiles or runtime writes.
 
     DEFERRED metadata is retried by calling this function with results from the
     public native_frontmatter parser. Its original-path keys are unchanged.
+    registered_only selects existing registry keys before rendering, while all
+    observed originals/ledgers and registry presence remain guarded. Full local
+    migration and reconciliation keep their default discovery policy.
     """
     root = project_root.absolute()
     layout = project_layout(root)
     if catalog_plan is not None and catalog_plan.layout != layout:
         raise ConfigError("Local DSH migration is project-only; catalog layout differs")
-    load_dsh_local_registry(root)
+    registry_guard = _guard_file(root, layout.local_registry_path)
+    registry = load_dsh_local_registry(root)
+    selected = frozenset(registry.sources) if registered_only else None
     if catalog_plan is None and any(
         part["origin"] not in ("local", "builtin")
         for record in read_dsh_inventory(layout).records.values()
@@ -439,10 +459,16 @@ def collect_dsh_local_inputs(
     agents: list[DshRenderResult[DshAgentPayload]] = []
     rules: list[DshRenderResult[DshRulePayload]] = []
     actions: list[DshMigrationAction] = []
-    guards = [_guard_file(root, claude / ".ai-dotfiles-copies.json")]
+    guards = [registry_guard, _guard_file(root, claude / ".ai-dotfiles-copies.json")]
     results: list[RenderResult] = []
-    for element in iter_local_elements(root, manifest_packages=manifest_packages):
+    for element in iter_local_elements(
+        root, manifest_packages=None if registered_only else manifest_packages
+    ):
         path = element.source_path
+        original = path / "SKILL.md" if element.type is ElementType.SKILL else path
+        guards.append(_guard_file(root, original))
+        if selected is not None and str(original.relative_to(root)) not in selected:
+            continue
         guard_local_path(root, path, tree=element.type is ElementType.SKILL)
         if element.type is ElementType.SKILL:
             path /= "SKILL.md"
@@ -493,6 +519,12 @@ def collect_dsh_local_inputs(
                 for part in command_source.relative_to(directory).parts
             ) or is_catalog_managed_path(command_source, root):
                 continue
+            guards.append(_guard_file(root, command_source))
+            if (
+                selected is not None
+                and str(command_source.relative_to(root)) not in selected
+            ):
+                continue
             guard_local_path(root, command_source)
             command = _command_result(command_source, metadata.get(command_source))
             commands.append(command)
@@ -522,7 +554,14 @@ def collect_dsh_local_inputs(
                         content=command_source.read_bytes(),
                     )
                 )
-    raw_sources = _local_json_sources(root)
+    observed_raw_sources = _local_json_sources(root)
+    for source in observed_raw_sources:
+        guards.extend(source.guards)
+    raw_sources = tuple(
+        source
+        for source in observed_raw_sources
+        if selected is None or str(source.path.relative_to(root)) in selected
+    )
     config_sources = []
     hook_sources = []
     for source in raw_sources:
@@ -611,6 +650,7 @@ def collect_dsh_local_inputs(
         tuple(results),
         tuple(actions),
         tuple(dict.fromkeys(guards)),
+        observed_raw_sources if registered_only else None,
     )
     verify_dsh_local_inputs(inputs)
     return inputs
@@ -866,4 +906,160 @@ def migrate_to_dsh(
             changed += (plan.inputs.layout.local_registry_path,)
     return DshMigrateReport(
         plan.inputs.actions, plan.diagnostics, plan, changed, dry_run
+    )
+
+
+def _has_dsh_catalog_custody(layout: DshLayout) -> bool:
+    """Recognize our explicit registry without adopting foreign/redirected trees."""
+    anchor = layout.project_root or layout.dsh_dir
+    for parent in (layout.owned_dir, *layout.owned_dir.parents):
+        if parent.is_relative_to(anchor) and (
+            parent.is_symlink() or (parent.exists() and not parent.is_dir())
+        ):
+            return False
+    for path in (layout.provenance_path, layout.local_registry_path):
+        if not path.is_file() or path.is_symlink():
+            continue
+        try:
+            value = json.loads(path.read_bytes())
+        except (OSError, ValueError):
+            continue
+        if (
+            isinstance(value, dict)
+            and value.get("managed_by") == "ai-dotfiles"
+            and value.get("target") == "dsh"
+        ):
+            return True
+    return False
+
+
+def plan_dsh_catalog_lifecycle(
+    project_root: Path | None,
+    packages: Sequence[str],
+    catalog: Path,
+    targets: Sequence[str],
+    *,
+    mode: InstallMode = "link",
+) -> DshReconcilePlan | None:
+    """Preflight catalog changes while refreshing only registered local sources.
+
+    Disabled DSH still retires previous catalog custody and retains migrated
+    local originals. Untouched scopes with no DSH ownership remain untouched.
+    Call again after a Claude ownership rebuild: merged JSON and its ledgers are
+    fresh originals, so a plan must never survive an earlier target mutation.
+    """
+    from ai_dotfiles.core.dsh_reconcile import plan_dsh_reconciliation
+
+    layout = project_layout(project_root) if project_root else global_layout()
+    enabled_targets = tuple(target for target in Target if target.value in targets)
+    enabled = Target.DSH in enabled_targets
+    if not enabled and not _has_dsh_catalog_custody(layout):
+        return None
+    selected = parse_elements(list(packages)) if enabled else []
+    local_inputs = None
+    if project_root is not None and layout.local_registry_path.exists():
+        catalog_plan = collect_dsh_elements(
+            selected, layout, catalog, targets=enabled_targets, mode=mode
+        )
+        local_inputs = collect_dsh_local_inputs(
+            project_root,
+            manifest_packages=packages,
+            catalog_plan=catalog_plan,
+            mode=mode,
+            registered_only=True,
+        )
+    return plan_dsh_reconciliation(
+        layout,
+        packages,
+        catalog,
+        targets=enabled_targets,
+        include_catalog=enabled,
+        mode=mode,
+        local_inputs=local_inputs,
+    )
+
+
+def apply_dsh_catalog_lifecycle(
+    project_root: Path | None,
+    packages: Sequence[str],
+    catalog: Path,
+    targets: Sequence[str],
+    *,
+    mode: InstallMode = "link",
+) -> DshReconcileReport | None:
+    """Apply one fresh registered-local/catalog plan before Codex shared writes."""
+    from ai_dotfiles.core.dsh_reconcile import apply_dsh_reconciliation
+
+    plan = plan_dsh_catalog_lifecycle(
+        project_root, packages, catalog, targets, mode=mode
+    )
+    return apply_dsh_reconciliation(plan) if plan is not None else None
+
+
+def catalog_instruction_blocks(
+    project_root: Path | None,
+    packages: Sequence[str],
+    catalog: Path,
+    targets: Sequence[str],
+) -> dict[Path, set[str]]:
+    """Return the surviving shared union before Codex remove/prune.
+
+    Project protection includes both independent local registries even when
+    their catalog target is disabled. Global scopes have separate instruction
+    roots; their explicit DSH inventory protects a coincident Codex home too.
+    """
+    parsed = parse_elements(list(packages))
+    if project_root is not None:
+        enabled = tuple(target for target in Target if target.value in targets)
+        return project_instruction_plan(
+            parsed, enabled, project_root, catalog
+        ).keep_blocks
+    layout = global_layout()
+    if not _has_dsh_catalog_custody(layout):
+        return {}
+    return {
+        (layout.dsh_dir / relative).resolve(): set(names)
+        for relative, names in read_dsh_inventory(layout).rule_blocks.items()
+    }
+
+
+def remove_codex_catalog_blocks(
+    element: Element,
+    layout: CodexLayout,
+    catalog: Path,
+    packages: Sequence[str],
+    targets: Sequence[str],
+) -> None:
+    """Remove only rule spans absent from the surviving shared ownership union."""
+    from ai_dotfiles.core.agents_md import rule_name_of
+
+    keep = catalog_instruction_blocks(layout.project_root, packages, catalog, targets)
+    if layout.project_root is None and "codex" in targets:
+        for remaining in parse_elements(list(packages)):
+            for plan in iter_codex_rule_plans(remaining, layout, catalog):
+                for path in plan.agents_md_paths:
+                    keep.setdefault(path.resolve(), set()).add(
+                        rule_name_of(plan.source)
+                    )
+    for plan in iter_codex_rule_plans(element, layout, catalog):
+        name = rule_name_of(plan.source)
+        for path in plan.agents_md_paths:
+            if name not in keep.get(path.resolve(), set()):
+                codex_install.remove_codex_rule_blocks(path, name)
+
+
+def catalog_managed_paths(project_root: Path, claude_dir: Path) -> list[str]:
+    """Combine exact managed links without ignoring user instruction documents."""
+    from ai_dotfiles.core.gitignore import (
+        collect_dsh_managed_paths,
+        collect_managed_paths,
+    )
+
+    return sorted(
+        set(collect_managed_paths(claude_dir, paths.storage_root()))
+        | (
+            set(collect_dsh_managed_paths(project_root))
+            if _has_dsh_catalog_custody(project_layout(project_root))
+            else set()
+        )
     )

@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 
 from ai_dotfiles import ui
+from ai_dotfiles.commands.install import _report_dsh_result
 from ai_dotfiles.core import (
     claude_copy,
     codex_config,
@@ -18,12 +19,18 @@ from ai_dotfiles.core import (
     symlinks,
 )
 from ai_dotfiles.core.codex_layout import CodexLayout, global_layout, project_layout
-from ai_dotfiles.core.codex_targets import iter_codex_pairs, iter_codex_rule_plans
+from ai_dotfiles.core.codex_targets import iter_codex_pairs
 from ai_dotfiles.core.completions import (
     complete_installed_specifiers,
     make_completer,
 )
 from ai_dotfiles.core.dependencies import find_reverse_deps
+from ai_dotfiles.core.dsh_migrate import (
+    apply_dsh_catalog_lifecycle,
+    catalog_managed_paths,
+    plan_dsh_catalog_lifecycle,
+    remove_codex_catalog_blocks,
+)
 from ai_dotfiles.core.elements import (
     Element,
     ElementType,
@@ -33,7 +40,7 @@ from ai_dotfiles.core.elements import (
     resolve_target_paths,
 )
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
-from ai_dotfiles.core.gitignore import collect_managed_paths, sync_gitignore
+from ai_dotfiles.core.gitignore import sync_gitignore
 from ai_dotfiles.core.mcp_apply import rebuild_claude_config
 from ai_dotfiles.core.mcp_merge import collect_mcp_fragments
 from ai_dotfiles.core.paths import (
@@ -45,7 +52,6 @@ from ai_dotfiles.core.paths import (
     global_manifest_path,
     project_claude_dir,
     project_manifest_path,
-    storage_root,
 )
 from ai_dotfiles.core.runtime import tear_down_domain_runtime
 from ai_dotfiles.core.settings_merge import (
@@ -147,7 +153,13 @@ def _unlink_element(
         symlinks.unlink_standalone(target)
 
 
-def _unlink_codex_element(element: Element, layout: CodexLayout, catalog: Path) -> None:
+def _unlink_codex_element(
+    element: Element,
+    layout: CodexLayout,
+    catalog: Path,
+    packages: list[str],
+    targets: list[str],
+) -> None:
     """Remove managed Codex artefacts created for ``element``.
 
     Only ai-dotfiles-managed content is removed — a user-authored
@@ -159,8 +171,6 @@ def _unlink_codex_element(element: Element, layout: CodexLayout, catalog: Path) 
     synthetic ``rule-<name>`` skill is removed. Domain ``hooks/`` members
     yield nothing to remove.
     """
-    from ai_dotfiles.core.agents_md import rule_name_of
-
     for pair in iter_codex_pairs(element, layout, catalog):
         if pair.element_type is ElementType.AGENT:
             codex_install.remove_codex_agent(pair.target)
@@ -168,10 +178,7 @@ def _unlink_codex_element(element: Element, layout: CodexLayout, catalog: Path) 
             codex_install.remove_codex_skill_link(pair.target, catalog_dir())
         else:  # SKILL or synthetic RULE skill
             codex_install.remove_codex_skill(pair.target)
-    for plan in iter_codex_rule_plans(element, layout, catalog):
-        name = rule_name_of(plan.source)
-        for agents_md_path in plan.agents_md_paths:
-            codex_install.remove_codex_rule_blocks(agents_md_path, name)
+    remove_codex_catalog_blocks(element, layout, catalog, packages, targets)
 
 
 def _rebuild_codex_config(manifest_path: Path, codex_dir: Path, catalog: Path) -> None:
@@ -304,7 +311,7 @@ def _maybe_sync_gitignore(
         return
     if not manifest.get_flag(global_manifest_path(), "manage_gitignore", True):
         return
-    paths = collect_managed_paths(claude_dir, storage_root())
+    paths = catalog_managed_paths(project_root, claude_dir)
     sync_gitignore(project_root, paths)
 
 
@@ -375,12 +382,18 @@ def remove(
             return
 
         ui.info(f"Removed from {manifest_name}:")
+        all_packages = manifest.get_packages(manifest_path)
+        plan_dsh_catalog_lifecycle(
+            project_root,
+            all_packages,
+            catalog,
+            targets,
+            mode="copy" if link_mode == "copy" else "link",
+        )
         for element in elements:
             if element.raw in removed_set:
                 if "claude" in targets:
                     _unlink_element(element, claude_dir, catalog, link_mode)
-                if codex_layout is not None:
-                    _unlink_codex_element(element, codex_layout, catalog)
                 ui.info(f"  - {element.raw}")
             else:
                 ui.info(f"  ~ {element.raw} (not installed)")
@@ -388,8 +401,6 @@ def remove(
         had_domain = any(
             el.type is ElementType.DOMAIN for el in elements if el.raw in removed_set
         )
-        if codex_layout is not None:
-            _rebuild_codex_config(manifest_path, codex_layout.codex_dir, catalog)
         if "claude" in targets:
             if project_root is not None:
                 rebuild_claude_config(
@@ -404,6 +415,22 @@ def remove(
                 _rebuild_settings(manifest_path, claude_dir, catalog)
             if had_domain:
                 ui.info(f"Settings: rebuilt {claude_dir.name}/settings.json")
+        _report_dsh_result(
+            apply_dsh_catalog_lifecycle(
+                project_root,
+                all_packages,
+                catalog,
+                targets,
+                mode="copy" if link_mode == "copy" else "link",
+            )
+        )
+        if codex_layout is not None:
+            for element in elements:
+                if element.raw in removed_set:
+                    _unlink_codex_element(
+                        element, codex_layout, catalog, all_packages, targets
+                    )
+            _rebuild_codex_config(manifest_path, codex_layout.codex_dir, catalog)
         # Domain runtimes (venv + bin shims) are target-agnostic — they
         # are provisioned for any target, so tear them down regardless.
         if had_domain:
