@@ -10,8 +10,7 @@ context_files:
 - src/ai_dotfiles/core/local_discovery.py
 - tests/integration/test_dsh_migrate.py
 - tests/integration/test_local_discovery.py
-dependencies:
-- ai-7xrwf
+dependencies: []
 executor_agent: claude
 size: M
 mode: write
@@ -153,3 +152,11 @@ owners finish; no Q3/scope change or concurrent source writer.
 **wip → done.** tm acceptance5/5 and tm move ai-nzmc8 done exit0; usage
 snapshot and relocation are prepared with source/ticks/journal for one commit.
 No source writer starts before the coordinator verifies that commit.
+
+**Cut metadata → explicit catalog consumer order.** ai-k1w43 now owns the
+narrow registered-local selection in this producer, after its completed original
+implementation. Remove only the redundant ai-7xrwf dependency: lower-phase
+eligibility already requires that foundation. The consumer depends directly on
+ai-nzmc8, ordering the same-phase file overlap without a three-node chain.
+Original lifecycle/history, five acceptance ticks and committed source stay
+unchanged; this is cut authoring, not reopening completed implementation.

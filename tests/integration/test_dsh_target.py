@@ -116,7 +116,7 @@ def test_full_native_bundle_both_scopes(tmp_path: Path, scope: str, mode: str) -
     assert "empty" in record["source_inventory"]
     assert record["mode"] == mode
     assert record["provenance"][0]["generator"] == 1
-    assert record["generators"] == {"install": 1, "render": 1}
+    assert record["generators"] == {"install": 2, "render": 1}
     assert layout.bridge_path.read_text() == bridge_module_text()
     assert audit_path(layout).read_text() == audit_module_text()
     assert not layout.config_path.exists()
@@ -177,7 +177,7 @@ def test_support_tree_drift_and_generator_drift(tmp_path: Path, mode: str) -> No
     apply_dsh_install(fresh)
     assert (
         read_dsh_inventory(layout).records["skills/bundle"]["generators"]["install"]
-        == 1
+        == 2
     )
 
 
