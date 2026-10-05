@@ -1402,12 +1402,44 @@ usage+cut/journal commit. Final ai-pwjnx stays idle wip9/all6 open until root
 independently verifies the exact atomic commit, then receives fresh whole context
 and owns fresh whole-source/native/full-quality acceptance.
 
+
+**ai-fcbgs committed → ai-pwjnx resumed.** Root actual independent Git
+commands prove0ff41f30f165509d40e0e1031be42f4bb0d83387/parentbd7d8b0,
+exact7 raw paths/all6 live+HEAD SHA, done4/4 and usage, clean worktree and
+preserved main. Normal hooks/message/whitespace/commit0, sessions ended; proof
+/private/tmp/dsh-fcbgs-root-commit-verified.json. No next source writer. Sole
+ai-pwjnx resumes read-only phase9 with whole regenerated context/epic/journal
+and all6 open, freezing tracked bytes including current coordinator notes.
+Fresh full regression/native/coverage/static/precommit/docs evidence is required
+after the committed correction; prior green results do not replace these gates.
+
+**ai-pwjnx wip → done.** Fresh read-only final PASS after0ff41f3 accepted
+with complete actual51 gate/CLI+28 native command records and ended sessions;
+report /private/tmp/dsh-pwjnx-final-report.json SHA
+2dd230cba282c0a487a425c9e203e8c243728c4c28c2b541159045e338515930. Root
+reviewed required outputs/argv/exits and entire metadata-only diff; independent
+all79 stream disk SHA,2426 PASSED records/JUnit0bad/native15/XML92.04%,
+342worktree+260main byte/mode/index/HEAD/status freeze and immutable oldfailed
+report prove current gates. Fresh mypy87/Ruff/Black182/all6 precommit hooks/
+whitespace0. Native9positives/6beforeReady negatives preserve stock child/model/
+literal body+description/services/deny+ask; selectedWeb7loadedsettledrows.
+Fresh wheel/sdist byte-verified21templates+2modules and installed CLI child/help
+outside checkout. Current CLI34captures/13matrix boundaries/scaffold/examples
+agree with approved limitations; no gate waiver/live provider/cache/pin changes.
+Root evidence /private/tmp/dsh-pwjnx-final-root-reviewed.json. Six final ticks
+checked; tm acceptance6/6 and normal move done0. All22child files now done with
+concrete checked criteria; original20history remains immutable. Eight epic
+implementation metrics and first6 orchestrator criteria are proven. Final merged
+criterion remains open: one final metadata-only acceptance commit, independent
+commit proof, normal push/readyPR and actual CI follow. Merge remains owner action
+under the original execution contract; no remote run/PR/merge is claimed yet.
+
 ## Acceptance criteria
 
-- [ ] All 22 subtasks are complete with their concrete acceptance gates checked.
-- [ ] Every surface in the epic matrix is implemented faithfully or has its explicit native limitation diagnostic; no permission/rule broadening is introduced.
-- [ ] Project/global lifecycle, local retirement and mixed Codex/DSH ownership preserve user content; check/dry-run produce zero writes.
-- [ ] Required pinned native runtime acceptance passes with real child invocation and audited managed plugin readiness.
-- [ ] Full regression/coverage, type, lint, format and required pre-commit gates pass with evidence from ai-pwjnx.
-- [ ] README, builtin skill, shipped templates/examples and CLI help match implemented behaviour and matrix boundaries.
+- [x] All 22 subtasks are complete with their concrete acceptance gates checked.
+- [x] Every surface in the epic matrix is implemented faithfully or has its explicit native limitation diagnostic; no permission/rule broadening is introduced.
+- [x] Project/global lifecycle, local retirement and mixed Codex/DSH ownership preserve user content; check/dry-run produce zero writes.
+- [x] Required pinned native runtime acceptance passes with real child invocation and audited managed plugin readiness.
+- [x] Full regression/coverage, type, lint, format and required pre-commit gates pass with evidence from ai-pwjnx.
+- [x] README, builtin skill, shipped templates/examples and CLI help match implemented behaviour and matrix boundaries.
 - [ ] The final shippable PR is merged under the applicable git workflow and no mid-plan live cut was required.
