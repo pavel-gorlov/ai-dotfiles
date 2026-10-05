@@ -22,6 +22,7 @@ from ai_dotfiles.commands._codex_config_writer import (
     write_codex_mcp,
     write_codex_rules,
 )
+from ai_dotfiles.commands.install import _report_dsh_result
 from ai_dotfiles.core import (
     claude_copy,
     codex_global,
@@ -41,6 +42,11 @@ from ai_dotfiles.core.completions import (
     make_completer,
 )
 from ai_dotfiles.core.dependencies import resolve_transitive
+from ai_dotfiles.core.dsh_migrate import (
+    apply_dsh_catalog_lifecycle,
+    catalog_managed_paths,
+    plan_dsh_catalog_lifecycle,
+)
 from ai_dotfiles.core.elements import (
     Element,
     ElementType,
@@ -49,7 +55,7 @@ from ai_dotfiles.core.elements import (
     validate_element_exists,
 )
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
-from ai_dotfiles.core.gitignore import collect_managed_paths, sync_gitignore
+from ai_dotfiles.core.gitignore import sync_gitignore
 from ai_dotfiles.core.mcp_apply import rebuild_claude_config
 from ai_dotfiles.core.paths import (
     backup_dir,
@@ -59,7 +65,6 @@ from ai_dotfiles.core.paths import (
     global_manifest_path,
     project_claude_dir,
     project_manifest_path,
-    storage_root,
 )
 from ai_dotfiles.core.settings_merge import (
     assemble_settings,
@@ -210,7 +215,7 @@ def _maybe_sync_gitignore(
         return
     if not manifest.get_flag(global_manifest_path(), "manage_gitignore", True):
         return
-    paths = collect_managed_paths(claude_dir, storage_root())
+    paths = catalog_managed_paths(project_root, claude_dir)
     sync_gitignore(project_root, paths)
 
 
@@ -277,29 +282,23 @@ def add(packages: tuple[str, ...], is_global: bool, no_gitignore: bool) -> None:
             return
 
         ui.info(f"Added to {manifest_name}:")
+        all_packages = manifest.get_packages(manifest_path)
+        plan_dsh_catalog_lifecycle(
+            project_root,
+            all_packages,
+            catalog,
+            targets,
+            mode="copy" if link_mode == "copy" else "link",
+        )
         for element in expanded:
             if element.raw not in added_set:
                 continue
             if "claude" in targets:
                 _link_element(element, claude_dir, catalog, link_mode)
-            if codex_layout is not None:
-                _link_codex_element(element, codex_layout, catalog)
             if element.raw in explicit_set:
                 ui.success(element.raw)
             else:
                 ui.success(f"{element.raw} (pulled in as a dependency)")
-
-        if codex_layout is not None:
-            # The codex_config writers round-trip the WHOLE managed region,
-            # so feed them every package now in the manifest — not just the
-            # freshly-added ones. Passing a delta would drop a sibling
-            # domain's [ai_dotfiles] / [mcp_servers] content.
-            ui.info("Codex target:")
-            all_packages = manifest.get_packages(manifest_path)
-            write_codex_config(all_packages, codex_layout.codex_dir, catalog)
-            write_codex_mcp(all_packages, codex_layout.codex_dir, catalog)
-            write_codex_hooks(all_packages, codex_layout.codex_dir, catalog)
-            write_codex_rules(all_packages, codex_layout.codex_dir, catalog)
 
         has_domain = any(el.type is ElementType.DOMAIN for el in expanded)
         if "claude" in targets:
@@ -316,6 +315,30 @@ def add(packages: tuple[str, ...], is_global: bool, no_gitignore: bool) -> None:
                 _rebuild_settings(manifest_path, claude_dir, catalog)
             if has_domain:
                 ui.info(f"Settings: rebuilt {claude_dir.name}/settings.json")
+
+        _report_dsh_result(
+            apply_dsh_catalog_lifecycle(
+                project_root,
+                all_packages,
+                catalog,
+                targets,
+                mode="copy" if link_mode == "copy" else "link",
+            )
+        )
+        if codex_layout is not None:
+            for element in expanded:
+                if element.raw in added_set:
+                    _link_codex_element(element, codex_layout, catalog)
+            # The codex_config writers round-trip the WHOLE managed region,
+            # so feed them every package now in the manifest — not just the
+            # freshly-added ones. Passing a delta would drop a sibling
+            # domain's [ai_dotfiles] / [mcp_servers] content.
+            ui.info("Codex target:")
+            all_packages = manifest.get_packages(manifest_path)
+            write_codex_config(all_packages, codex_layout.codex_dir, catalog)
+            write_codex_mcp(all_packages, codex_layout.codex_dir, catalog)
+            write_codex_hooks(all_packages, codex_layout.codex_dir, catalog)
+            write_codex_rules(all_packages, codex_layout.codex_dir, catalog)
 
         _maybe_sync_gitignore(
             project_root=project_root,

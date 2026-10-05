@@ -857,6 +857,66 @@ usage recorded. Commit together source, test, tick, relocation, usage, journal
 and the already critic-verified ai-k1w43/ai-nzmc8 dependency cut. Hold next
 writer until atomic commit parent/paths/frozen SHA and clean-tree proof.
 
+
+**ai-m4s7p → ai-k1w43.** Atomic a3b3e3a parentebe655bb verified:11paths,
++2495/-78, frozen fiveSHA and done6/6, pre-commit/msg/whitespace0, no mutation,
+clean tree/index, main a8912c3 and original dirty tracker unchanged. Actual
+backlog→to_do queues ai-k1w43's critic-approved five-file producer/CLI concern.
+Keep catalog-only registered selection before render/collision, complete
+observed original/ledger/registry guards, one composition and DSH-before-Codex
+shared refresh; guarded-value activation stays ai-wkpk8.
+
+
+**ai-k1w43 to_do → wip.** Actual ready/next selects permitted phase4
+modewrite under this parent. Dispatch one current-model five-file producer/CLI
+owner with whole generated context and approved epic/journal; no overlapping
+read or write agents. Six ticks open until actual CLI/native/regression/static
+evidence. Global tests explicitly isolate HOME/DSH_HOME; no production homes.
+
+
+**Current-doc comparison → retained native baseline.** Coordinator reopens
+current official apps/cli README and root README on2026-10-05 during CLI work.
+Public CLI docs still define bundle→profile→home→--patch layering, immutable
+app argv and restart updates without HMR; selected managed-launch contract
+agrees. Current preview also names sdk-minimal/peer-exemption facilities; do not
+claim these are implemented in pinned0.2.0-rc.2. Native evidence and packaged
+compatibility baseline remain approved639ed015, not a silent runtime upgrade.
+Source: https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/cli/README.md
+and https://github.com/deepseek-ai/deepseek-harness/blob/master/README.md .
+Public npm registry GET on2026-10-05 also exits0: latest/next0.2.0-rc.2,
+alpha0.2.1-alpha.1; latest publication2026-09-29T09:56:27.792Z and registry
+modified2026-10-03T04:53:22.536Z. Initial restricted DNS refusal repeated as
+read-only HTTPS with no proxy/config/credentials, no install/write. Baseline
+still matches published latest; preview facilities remain separate.
+
+
+**ai-k1w43 frozen implementation → verified acceptance.** Coordinator reviewed the
+whole five-file diff +1028/-58, SHAfdfd0494 and final five source/test SHA.
+Own61/61 and affected364/364 exit0; unchanged whole gate2283/2283 in125.10s
+exit0, stderr empty, including pinned native Web/HTTP MCP after isolated
+loopback retry of the same command (initial sandbox-only EPERM, no exclusions).
+Whole/364 precede one test-only refinement; four source SHA unchanged. Final
+permanent unproven-env refusal test and all61 cases pass independently in9.43s;
+root/worker mypy87, Ruff5, pinned Black25.1 five and whitespace all exit0.
+Root independent6-case disposable probe also exits0: target/mode repeats change
+zero bytes, shared-body refresh/remove and disabled-target local preservation;
+default Claude ignores unchanged foreign/redirected DSH trees.
+Namesake Codex catalog no longer hides recorded DSH local rule; complete
+observed JSON/original/ledger/registry guards remain enforced before apply.
+Thin wrappers preflight before Claude, fresh DSH apply before Codex; both local
+registries and empty manifests survive shared removal/prune. Applicable flags,
+project/global domain/MCP/env, user profiles/foreign skills and default/unknown
+regressions are demonstrated. Supported projected permissions still return
+precise zero-write LOCAL_VALUE_INPUT_PENDING, solely ai-wkpk8's named join hold;
+they are not a permanent limitation contract. Evidence full report, stdout and
+/private/tmp/dsh-k1w43-pending-evidence.json. Six CLI criteria now verified.
+
+
+**ai-k1w43 wip → done.** Actual acceptance6/6 and move done exit0 with
+usage; prepare one atomic nine-path source/acceptance/relocation/journal commit.
+Hold ai-gbrqm until parenta3b3e3a, final frozen five SHA, exact scope and clean
+worktree are verified. Supported local-value activation remains ai-wkpk8.
+
 ## Acceptance criteria
 
 - [ ] All 21 subtasks are complete with their concrete acceptance gates checked.

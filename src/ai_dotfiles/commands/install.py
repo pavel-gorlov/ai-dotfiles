@@ -45,9 +45,16 @@ from ai_dotfiles.core.codex_targets import (
     iter_codex_rule_plans,
 )
 from ai_dotfiles.core.dependencies import resolve_transitive
+from ai_dotfiles.core.dsh_migrate import (
+    apply_dsh_catalog_lifecycle,
+    catalog_instruction_blocks,
+    catalog_managed_paths,
+    plan_dsh_catalog_lifecycle,
+)
+from ai_dotfiles.core.dsh_reconcile import DshReconcileReport
 from ai_dotfiles.core.elements import Element, ElementType
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError, MissingDependencyError
-from ai_dotfiles.core.gitignore import collect_managed_paths, sync_gitignore
+from ai_dotfiles.core.gitignore import sync_gitignore
 from ai_dotfiles.core.mcp_apply import rebuild_claude_config
 from ai_dotfiles.core.runtime import (
     ProvisionResult,
@@ -182,6 +189,9 @@ def _install_project(
         claude_dir.mkdir(parents=True, exist_ok=True)
 
     packages = _expand_manifest_deps(manifest_path, catalog, strict_deps=strict_deps)
+    plan_dsh_catalog_lifecycle(
+        root, packages, catalog, targets, mode="copy" if link_mode == "copy" else "link"
+    )
 
     parsed: list[Element] = []
     linked_items: list[str] = []
@@ -199,9 +209,6 @@ def _install_project(
                 linked_items.extend(
                     _link_element(element, claude_dir, catalog, backup, link_mode)
                 )
-
-        if "codex" in targets:
-            _install_codex_target(parsed, packages, root, catalog, prune=prune)
 
         any_shim = _provision_runtimes(parsed, catalog)
 
@@ -224,12 +231,23 @@ def _install_project(
         if prune:
             _report_pruned(claude_dir, paths.storage_root(), parsed, catalog, link_mode)
 
-        _maybe_sync_gitignore(
-            project_root=root,
-            claude_dir=claude_dir,
-            manifest_path=manifest_path,
-            no_gitignore=no_gitignore,
+    _report_dsh_result(
+        apply_dsh_catalog_lifecycle(
+            root,
+            packages,
+            catalog,
+            targets,
+            mode="copy" if link_mode == "copy" else "link",
         )
+    )
+    if "codex" in targets:
+        _install_codex_target(parsed, packages, root, catalog, prune=prune)
+    _maybe_sync_gitignore(
+        project_root=root,
+        claude_dir=claude_dir,
+        manifest_path=manifest_path,
+        no_gitignore=no_gitignore,
+    )
 
     if not packages:
         ui.info("Nothing to install.")
@@ -259,16 +277,16 @@ def _install_global(*, prune: bool = False, strict_deps: bool = False) -> None:
     ui.info("Installing global configuration...")
 
     global_messages: list[str] = []
+    packages = _expand_manifest_deps(
+        manifest_path, paths.catalog_dir(), strict_deps=strict_deps
+    )
+    plan_dsh_catalog_lifecycle(None, packages, paths.catalog_dir(), targets)
     if "claude" in targets:
         claude_dir.mkdir(parents=True, exist_ok=True)
         if global_dir.is_dir():
             global_messages = symlinks.link_global_files(global_dir, claude_dir, backup)
             for msg in global_messages:
                 ui.success(msg)
-
-    packages = _expand_manifest_deps(
-        manifest_path, paths.catalog_dir(), strict_deps=strict_deps
-    )
 
     linked_items: list[str] = []
     parsed: list[Element] = []
@@ -316,6 +334,9 @@ def _install_global(*, prune: bool = False, strict_deps: bool = False) -> None:
             else:
                 save_settings_ownership(claude_dir, new_ownership)
 
+    _report_dsh_result(
+        apply_dsh_catalog_lifecycle(None, packages, paths.catalog_dir(), targets)
+    )
     if "codex" in targets:
         _install_codex_global(parsed, packages, paths.catalog_dir(), prune=prune)
 
@@ -353,7 +374,7 @@ def _maybe_sync_gitignore(
         return
     if not manifest.get_flag(paths.global_manifest_path(), "manage_gitignore", True):
         return
-    managed = collect_managed_paths(claude_dir, paths.storage_root())
+    managed = catalog_managed_paths(project_root, claude_dir)
     sync_gitignore(project_root, managed)
 
 
@@ -489,7 +510,16 @@ def _install_codex_target(
             project_root, wanted_skills | keep_skills, wanted_agents | keep_agents
         )
         _prune_codex_rule_blocks(
-            project_root, _merge_block_maps(wanted_rule_blocks, keep_blocks)
+            project_root,
+            _merge_block_maps(
+                _merge_block_maps(wanted_rule_blocks, keep_blocks),
+                catalog_instruction_blocks(
+                    project_root,
+                    packages,
+                    catalog,
+                    manifest.get_targets(paths.project_manifest_path(project_root)),
+                ),
+            ),
         )
 
 
@@ -583,7 +613,20 @@ def _install_codex_global(
         ui.success("config.toml (project_doc_fallback_filenames += CLAUDE.md)")
 
     if prune:
-        _prune_codex_global(layout, wanted_skills, wanted_agents, wanted_rule_blocks)
+        _prune_codex_global(
+            layout,
+            wanted_skills,
+            wanted_agents,
+            _merge_block_maps(
+                wanted_rule_blocks,
+                catalog_instruction_blocks(
+                    None,
+                    packages,
+                    catalog,
+                    manifest.get_targets(paths.global_manifest_path()),
+                ),
+            ),
+        )
 
 
 def _prune_codex_global(
@@ -833,3 +876,17 @@ def _print_summary(
         ui.info(f"Linked {extra_global} global file{'s' if extra_global != 1 else ''}.")
         return
     ui.info(f"Installed {pkg_count} package{'s' if pkg_count != 1 else ''}.")
+
+
+def _report_dsh_result(report: DshReconcileReport | None) -> None:
+    """Format the core DSH lifecycle result and its precise limitations."""
+    if report is None:
+        return
+    ui.info("DSH target:")
+    for diagnostic in report.diagnostics:
+        ui.warn(
+            f"{diagnostic.origin} {diagnostic.element} {diagnostic.field}: "
+            f"{diagnostic.reason} ({diagnostic.code})"
+        )
+    for path in report.changed_paths:
+        ui.success(str(path))
