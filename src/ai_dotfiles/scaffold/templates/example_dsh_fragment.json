@@ -1,0 +1,15 @@
+[
+  {
+    "insert": [
+      {
+        "id": "review-notice",
+        "name": "./notice.mjs",
+        "config": {"message": "Review tools loaded", "verbose": false}
+      }
+    ]
+  },
+  {
+    "id": "review-notice",
+    "config": {"message": "Project review tools loaded"}
+  }
+]
