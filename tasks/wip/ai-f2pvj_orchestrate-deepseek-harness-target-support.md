@@ -1266,6 +1266,38 @@ implementation edits. Final guide removes internal integration history. Evidence
 Four ticks now demonstrated; source/ticks/move/usage/journal must share one
 successful commit. Broad final quality remains ai-pwjnx; next templates stay held.
 
+**ai-rr48w → ai-6w1qz.** Atomic a438dd1 parent8df291590 independently
+verified: exact7 rawpaths/all6 committed+liveSHA, source3 frozen, done4/4 plus
+usage/journal; precommit/msg/whitespace/commit0, no mutations, clean tree/index
+and original main HEAD/status preserved. Nineteen children accepted/committed.
+Only next three-template owner may write global_readme.md/root_readme.md and
+example_dsh_fragment.json; match accepted guide/actual help and native finite
+patch contract, preserve default/init/runtime/profile behavior. Evidence
+/private/tmp/dsh-rr48w-root-commit-verified.json. Final quality stays ai-pwjnx.
+
+**ai-6w1qz backlog → to_do.** Queue the sole next writeS phase7 row after
+verified docs commit. Actual ready/next must confirm eligibility; all four
+criteria open. No overlapping writer/read fan-out or Git operation.
+
+**ai-6w1qz to_do → wip.** Actual ready/next confirms sole writeS phase7
+row; claim via tm move wip then one current-model worker. Entire generated
+context/epic/journal and exact three source-template files; four ticks open.
+Meaningful isolated scaffold and collector/native JSON proof, no extra source
+files, default/init/profile/runtime change or credentials.
+
+**ai-6w1qz wip → done (atomic acceptance prepared).** Root read complete
+175-line three-template diff, all36 command stdout/stderr/exits and native/
+collector/archive scripts; all3 final SHA equal reviewed draft and independent
+proof. Scaffold/init18/18, helps9, rendered domain-create/resource-copy snippet
+and collector origin0, public RC2 patch/boot/audit0 warnings[], full-config
+replacement,12 archive resources exact and whitespace clean. Root independently
+proves generated readmes/default packages[]/relative links/no automatic DSH,
+resource equals guide/native binding and actual3 launch argv0. No generator,
+flags/default/profile/runtime behavior changed. Two failed temporary harness
+assertions preserved and corrected only in tmp; source stayed frozen. Four ticks
+now demonstrated; atomic commit source/move/usage/journal before ai-pwjnx.
+Evidence /private/tmp/dsh-6w1qz-root-reviewed.json and full worker report.
+
 ## Acceptance criteria
 
 - [ ] All 21 subtasks are complete with their concrete acceptance gates checked.
