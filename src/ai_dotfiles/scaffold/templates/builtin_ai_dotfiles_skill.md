@@ -1,14 +1,18 @@
 ---
 name: ai-dotfiles
-description: Manage Claude Code configuration via the ai-dotfiles CLI — install/add/remove skills, agents, rules and domains; scaffold new elements; vendor external sources from GitHub, paks or skills.sh; validate symlinks in ~/.claude/.
-when_to_use: Trigger when the user mentions "ai-dotfiles", "~/.ai-dotfiles/", "AI_DOTFILES_HOME", "ai-dotfiles.json" or "global.json"; adds/removes/installs/lists a skill, agent, rule or domain for Claude Code; scaffolds a new element; vendors external content (GitHub, paks, npx skills CLI, buildwithclaude, tonsofskills, mattpocock, printingpress); checks the health of Claude Code symlinks under ~/.claude/ or <project>/.claude/; reconciles ai-dotfiles.json or global.json with the filesystem.
+description: Manage Claude Code, Codex and DeepSeek Harness configuration via ai-dotfiles — install/add/remove skills, agents, rules and domains; migrate local content, reconcile drift and launch managed DSH; scaffold or vendor catalog elements.
+when_to_use: Trigger when the user mentions "ai-dotfiles", "~/.ai-dotfiles/", "AI_DOTFILES_HOME", "ai-dotfiles.json", "global.json", "CODEX_HOME" or "DSH_HOME"; manages skills, agents, rules or domains for Claude Code, Codex or DSH; migrates project-local content; launches managed DSH; scaffolds elements; vendors external content (GitHub, paks, npx skills CLI, buildwithclaude, tonsofskills, mattpocock, printingpress); checks target health, provenance or drift; reconciles manifests with the filesystem.
 ---
 
 # ai-dotfiles
 
-Use this skill when the user asks to install/add/remove Claude Code configuration elements, scaffold new skills/agents/rules, work with domains, or vendor external sources via the `ai-dotfiles` CLI.
+Use this skill to manage Claude Code, Codex and DSH configuration, scaffold
+skills/agents/rules, work with domains, or vendor external catalog sources via
+the `ai-dotfiles` CLI. Absent manifest targets still mean Claude only.
 
-Prefer running the CLI over editing `~/.claude/` or manifests by hand — manifests and symlinks must stay in sync.
+Use the CLI for lifecycle changes so manifests and owned outputs stay in sync.
+Set `targets` explicitly in the project/global manifest; edit catalog or local
+originals rather than generated files, shared managed blocks or native profiles.
 
 ## Commands
 
@@ -32,35 +36,47 @@ After installing completion, arguments themselves tab-complete too:
 
 ### Packages
 
-- `ai-dotfiles install` — symlink packages listed in `ai-dotfiles.json` into `<project>/.claude/`.
-- `ai-dotfiles install -g` — symlink packages from `global.json` into `~/.claude/`.
-- `ai-dotfiles install --prune [-g]` — after linking, also remove stale symlinks under `~/.claude/` (or `<project>/.claude/`) that point into storage but no longer resolve — useful after renaming or deleting a catalog element, or after a pull that changed catalog layout. User-owned symlinks pointing outside ai-dotfiles storage are left alone.
+- `ai-dotfiles install` — refresh packages from `ai-dotfiles.json` for its selected targets (default Claude).
+- `ai-dotfiles install -g` — refresh `global.json` packages for its selected targets: Claude `~/.claude/`, Codex `$CODEX_HOME`, DSH `$DSH_HOME`.
+- `ai-dotfiles install --prune [-g]` — clean proven owned stale target outputs after refresh. Claude stale storage symlinks, Codex owned renders and DSH inventory/resource retirement have target-specific ownership checks; foreign/user content and protected local/shared contributions survive.
 - `ai-dotfiles install --strict-deps [-g]` — refuse to install if the manifest is missing any transitive dependencies. Without this flag, missing deps are auto-added to the manifest and a warning is printed.
-- `ai-dotfiles add <spec>...` — add specifiers to the **project** manifest (`ai-dotfiles.json`) and symlink into `<project>/.claude/`. Transitive deps declared via `domain.json` (or frontmatter `depends:` for standalone elements) are pulled in automatically and prepended to the manifest in topological order.
-- `ai-dotfiles add -g <spec>...` — add specifiers to the **global** manifest (`~/.ai-dotfiles/global.json`) and symlink into `~/.claude/`.
+- `ai-dotfiles add <spec>...` — add specifiers to the **project** manifest and refresh its selected targets. Transitive deps declared via `domain.json` (or frontmatter `depends:`) are prepended in topological order.
+- `ai-dotfiles add -g <spec>...` — add to the **global** manifest and refresh its selected targets immediately.
 - `ai-dotfiles remove <spec>...` — remove from project manifest and unlink. Refuses if other manifest entries declare a dependency on the target; pass `--force` to break the dependency anyway, or remove the dependents in the same call.
 - `ai-dotfiles remove -g <spec>...` — remove from global manifest and unlink.
 - `ai-dotfiles list` / `list -g` — show installed packages (project / global). Each entry is colour-coded: **green** for direct installs, **yellow** for entries pulled in transitively (the parent specifiers are appended in parens, space-separated). The project block additionally tags entries that also live in `global.json` with a trailing `(g)` suffix; the global block omits the suffix because every line is global by definition.
 - `ai-dotfiles list --available` — list everything present in the catalog. Same colour scheme; `(g)` is shown on every globally-installed entry.
-- `ai-dotfiles status` — report symlink health and a settings summary. In a project it also lists **LOCAL (non-catalog) elements** and whether each has been migrated to Codex, plus **Claude-only** surfaces (workflows, custom commands) that have no Codex home.
+- `ai-dotfiles status` — report target health/drift, settings and **LOCAL (non-catalog)** migration classifications. Unsupported workflows/commands and native gaps are reported with their source context.
 - `ai-dotfiles status -g` — same for the global scope. When `codex` is in `global.json`'s `targets`, a `Codex target (global)` section reports every `$CODEX_HOME` artefact as OK / STALE / NOT INSTALLED — including symlinked skills (flagged when the source description outgrows Codex's 1024-char cap), the `AGENTS.md` instructions bridge, and `config.toml` drift.
 
-### Codex migration
+With global `dsh`, `status -g` also reports `$DSH_HOME` owned outputs,
+source/generator/resource/contribution drift and precise native limitations.
+`install`, `add`, `remove` accept `--no-gitignore`; `remove [-g] --force`
+retains its dependency override, not an ownership or native-readiness bypass.
 
-These commands carry a project's own hand-authored config to the Codex target and keep every target fresh:
+### Migration and reconciliation
+
+Migration is project-only; `--to` accepts `codex|dsh` and defaults to Codex.
+Reconciliation supports both scopes and both generated targets:
 
 - `ai-dotfiles migrate [--to codex] [--dry-run]` — migrate **LOCAL** (hand-authored, non-catalog) `.claude/` skills/agents/rules to Codex. A skill is a relative symlink `.agents/skills/<name>` → `../../.claude/skills/<name>` when its raw `SKILL.md` is within Codex's 1024-char `description` cap and the name is valid hyphen-case (auto-fresh, no drift); otherwise it is rendered with the first-sentence trim. Agents render to `.codex/agents/<name>.toml`; rules dispatch like catalog rules (synthetic `rule-<name>` skill or `AGENTS.md` block). `CLAUDE.md` stays the canonical instruction file — migrate points Codex at it via `project_doc_fallback_filenames` in `.codex/config.toml` (no rendered copy, no symlink). User-authored `.mcp.json` servers (not domain-owned) are copied to `[mcp_servers]`. Provenance is recorded in `.codex/.ai-dotfiles-local.json` so `install --prune` keeps migrated artefacts. `--dry-run` plans and classifies (MECHANICAL / REFACTOR) and lists Claude-only surfaces, writing nothing.
-- `ai-dotfiles reconcile [--check]` — regenerate stale or missing Codex artefacts (catalog **and** migrate-origin), the missing feedback loop after the first `install`. Reuses the drift checks (`is_stale`, rule-block sha, `config.toml` recompute) plus local-source freshness; symlinked local skills are auto-fresh, so only a broken link counts as drift. `--check` writes nothing and exits non-zero on any drift — a CI / pre-commit gate.
-- `ai-dotfiles reconcile -g [--check]` — same for the **global** Codex scope (`$CODEX_HOME`): refreshes stale renders, the `~/.claude/CLAUDE.md` instructions bridge, the managed `config.toml` regions, and converts a symlinked skill to a render when its source outgrows Codex's 1024-char description cap (and back). No-op with a hint when `codex` is not in `global.json`'s `targets`.
+- `ai-dotfiles migrate --to dsh [--dry-run]` — classify local skills/agents/rules, compatible on-demand commands, raw settings/hooks and user MCP as MECHANICAL / REFACTOR / MANUAL. Preserves whole skills and originals, excludes catalog links/copies, and records `.dsh/ai-dotfiles/local.json`. Unsupported required semantics or uncertain original ownership refuse activation. No `-g` migration.
+- `ai-dotfiles reconcile [--check]` — refresh Codex/DSH catalog and local-origin drift, including owned retired sources. `--check` writes nothing and exits nonzero on drift. Codex uses its existing source/generator/block/config checks; DSH also checks resources, contributions and source custody.
+- `ai-dotfiles reconcile -g [--check]` — refresh enabled global Codex/DSH outputs in `$CODEX_HOME`/`$DSH_HOME`; Codex includes its instructions bridge and skill symlink/render cap transition. DSH scans explicit owned roots/blocks, not the entire home.
 
 > `migrate` works whether or not `codex` is in `targets` (it is a project-local action); `reconcile` refreshes catalog artefacts only when `codex` is in `targets`, and always refreshes migrate-origin local artefacts.
+
+DSH catalog lifecycle/launch preserves registered locals without adopting newly
+unregistered files; migration/full reconciliation handles discovery. Dry-run and
+check change no source, registry, activation or profile bytes. After DSH output
+updates, restart the managed process. See the DSH contract below.
 
 ### Elements
 
 - `ai-dotfiles create skill|agent|rule <name>` — scaffold an element in the catalog.
 - `ai-dotfiles delete skill|agent|rule <name>` — remove an element from the catalog.
 - `ai-dotfiles domain create|delete|list <name>` — manage domains (a folder under `catalog/`).
-- `ai-dotfiles domain add|remove <domain> <type> <name>` — manage elements inside a domain. If `@<domain>` is referenced by `~/.ai-dotfiles/global.json` or by the current project's `ai-dotfiles.json`, the new element is auto-linked into the matching `.claude/` (and unlinked on `remove`) — no follow-up `install` needed for that scope.
+- `ai-dotfiles domain add|remove <domain> <type> <name>` — manage domain members and refresh selected Claude/Codex/DSH targets where the domain is installed globally or in the current project. Removal proves owned retirement before deleting the original and restores it on refusal. Other projects refresh on their next install; running DSH needs restart.
 
 > Need an opinionated bundle? Create a meta-domain with `depends: [...]` in `domain.json` and `add @your-bundle` — see `### Dependencies between elements` below. The legacy `stack` command is gone.
 
@@ -139,7 +155,10 @@ ai-dotfiles add skill:pp-openalex
 
 Cache path for `refresh`-capable vendors: `~/.ai-dotfiles/.vendor-cache/`. `search` / `install` auto-refresh when the cache is older than 24h; pass `--force` to skip the TTL check.
 
-Install ≠ activate. `vendor <name> install` only fetches content into `catalog/`. You still need `ai-dotfiles add [-g] <spec>` + `install` to link it into `.claude/`.
+`vendor <name> install` only fetches into `catalog/`. Use `ai-dotfiles add [-g]
+<spec>` to activate the selected manifest targets; `install [-g]` refreshes an
+existing manifest. DSH runtime activation additionally needs managed launch.
+Vendor/update/pull never auto-install across all consuming projects.
 
 ### Specifier syntax
 
@@ -155,17 +174,112 @@ Specifiers are the strings that appear in `packages` arrays:
 The `targets` array in `ai-dotfiles.json` declares which agent CLIs the project renders its catalog elements to:
 
 ```json
-{ "packages": ["@gitflow", "skill:commit", "agent:reviewer"], "targets": ["claude", "codex"] }
+{ "packages": ["@gitflow", "skill:commit", "agent:reviewer"], "targets": ["claude", "codex", "dsh"] }
 ```
 
 | Value | Meaning |
 |-------|---------|
 | `"claude"` | Claude Code — the default; installs into `<project>/.claude/` as before |
 | `"codex"` | OpenAI Codex CLI — installs into `<project>/.agents/skills/` and `<project>/.codex/agents/` |
+| `"dsh"` | DeepSeek Harness — native `.dsh/skills/`, owned `.dsh/ai-dotfiles/` composition and shared/literal instructions |
 
 Absent `targets` field → `["claude"]`. Every existing manifest keeps working unchanged.
 
-**The global scope supports Codex too.** `global.json` accepts the same `targets` field; with `"targets": ["claude", "codex"]`, `install -g` / `add -g` / `remove -g` / `status -g` / `reconcile -g` also render the global packages into Codex's **user scope** (`$CODEX_HOME`, default `~/.codex` — the same env override Codex itself honours), making them available in every Codex session without per-project manifests. Without the field, behaviour stays Claude-only and byte-identical.
+### DeepSeek Harness commands and contract
+
+Both project `ai-dotfiles.json` and global `global.json` accept `"dsh"`.
+Project native skills live at `<manifest-root>/.dsh/skills`; global skills at
+`$DSH_HOME/skills` (`DSH_HOME` defaults to `~/.dsh`). Owned config, patches,
+combined hooks, helpers, resources and provenance are under `ai-dotfiles/`
+inside that native root. Always-on marker blocks use project `AGENTS.md` or
+`$DSH_HOME/AGENTS.md`; shared Codex/DSH catalog/local ownership protects them.
+
+```bash
+# After selecting "dsh" in the appropriate manifest
+ai-dotfiles install
+ai-dotfiles install -g --prune
+ai-dotfiles status -g
+ai-dotfiles migrate --to dsh --dry-run      # project only; default migrate is Codex
+ai-dotfiles migrate --to dsh
+ai-dotfiles reconcile --check              # zero-write drift gate
+ai-dotfiles reconcile -g --check
+ai-dotfiles dsh launch --profile headless "run the tests"
+ai-dotfiles dsh launch headless "run the tests"   # equivalent shorthand
+ai-dotfiles dsh launch --profile web --port 8080 --no-open
+ai-dotfiles dsh launch --profile headless --patch ./review.json --patch ./local.json "review changes"
+```
+
+Launch requires **separately installed official `@deepseek-ai/dsh@0.2.0-rc.2`**,
+`node`/`dsh` on PATH, an existing native profile and its required providers. It
+never installs a runtime, creates/repairs profiles or changes native home/profile
+patches. Put repeatable `--patch` and `--profile` before verbatim app argv; no
+default profile, global launch switch or new permission preset exists.
+
+Native order: bundles → profile → home → managed global → managed project →
+explicit CLI patches. Native `config` overrides replace the whole object, not a
+deep merge. CLI patches override UI-persisted settings. Project managed
+agent/MCP names win over global; conflicting user ids/tools/server names refuse
+activation. All global/project hooks remain in one combined contribution.
+
+Fresh source-custody checks and the same host's settled selected-tree audit
+precede Ready/surface/turn. Every required managed plugin/tool/service/provider
+must load, including optional managed rows. Ordinary optional native warnings
+do not prove readiness. RC2 headless must be preset-free; selected managed
+preset profiles fail with `COMPOSITION_NOT_SELECTED`. Preset-aware Web was proved
+with the native `standard` consumer. Native HMR is disabled; overlays are
+immutable and require restart after updates or project changes. One process
+retains its launching project's MCP/hooks/agents; Web switching is not hard
+isolation.
+
+| Surface | DSH behavior and boundary |
+|---|---|
+| Skills | Full native directories and invocation schema, no Codex description cap/trim. Unsupported Claude execution fields are diagnosed. Project `link_mode` symlink/copy survives migration/launch; global CLI uses links. |
+| Rules | Agreeing always-on blocks are shared; description-only unconditional rules are DSH-only literal prompt sections. Nonempty `paths` keeps source/provenance and reports activation gap: no glob broadening or skill demotion. A conflicting effective shared Codex path block can refuse launch. |
+| Agents | Named `ai_dotfiles_agent_<name>` tools call stock in-process children with literal bodies/native and PTC descriptions, retained parent services/current session model. Omitted/inherit and Claude aliases inherit; aliases emit `MODEL_UNMAPPED` with original-model provenance. Explicit native routes stay native. No new agent engine. |
+| Child tools | Known exact `tools`/`disallowedTools` name filters; unknown/constrained restrictions make the agent MANUAL. Filters are not a security boundary. |
+| Permissions | Only exact known whole-tool deny/ask. `Read` maps to `read` plus `read_image`; Write/Edit/Glob/Grep/Bash/WebFetch/WebSearch map to write/edit/glob/grep/bash/web_fetch/web_search. Unknown Task/Agent/MCP/native names, wildcards, `Tool(...)`, compound Bash and argument restrictions are reported; deny/ask gaps block. Allow grants nothing; no full-access fallback. Ask preserves native deny/cancel/sandbox; approval-never children reject it. |
+| Env/settings | Supported string env merges global→project→process (even empty process values win), no dotenv writes. Reserved bootstrap names/prefixes such as HOME/PATH/NODE_OPTIONS/DSH_/XDG_ are rejected. Other Claude settings are diagnosed; native settings use a fragment. |
+| MCP | Stdio argv/env/cwd and Streamable HTTP url/headers retain origins. No SSE, prompts/OAuth/helper approximation. Claude `${VAR}`/`${VAR:-default}` is `MCP_ENV_UNMAPPED`, not launcher interpolation. |
+| Hooks | Exactly SessionStart/UserPromptSubmit/PreToolUse/PostToolUse/Stop/SubagentStart/SubagentStop command handlers. Exact known tool matchers/pipe alternatives; no unknown regex conversion, async/once/if or non-command handlers. Serial execution, no dedup, config loads once. |
+| Local elements | Project-only migration, MECHANICAL/REFACTOR/MANUAL classification, catalog link/copy exclusion and `.dsh/ai-dotfiles/local.json`. Compatible on-demand commands can become skills; execution/import commands and workflows are manual. |
+
+Hook scripts receive native names, empty `transcript_path`, flattened post-tool
+output and constant `general-purpose` child type/child session id. Common
+prompt_id/permission_mode/effort are absent. Event-keyed JSON `additionalContext`
+works for SessionStart, accepted prompts, post-tool and live in-process child
+start; plain stdout context for SessionStart/UserPromptSubmit does not. Detached
+lifecycle context can miss the first request. PreToolUse deny/ask and applicable
+exit-2 prompt/tool/Stop behavior work; allow does not pre-approve. Input/output
+rewrites, PreToolUse context, defer, continue:false, systemMessage and run-level
+halt fields are not applied. Stop steers another turn with stop_hook_active false
+and no consecutive-block cap. SubagentStop is observation-only, including exit2,
+and cannot add context/block. Missing titles/model/transcript/background-task
+fields, native 600s default prompt timeout and unsupported handler options need
+manual adaptation when required.
+
+A domain-root `dsh.fragment.json` is a top-level **native patch array of JSON
+data**, for example `[{"insert":[{"id":"review-notice","name":"./notice.mjs",
+"config":{"message":"Review tools loaded"}}]}]` with that native plugin resource
+in the domain. Known relative resources bind to the owned source copy. No
+`!!js`/`__jsExpr`, guessed dynamic targets or source-escaping resources; actual
+native schemas/selected composition are validated. User profile/home includes
+keep their original bases and bytes. Removal retires only proved owned outputs.
+
+Source SHA, renderer generator, resource inventories and copy/link provenance
+drive status/check/reconcile. Foreign/modified files are preserved on refusal.
+Supported fresh user permissions/hooks/MCP project from original ownership
+ledgers; ambiguous aggregate env/scalars remain `LOCAL_ORIGINAL_UNPROVEN` and
+block activation. Never infer origin from value equality, delete ledgers or use
+old config snapshots. Catalog lifecycle/launch keeps registered locals; full
+migration/reconciliation discovers new locals and retires missing sources.
+Dry-run/check write nothing; clean drift is not runtime readiness. The repository
+guide `docs/dsh-target.md` contains the complete payload/matcher/output matrix
+and native fragment walkthrough. Current official preview facilities such as
+sdk-minimal/peer exemptions are not promised by the pinned RC2 adapter.
+
+### Global Codex scope
+
+`global.json` accepts the same `targets` field; with `"targets": ["claude", "codex"]`, `install -g` / `add -g` / `remove -g` / `status -g` / `reconcile -g` also render the global packages into Codex's **user scope** (`$CODEX_HOME`, default `~/.codex` — the same env override Codex itself honours), making them available in every Codex session without per-project manifests. Without the field, behaviour stays Claude-only and byte-identical.
 
 #### What `"codex"` produces at GLOBAL scope (`install -g`)
 
@@ -252,7 +366,7 @@ Caveat inherited from Codex: the **project** layer loads only once the project i
 
 #### Agent `model` pins are dropped
 
-A catalog agent may pin `model: sonnet` / `opus` / `haiku` in its frontmatter. That pin is **not** written to the generated `.toml`, for both targets (`install` and `migrate`).
+A catalog agent may pin `model: sonnet` / `opus` / `haiku` in its frontmatter. That pin is **not** written to the generated Codex `.toml`, for both rendering paths (`install` and `migrate`).
 
 Codex's model catalog (`codex debug models`) holds only `gpt-*` slugs, so a Claude alias is unknown to it — and Codex does not reject it. An unknown model is accepted silently, and the session is then assembled *without* the multi-agent instruction blocks, so the subagent quietly loses the collaboration machinery it exists to use. The same happens for a family alias like `gpt-5.6`, which the local catalog does not resolve.
 
@@ -335,7 +449,7 @@ Translation rules:
 |---|---|---|
 | `permissions.allow` / `.deny` / `.ask` | `[ai_dotfiles.permissions]` | Concat-deduped across all installed domains |
 | `sandbox` | `[ai_dotfiles.sandbox]` | Last installed domain wins on conflict |
-| `hooks` | `.codex/hooks.json` | **Emitted** to Codex's hook harness (a separate file, not config.toml). Twin events translate; events with no Codex twin (`Notification`, `SessionEnd`) are reported. Claude's per-handler `if` command-glob guard is dropped (Codex matches on the tool name via `matcher`), and `$CLAUDE_PROJECT_DIR` → `$CODEX_PROJECT_DIR` |
+| `hooks` | `.codex/hooks.json` | **Emitted** to Codex's hook harness (a separate file, not config.toml). Twin events translate; events with no Codex twin are reported. Per-handler `if` is dropped; `$CLAUDE_PROJECT_DIR/...` becomes cwd-relative, with no invented env variable |
 
 **MCP — `[mcp_servers]` table**
 
@@ -409,7 +523,7 @@ Every domain has a `catalog/<domain>/domain.json` that declares its metadata:
 }
 ```
 
-All fields are optional. `name` and `description` are informational. `depends` and `requires` are functional — see below. `domain.json` is the single source of truth for domain metadata; `settings.fragment.json` and `mcp.fragment.json` carry only Claude/MCP runtime config (no underscored meta keys).
+All fields are optional. `name` and `description` are informational. `depends` and `requires` are functional — see below. `domain.json` owns metadata; `settings.fragment.json` and `mcp.fragment.json` carry Claude/MCP source config. DSH consumes their supported subset plus native `dsh.fragment.json` patches (no underscored meta keys).
 
 ### Dependencies between elements
 
@@ -476,11 +590,11 @@ ai-dotfiles remove -g skill:my-skill   # drop from global.json + unlink from ~/.
 
 The same `-g` flag works for any specifier: `@domain`, `skill:name`, `agent:name`, `rule:name`.
 
-### 1c. New project targeting Claude + Codex
+### 1c. New project targeting Claude + Codex + DSH
 
 ```bash
 ai-dotfiles init                           # creates ai-dotfiles.json
-# Edit ai-dotfiles.json to add "targets": ["claude", "codex"]
+# Edit ai-dotfiles.json to add "targets": ["claude", "codex", "dsh"]
 ai-dotfiles add @gitflow skill:commit      # adds to manifest
 ai-dotfiles install
 # Claude:  <project>/.claude/skills/commit/        (symlink)
@@ -490,8 +604,12 @@ ai-dotfiles install
 #          <project>/.codex/agents/...toml          (generated from any agent in @gitflow)
 #          <project>/.codex/config.toml             (permissions/sandbox from settings.fragment.json;
 #                                                    [mcp_servers] from mcp.fragment.json)
+# DSH:     <project>/.dsh/skills/commit/           (whole native bundle)
+#          <project>/.dsh/ai-dotfiles/              (owned composition/resources)
 
-ai-dotfiles status                         # includes a "Codex target" block
+ai-dotfiles status                         # includes selected target health/drift
+# With an existing configured official RC2 profile:
+ai-dotfiles dsh launch --profile headless "run the tests"
 ```
 
 ### 2. Vendor an external pack
@@ -501,7 +619,7 @@ ai-dotfiles vendor <vendor> search <query>     # find candidates (where supporte
 ai-dotfiles vendor <vendor> install <source>   # fetch into catalog/
 ai-dotfiles add skill:<name>                   # or agent:/rule:/@domain; use -g for global
 ai-dotfiles install                            # or ai-dotfiles install -g
-ai-dotfiles status                             # verify symlinks are healthy
+ai-dotfiles status                             # verify selected target outputs
 ```
 
 Use `ai-dotfiles vendor installed` to audit what vendors contributed, and `ai-dotfiles vendor remove <name>` to drop a vendored entry.
@@ -529,7 +647,11 @@ ai-dotfiles pull
 ai-dotfiles install -g --prune         # + install --prune in each project using @gitflow etc.
 ```
 
-`--prune` only removes symlinks that (a) are symlinks, (b) point into `~/.ai-dotfiles/`, and (c) resolve to a path that no longer exists. User-owned symlinks pointing outside storage and real files are never touched. The default `install` without `--prune` stays conservative (create-only) so accidental invocations can't nuke a stale link you still want.
+For Claude symlinks, `--prune` removes only links into storage whose targets no
+longer exist; its copied entries use their ownership sidecar. Codex/DSH also
+retire their recorded managed outputs according to target provenance and shared
+protection. Foreign/user content survives. Restart managed DSH after refreshing
+or retiring outputs; a running process retains its immutable composition.
 
 After pruning, `ai-dotfiles status` should report `All OK`.
 
@@ -542,8 +664,9 @@ ai-dotfiles list --available           # cross-check against catalog contents
 
 ## Notes
 
-- The `targets` field in `ai-dotfiles.json` **and** `global.json` controls which CLIs the manifest renders to. Valid values: `"claude"`, `"codex"`. Absent → `["claude"]`. With `"codex"` in `global.json`, the `-g` commands render into `$CODEX_HOME` (see "What `"codex"` produces at GLOBAL scope").
+- The `targets` field in `ai-dotfiles.json` **and** `global.json` accepts `"claude"`, `"codex"`, `"dsh"`. Absent → `["claude"]`. Global selected outputs use `~/.claude/`, `$CODEX_HOME` and `$DSH_HOME` respectively.
 - The `link_mode` field in `ai-dotfiles.json` controls how the Claude target writes into `.claude/`. Valid values: `"symlink"` (default — live symlinks into the catalog), `"copy"` (real copied files, for native-Windows hosts whose catalog lives in WSL). Absent → `"symlink"`; an unknown value is rejected. A copy is a snapshot — re-run `ai-dotfiles install` after a catalog change. Project-scoped only; `-g` commands always symlink. See [`link_mode`](#link_mode--symlink-vs-copy-for-the-claude-target).
+- The same project `link_mode` is preserved for DSH whole skills, migration and fresh launch; generated owned resources have separate inventories. DSH does not use Codex's description trim or path-rule skill demotion.
 - Never edit `~/.claude/` directly for anything managed by ai-dotfiles — use `add` / `remove` so the manifest stays authoritative.
 - The manifest file is `<project>/ai-dotfiles.json` (per-project) or `~/.ai-dotfiles/global.json` (global). Specifiers live under `"packages"`.
 - `settings.fragment.json` inside a domain is deep-merged into `.claude/settings.json` on every `add` / `remove` / `install`. **User-authored keys are preserved**: existing settings are loaded as the merge base, then domain fragments are layered on top. `permissions.allow` / `permissions.deny` / `permissions.ask` are concat-deduped (user entries survive, domain entries are appended once). `hooks` keep per-event concat behaviour. Other top-level keys: overlay wins on conflict. Ownership for what ai-dotfiles wrote last time is tracked in `<project>/.claude/.ai-dotfiles-settings-ownership.json`, so `remove` cleans up only entries it added — user lines stay. Caveat: if a user line has the exact same value as a domain entry, the CLI cannot tell them apart and will treat it as managed (i.e. removed on uninstall). **For the Codex target**, the same fragments are also translated into `.codex/config.toml`: `permissions` and `sandbox` land in the managed `[ai_dotfiles]` table; `hooks` are emitted to `.codex/hooks.json` (Codex's hook harness — twin events translate, Claude's per-handler `if` guard is dropped). See [Codex config.toml and MCP](#codex-configtoml-and-mcp).
