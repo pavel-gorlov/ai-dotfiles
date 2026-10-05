@@ -53,24 +53,24 @@ model for Claude-only aliases, with scope/name precedence stated in the question
 Implementation starts after an execution request; breakdown starts only after
 independent review and Q3.
 
-- [ ] DSH-only and Claude+Codex+DSH manifests work in project and global scope,
+- [x] DSH-only and Claude+Codex+DSH manifests work in project and global scope,
   without changing the default target or existing empty/unknown-target behaviour.
-- [ ] Native skills, always-on instructions, callable catalog agents, supported
+- [x] Native skills, always-on instructions, callable catalog agents, supported
   command-hooks, MCP transports, environment settings and whole-tool permission
   gates are produced, activated, and covered by the matrix-specific tests.
-- [ ] Every unsupported input is reported with its origin, field/element and reason;
+- [x] Every unsupported input is reported with its origin, field/element and reason;
   permission gaps never enable a broader permission preset.
-- [ ] install/add/remove/status/reconcile and applicable -g/--check/--prune flags,
+- [x] install/add/remove/status/reconcile and applicable -g/--check/--prune flags,
   domain add/remove, and project migrate --to dsh --dry-run handle DSH.
-- [ ] User files survive collisions/removal/prune, shared AGENTS.md blocks appear
+- [x] User files survive collisions/removal/prune, shared AGENTS.md blocks appear
   once, removed local sources retire owned outputs, and empty manifests clean up.
-- [ ] Managed artefacts carry source and generator provenance. status and check
+- [x] Managed artefacts carry source and generator provenance. status and check
   detect missing/stale files, resources and contributions; check/dry-run change
   no bytes, including activation or profile files.
-- [ ] A required isolated DSH 0.2.0-rc.2 smoke gate verifies loaded managed rows,
+- [x] A required isolated DSH 0.2.0-rc.2 smoke gate verifies loaded managed rows,
   callable child-agent composition, literal prompt bodies, permissions and fake
   MCP/hooks without production credentials or external service access.
-- [ ] README and the builtin ai-dotfiles skill describe the new workflow and
+- [x] README and the builtin ai-dotfiles skill describe the new workflow and
   native limitations in the same implementation PR.
 
 ## Research and tooling
