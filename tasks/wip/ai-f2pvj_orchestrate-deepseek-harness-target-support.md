@@ -1142,6 +1142,93 @@ edits after freeze; Git executor must prove exact nine raw paths, all frozen
 SHA, required hooks/commit-msg/whitespace and clean worktree before ai-f2bcb.
 Whole named-child/runtime packaging acceptance remains that next owner.
 
+**ai-wkpk8 → ai-f2bcb.** Atomicdbb5f88d parented854eec independently
+verified: exact9 rawpaths +1447/-201, all8 committed/liveSHA and final source5
+match, done6/6 plus usage/journal in the same commit. Required precommit,
+commit-msg, whitespace and commit exit0; no formatter mutation, clean tree/index,
+main HEADa8912c3c and original dirty tracker preserved. Worker106/1218/2411,
+root106 and actual midboot external-ledger-symlink guard pass. Supported local
+activation now complete; unproven env/scalars remain precise diagnosed refusal.
+Seventeen children accepted/committed. Queue only next listed three-file native
+runtime acceptance owner. It must prove actual named child, parent services/
+current route/literal bodies and descriptions/deny+ask including approval never,
+full native config/MCP/hooks/managed optional failure and wheel/sdist/installed
+CLI isolation. Missing required runtime fails, never skips. No live homes,
+production credentials, external provider calls or automatic production install.
+
+**ai-f2bcb backlog → to_do.** Previous ai-wkpk8 atomicdbb5f88d committed
+and independently verified with full2411 green and source/ticks/move together.
+Queue only this listed phase7 three-file native acceptance owner; actual
+ready/next must establish modewrite eligibility before claim. Five criteria open.
+
+**ai-f2bcb to_do → wip.** Actualready lists sole modewrite M phase7
+row; tm next selects exact ai-f2bcb, actual tm move wip exit0. Dispatch one
+current-model worker with complete generatedcontext, approvedepic/current
+journal and exactthree paths. Five ticks open: pinned disposable runtime;
+same-host audited actual namedchild/services/current route/literal/deny+ask;
+config/MCP/hooks/optional-managed failure; no live credentials/homes/external
+requests and missing-runtime hard failure; wheel/sdist plus truly installed CLI.
+No other writer or Git operation. Existing public native fixtures/APIs provide
+reference evidence, not substitute execution. Any production defect or extra
+write boundary returns to coordinator before edits; no phantom skip/waiver.
+
+
+**ai-f2bcb native child → remaining acceptance.** First exact same-host child
+case passes after repeating the unchanged command with isolated permission for
+macOS sandbox-exec. Production prepare/launch awaits audit before Ready with
+zero tasks/sessions; stock spawn invokes the named child on parent-current/local.
+Read and local stdio MCP execute; literal CRLF persona/descriptions and retained
+llm/tools/systemPrompt/subagents are observed. Child Write is denied and Bash
+fails with approval never without a callback; parent PTC Bash uses one allowed-once
+callback, while Write remains denied under read-only/full enforcement. Initial
+MCP failure was only a test fixture placed in settings.fragment instead of
+mcp.fragment.json; no production files changed. All five ticks stay open until
+frozen whole-diff and full-command review; scoped Web, HTTP/hooks, full-config,
+optional-managed failure and wheel/sdist/installed CLI remain the same owner.
+
+
+**Current-model capacity → same-owner resume.** Host ended the ai-f2bcb
+worker turn with "Selected model is at capacity" before any frozen final result.
+Same current-model owner resumes the same three files and WIP acceptance, using
+fresh complete tm context/epic/journal at
+/private/tmp/dsh-orchestration-contexts/ai-f2bcb-resume.md (2886 lines).
+Saved source/logs survive; no production/Git/tracker ownership change or test
+waiver. First reconcile actual command completion; no unchecked gate is assumed
+successful and no duplicate still-running mutation/test is started. All five
+criteria remain open until full final evidence and independent review.
+
+
+**Frozen native15 → portable missing-runtime fixture.** Root read the whole
+1045-line native test and complete conftest/pyproject diff, then independently
+repeated all15 cases in a fresh /private/tmp/dsh-f2bcb-root-acceptance:15/15,
+15.44s exit0. Actual selected standing tree at Ready and the same parent/child
+tree, exact native deny/ask and installed wheel are proved on frozen source.
+Missing-runtime negative PATH currently /usr/bin:/bin can contain dsh on another
+host. Same three-file owner completes current unchanged full --cov first, then
+replaces only that PATH with a guaranteed empty disposable bin and repeats final
+own/static/full gates. Preserve before/final SHA and narrow diff; no production
+change or silent transfer of a gate. All five DoD remain open until final frozen
+evidence is inspected. Root initial review evidence is
+/private/tmp/dsh-f2bcb-root-initial-reviewed.json.
+
+**ai-f2bcb wip → done (atomic acceptance prepared).** Root reviewed the whole
+three-file diff and final source SHA, actual command stdout/stderr/exits, all
+15 native evidence records and wheel/sdist byte identity. Official RC2 remains
+0.2.0-rc.2 with Cordis4.0.4 in disposable homes; nine same-host Ready/real-child
+cases prove current parent route, literal persona/descriptions, retained services,
+PTC deny/ask, child approval never, scoped standing-tree identity, native config
+replacement, activated local MCP stdio/HTTP and hook context. Six negative cases
+have zero Ready/turn, including real optional import/apply failures. Installed CLI
+imports wheel site-packages without editable checkout/PYTHONPATH and all shipped
+ESM parse. Final own15/15, affected272/272, full2426/2426 with92.04% coverage,
+mypy87, Ruff and Black24/25 pass. Root independently repeated native15/15 before
+the sole empty-bin PATH correction, then final changed negative1/1; all other
+source bytes match, worker repeated full-final on the correction. Root proof:
+/private/tmp/dsh-f2bcb-root-final-review.json; frozen worker report:
+/private/tmp/dsh-f2bcb-report.json. Five ticks prepared only now; acceptance/move,
+usage, this journal and three source files must share one successful commit.
+No live homes/credentials/external providers, skipped gate or production edit.
+
 ## Acceptance criteria
 
 - [ ] All 21 subtasks are complete with their concrete acceptance gates checked.
