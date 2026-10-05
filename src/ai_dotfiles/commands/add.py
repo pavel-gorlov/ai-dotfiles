@@ -236,7 +236,7 @@ def _maybe_sync_gitignore(
     "symlink paths.",
 )
 def add(packages: tuple[str, ...], is_global: bool, no_gitignore: bool) -> None:
-    """Add PACKAGES to the manifest and link them into the Claude dir."""
+    """Add PACKAGES to the manifest and install them for selected targets."""
     try:
         user_elements = parse_elements(list(packages))
 

@@ -237,7 +237,7 @@ def render_rules(rules: list[PrefixRule]) -> str:
 
 
 def _expected_text(
-    fragment_paths: list[tuple[str, Path]]
+    fragment_paths: list[tuple[str, Path]],
 ) -> tuple[str, list[PrefixRule], list[SkippedPermission]]:
     """Compute the file content the current fragments should produce."""
     managed, _ = build_managed_table(fragment_paths)
