@@ -25,6 +25,7 @@ from ai_dotfiles.core.dsh_config import (
     DshConfigPlan,
     DshConfigSource,
     attach_dsh_config_outputs,
+    collect_dsh_config_sources,
     collect_dsh_configuration,
     compose_dsh_configuration,
 )
@@ -461,11 +462,22 @@ def collect_dsh_local_inputs(
     actions: list[DshMigrationAction] = []
     guards = [registry_guard, _guard_file(root, claude / ".ai-dotfiles-copies.json")]
     results: list[RenderResult] = []
-    for element in iter_local_elements(
-        root, manifest_packages=None if registered_only else manifest_packages
-    ):
+    eligible = {
+        element.source_path
+        for element in iter_local_elements(
+            root, manifest_packages=None if registered_only else manifest_packages
+        )
+    }
+    for element in iter_local_elements(root):
         path = element.source_path
         original = path / "SKILL.md" if element.type is ElementType.SKILL else path
+        recorded = registry.sources.get(str(original.relative_to(root)))
+        if path not in eligible and not (
+            recorded is not None
+            and recorded["kind"] == element.type.value
+            and recorded["element"] == element.raw
+        ):
+            continue
         guards.append(_guard_file(root, original))
         if selected is not None and str(original.relative_to(root)) not in selected:
             continue
@@ -931,6 +943,67 @@ def _has_dsh_catalog_custody(layout: DshLayout) -> bool:
         ):
             return True
     return False
+
+
+def plan_dsh_full_lifecycle(
+    project_root: Path | None,
+    packages: Sequence[str],
+    catalog: Path,
+    targets: Sequence[str],
+    *,
+    mode: InstallMode = "link",
+) -> DshReconcilePlan | None:
+    """Plan full fresh reconciliation for opted-in or explicitly owned scopes.
+
+    Unlike catalog mutations, full reconciliation discovers new local originals
+    after migration has opted the project in. Disabled foreign trees are ignored;
+    our recorded local custody still participates independently of targets.
+    """
+    from ai_dotfiles.core.dsh_reconcile import plan_dsh_reconciliation
+
+    layout = project_layout(project_root) if project_root else global_layout()
+    enabled_targets = tuple(target for target in Target if target.value in targets)
+    enabled = Target.DSH in enabled_targets
+    if not enabled and not _has_dsh_catalog_custody(layout):
+        return None
+    return plan_dsh_reconciliation(
+        layout,
+        packages,
+        catalog,
+        targets=enabled_targets,
+        include_catalog=enabled,
+        mode=mode,
+    )
+
+
+def migrate_project_to_dsh(
+    project_root: Path,
+    packages: Sequence[str],
+    catalog: Path,
+    targets: Sequence[str],
+    *,
+    mode: InstallMode = "link",
+    dry_run: bool = False,
+) -> DshMigrateReport:
+    """Merge fresh selected catalog/native inputs with full local migration.
+
+    A local migration does not enable the catalog target in the manifest. It
+    retains every currently selected DSH catalog contribution in the one plan.
+    """
+    layout = project_layout(project_root)
+    enabled_targets = tuple(target for target in Target if target.value in targets)
+    selected = parse_elements(list(packages)) if Target.DSH in enabled_targets else []
+    catalog_plan = collect_dsh_elements(
+        selected, layout, catalog, targets=enabled_targets, mode=mode
+    )
+    return migrate_to_dsh(
+        project_root,
+        manifest_packages=packages,
+        catalog_plan=catalog_plan,
+        config_sources=collect_dsh_config_sources(selected, catalog, layout),
+        mode=mode,
+        dry_run=dry_run,
+    )
 
 
 def plan_dsh_catalog_lifecycle(

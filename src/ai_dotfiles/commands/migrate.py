@@ -1,4 +1,4 @@
-"""``ai-dotfiles migrate`` — carry LOCAL project elements to the Codex target.
+"""``ai-dotfiles migrate`` — carry LOCAL project elements to Codex or DSH.
 
 Thin wrapper: resolve the project, call
 :func:`ai_dotfiles.core.codex_migrate.migrate_to_codex`, and format the
@@ -16,6 +16,7 @@ import click
 from ai_dotfiles import ui
 from ai_dotfiles.core import codex_migrate, manifest, paths
 from ai_dotfiles.core.codex_migrate import MigrateReport
+from ai_dotfiles.core.dsh_migrate import DshMigrateReport, migrate_project_to_dsh
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
 
 
@@ -23,7 +24,7 @@ from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
 @click.option(
     "--to",
     "target",
-    type=click.Choice(["codex"]),
+    type=click.Choice(["codex", "dsh"]),
     default="codex",
     show_default=True,
     help="Target to migrate local elements to.",
@@ -31,28 +32,67 @@ from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
 @click.option(
     "--dry-run",
     is_flag=True,
-    help="Plan and classify every action (and list Claude-only surfaces) "
+    help="Plan and classify every action and unsupported surface "
     "without writing anything.",
 )
 def migrate(target: str, dry_run: bool) -> None:
-    """Migrate local (non-catalog) .claude/ elements to the Codex target."""
+    """Migrate project-local .claude/ elements to Codex or DSH."""
     try:
-        _run_migrate(dry_run=dry_run)
+        _run_migrate(target=target, dry_run=dry_run)
     except AiDotfilesError as exc:
         ui.error(str(exc))
         raise SystemExit(exc.exit_code) from exc
 
 
-def _run_migrate(*, dry_run: bool) -> None:
+def _run_migrate(*, target: str, dry_run: bool) -> None:
     root = paths.find_project_root()
     if root is None or not paths.project_manifest_path(root).is_file():
         raise ConfigError("ai-dotfiles.json not found. Run 'ai-dotfiles init' first.")
 
-    packages = manifest.get_packages(paths.project_manifest_path(root))
+    manifest_path = paths.project_manifest_path(root)
+    packages = manifest.get_packages(manifest_path)
+    if target == "dsh":
+        _print_dsh_report(
+            migrate_project_to_dsh(
+                root,
+                packages,
+                paths.catalog_dir(),
+                manifest.get_targets(manifest_path),
+                mode=(
+                    "copy"
+                    if manifest.get_link_mode(manifest_path) == "copy"
+                    else "link"
+                ),
+                dry_run=dry_run,
+            )
+        )
+        return
     report = codex_migrate.migrate_to_codex(
         root, manifest_packages=packages, dry_run=dry_run
     )
     _print_report(report)
+
+
+def _print_dsh_report(report: DshMigrateReport) -> None:
+    ui.info(
+        "Dry run — local elements -> DSH:"
+        if report.dry_run
+        else "Local elements -> DSH:"
+    )
+    if not report.actions:
+        ui.info("  No local (non-catalog) elements to migrate to DSH.")
+    for action in report.actions:
+        ui.info(
+            f"  [{action.classification}] {action.strategy.ljust(22)} "
+            f"local {action.element} ({action.source})"
+        )
+    for diagnostic in report.diagnostics:
+        ui.warn(
+            f"  - {diagnostic.origin} {diagnostic.element} {diagnostic.field}: "
+            f"{diagnostic.reason} [{diagnostic.code}]"
+        )
+    if report.dry_run:
+        ui.info("Dry run: nothing written. Re-run without --dry-run to apply.")
 
 
 def _print_report(report: MigrateReport) -> None:

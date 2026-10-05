@@ -12,7 +12,7 @@ dependencies:
 executor_agent: claude
 size: M
 mode: write
-phase: 4
+phase: 5
 status_history:
 - at: '2026-10-04T11:57:43+00:00'
   status: backlog
