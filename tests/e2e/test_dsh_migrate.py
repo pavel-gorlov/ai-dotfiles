@@ -635,3 +635,196 @@ def test_registered_manifest_exception_keeps_fresh_original_and_ownership_guards
     with pytest.raises(LinkError, match="original/ownership changed"):
         verify_dsh_local_inputs(inputs)
     assert _snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("scope", ["project", "global"])
+def test_stock_gitflow_catalog_lifecycle_is_reported_idempotent_and_owned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scope: str
+) -> None:
+    from tests.integration.test_dsh_gitflow import copy_stock_catalog
+
+    root = _project(tmp_path, monkeypatch, ["@gitflow", "@python"], ["dsh"])
+    copy_stock_catalog(tmp_path / "storage/catalog")
+    args = ("-g",) if scope == "global" else ()
+    manifest = (
+        tmp_path / "storage/global.json"
+        if scope == "global"
+        else root / "ai-dotfiles.json"
+    )
+    _json(manifest, {"packages": ["@gitflow", "@python"], "targets": ["dsh"]})
+    first = _invoke("install", *args, "--no-gitignore")
+    assert "HOOK_GITFLOW_POLICY_FALLBACK" in first.output
+    layout = global_layout() if scope == "global" else project_layout(root)
+    hooks = json.loads(layout.hooks_path.read_bytes())
+    assert hooks["hooks"] == {}
+    config = json.loads(layout.config_path.read_bytes())
+    bridge = next(row for row in config["rows"] if row["id"] == "ai-dotfiles-bridge")
+    assert len([r for r in bridge["config"]["rules"] if r["name"] == "gitflow"]) == 1
+    agent = next(
+        row
+        for row in config["rows"]
+        if row["id"] == "ai-dotfiles-agent-git-workflow-assistant"
+    )
+    assert "agentOptions" not in agent["config"]
+    assert config["permissions"]["deny"] == config["permissions"]["ask"] == []
+    foreign = _write(layout.dsh_dir / "profiles/user/cordis.yml", "User profile\n")
+    before = _snapshot(tmp_path)
+    _invoke("install", *args, "--no-gitignore")
+    _invoke("reconcile", *args, "--check")
+    _invoke("reconcile", *args)
+    assert _snapshot(tmp_path) == before
+    _json(manifest, {"packages": [], "targets": ["dsh"]})
+    _invoke("reconcile", *args)
+    assert not layout.hooks_path.exists()
+    assert read_dsh_inventory(layout).records == {}
+    assert foreign.read_bytes() == b"User profile\n"
+    _invoke("reconcile", *args, "--check")
+
+
+def test_stock_gitflow_migration_preserves_claude_codex_and_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.integration.test_dsh_gitflow import copy_stock_catalog
+
+    root = _project(tmp_path, monkeypatch, ["@gitflow", "@python"], ["claude", "codex"])
+    copy_stock_catalog(tmp_path / "storage/catalog")
+    _invoke("install", "--no-gitignore")
+    _json(
+        root / "ai-dotfiles.json",
+        {"packages": ["@gitflow", "@python"], "targets": ["claude", "codex", "dsh"]},
+    )
+    original_claude = _snapshot(root / ".claude")
+    original_codex = _snapshot(root / ".codex")
+    original_home = _snapshot(tmp_path / "home")
+    before = _snapshot(tmp_path)
+    preview = _invoke("migrate", "--to", "dsh", "--dry-run")
+    assert "Activation: READY for apply" in preview.output
+    assert "[BLOCKER]" not in preview.output
+    assert preview.output.count("ALLOW_UNMAPPED") == 55
+    assert preview.output.count("HOOK_GITFLOW_POLICY_FALLBACK") == 2
+    assert "per-command hook nudge is absent" in preview.output
+    assert _snapshot(tmp_path) == before
+    applied = _invoke("migrate", "--to", "dsh")
+    assert "HOOK_GITFLOW_POLICY_FALLBACK" in applied.output
+    assert json.loads(project_layout(root).hooks_path.read_bytes())["hooks"] == {}
+    assert _snapshot(root / ".claude") == original_claude
+    assert _snapshot(root / ".codex") == original_codex
+    assert _snapshot(tmp_path / "home") == original_home
+    after = _snapshot(tmp_path)
+    _invoke("migrate", "--to", "dsh")
+    _invoke("reconcile", "--check")
+    assert _snapshot(tmp_path) == after
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "script-changed",
+        "script-missing",
+        "rule-changed",
+        "rule-missing",
+        "rule-scoped",
+        "agent-missing",
+        "agent-manual",
+        "local-origin",
+        "unrelated-if",
+        "deny",
+        "ask",
+    ],
+)
+def test_stock_fallback_negative_preview_and_refused_apply_are_write_free(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    from tests.integration.test_dsh_gitflow import copy_stock_catalog
+
+    root = _project(tmp_path, monkeypatch, ["@gitflow", "@python"], ["dsh"])
+    catalog = tmp_path / "storage/catalog"
+    copy_stock_catalog(catalog)
+    domain = catalog / "gitflow"
+    script = domain / "hooks/route-to-agent.sh"
+    rule = domain / "rules/gitflow.md"
+    agent = domain / "agents/git-workflow-assistant.md"
+    if failure == "script-changed":
+        _write(script, script.read_text() + "\nexit 2\n")
+    elif failure == "script-missing":
+        script.unlink()
+    elif failure == "rule-changed":
+        _write(
+            rule,
+            rule.read_text().replace(
+                "invoke `git-workflow-assistant`", "mutate directly"
+            ),
+        )
+    elif failure == "rule-missing":
+        rule.unlink()
+    elif failure == "rule-scoped":
+        _write(rule, "---\npaths: [src/**]\n---\n" + rule.read_text())
+    elif failure == "agent-missing":
+        agent.unlink()
+    elif failure == "agent-manual":
+        _write(
+            agent,
+            agent.read_text().replace("model: sonnet", "model: sonnet\ntools: Task"),
+        )
+    elif failure == "local-origin":
+        _json(
+            root / ".claude/settings.local.json",
+            json.loads((domain / "settings.fragment.json").read_text()),
+        )
+    elif failure == "unrelated-if":
+        _json(
+            root / ".claude/settings.local.json",
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": "exit 2",
+                                    "if": "Bash(other *)",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            },
+        )
+    else:
+        _json(
+            root / ".claude/settings.local.json",
+            {"permissions": {failure: ["Bash(git *)"]}},
+        )
+    before = _snapshot(tmp_path)
+    dry = _invoke("migrate", "--to", "dsh", "--dry-run")
+    assert "[BLOCKER]" in dry.output
+    assert "[LIMITATION]" in dry.output
+    assert "Activation: BLOCKED" in dry.output
+    assert "Re-run without --dry-run to apply" not in dry.output
+    assert _snapshot(tmp_path) == before
+    refused = _invoke("migrate", "--to", "dsh", exit_code=1)
+    assert "Cannot activate local DSH migration" in refused.output
+    assert _snapshot(tmp_path) == before
+
+
+def test_changed_stock_source_refusal_preserves_existing_outputs_and_ownership(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.integration.test_dsh_gitflow import copy_stock_catalog
+
+    root = _project(tmp_path, monkeypatch, ["@gitflow", "@python"], ["dsh"])
+    catalog = tmp_path / "storage/catalog"
+    copy_stock_catalog(catalog)
+    _json(root / ".claude/settings.local.json", {"env": {"LOCAL": "preserved"}})
+    _invoke("migrate", "--to", "dsh")
+    script = catalog / "gitflow/hooks/route-to-agent.sh"
+    _write(script, script.read_text() + "\nexit 2\n")
+    before = _snapshot(tmp_path)
+    dry = _invoke("migrate", "--to", "dsh", "--dry-run")
+    assert "Activation: BLOCKED" in dry.output
+    _invoke("migrate", "--to", "dsh", exit_code=1)
+    _invoke("install", "--no-gitignore", exit_code=1)
+    _invoke("reconcile", "--check", exit_code=1)
+    _invoke("reconcile", exit_code=1)
+    assert _snapshot(tmp_path) == before

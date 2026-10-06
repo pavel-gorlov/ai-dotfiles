@@ -83,11 +83,14 @@ class DshReconcilePlan:
     migration: DshMigrationPlan | None = None
     local_registry: DshLocalRegistry | None = None
     protected_sources: tuple[tuple[Path, str], ...] = ()
+    activation_diagnostics: tuple[DshDiagnostic, ...] = ()
 
     @property
     def diagnostics(self) -> tuple[DshDiagnostic, ...]:
         return (
-            self.migration.diagnostics if self.migration else self.install.diagnostics
+            self.migration.diagnostics
+            if self.migration
+            else (*self.install.diagnostics, *self.activation_diagnostics)
         )
 
 
@@ -356,10 +359,13 @@ def plan_dsh_reconciliation(
             validate_dsh_local_registry(layout.project_root, registry)
     if migration is None:
         hooks = collect_dsh_hooks(
-            (*sources, *hook_sources), layout, project_root=layout.project_root
+            (*sources, *hook_sources),
+            layout,
+            project_root=layout.project_root,
+            install_plans=(install,),
         )
         if hooks.blocked:
-            raise ConfigError("Cannot reconcile blocked DSH hooks")
+            hooks.require_activatable()
         contribution = hooks.contribution()
         config = collect_dsh_configuration(
             sources,
@@ -543,6 +549,11 @@ def plan_dsh_reconciliation(
         migration,
         registry,
         protected_sources,
+        (
+            (*config.diagnostics, *config.permissions.diagnostics, *hooks.diagnostics)
+            if migration is None
+            else ()
+        ),
     )
 
 

@@ -857,7 +857,9 @@ def prepare_dsh_launch(
     current = next(
         (plan for plan in installs if plan.layout == layout), plan_dsh_install(layout)
     )
-    hooks = collect_dsh_hooks((*sources, *hook_sources), layout, project_root=root)
+    hooks = collect_dsh_hooks(
+        (*sources, *hook_sources), layout, project_root=root, install_plans=installs
+    )
     contribution = hooks.contribution()
     skill_results = {
         result.payload.name: result
