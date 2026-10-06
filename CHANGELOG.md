@@ -1,3 +1,29 @@
+## v0.4.0 (2026-10-06)
+
+### Feat
+
+- **ai-wkpk8**: activate guarded local dsh inputs
+- **ai-b8jes**: wire dsh domain member lifecycle
+- **ai-gbrqm**: wire dsh lifecycle commands
+- **ai-k1w43**: wire dsh catalog lifecycle
+- **ai-m4s7p**: reconcile dsh lifecycle
+- **ai-nzmc8**: migrate local dsh sources
+- **ai-vv1t9**: launch audited managed dsh
+- **ai-4m4hj**: translate managed dsh command hooks
+- **ai-ckvng**: compose managed dsh configuration
+- **ai-efsr3**: install owned native dsh elements
+- **ai-8n95c**: add native dsh bridge and audit
+- **ai-bdqha**: translate bounded dsh permissions
+- **ai-86vb3**: render native dsh elements
+- **ai-d80em**: share instruction ownership
+- **ai-bdfbz**: register dsh target dispatch
+- **ai-7xrwf**: add dsh layouts and native paths
+
+### Fix
+
+- **ai-fcbgs**: align target help and formatter gates
+- **ai-arqyy**: audit selected dsh preset trees
+
 ## v0.3.1 (2026-08-13)
 
 ### Fix
