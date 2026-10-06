@@ -243,6 +243,24 @@ isolation.
 | Hooks | Exactly SessionStart/UserPromptSubmit/PreToolUse/PostToolUse/Stop/SubagentStart/SubagentStop command handlers. Exact known tool matchers/pipe alternatives; no unknown regex conversion, async/once/if or non-command handlers. Serial execution, no dedup, config loads once. |
 | Local elements | Project-only migration, MECHANICAL/REFACTOR/MANUAL classification, catalog link/copy exclusion and `.dsh/ai-dotfiles/local.json`. Compatible on-demand commands can become skills; execution/import commands and workflows are manual. |
 
+DSH dry-run labels `BLOCKER` versus nonblocking `LIMITATION` diagnostics and
+reports `Activation: BLOCKED` or `READY for apply`. Resolve blockers before
+applying a blocked preview; it never recommends unconditional apply. Individual
+MANUAL elements stay inactive; ready supported contributions still need the
+managed native launch audit. Dry-run and refused apply preserve existing bytes.
+
+For the exact reviewed stock `@gitflow` context-only PreToolUse pair, DSH reports
+`HOOK_GITFLOW_POLICY_FALLBACK` and retires the redundant reminders. This requires
+proved catalog origin, unchanged reviewed script/routing-rule/agent contents and
+effective unconditional rule plus callable `ai_dotfiles_agent_git-workflow-assistant`
+delivery, including project-over-global precedence and managed native audit.
+The agent inherits the current session model. The per-command hook nudge is
+absent: DSH ignores PreToolUse `additionalContext`; `if` is not translated.
+Changed/missing sources, unproved local/custom hooks or unavailable rule/agent
+remain blockers. The same guard covers project/global catalog lifecycle and
+project migration; other hooks and deny/ask blockers are retained. Allow grants
+remain nonblocking `ALLOW_UNMAPPED` and do not alter native permissions/presets.
+
 Hook scripts receive native names, empty `transcript_path`, flattened post-tool
 output and constant `general-purpose` child type/child session id. Common
 prompt_id/permission_mode/effort are absent. Event-keyed JSON `additionalContext`

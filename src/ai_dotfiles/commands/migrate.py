@@ -88,11 +88,24 @@ def _print_dsh_report(report: DshMigrateReport) -> None:
         )
     for diagnostic in report.diagnostics:
         ui.warn(
-            f"  - {diagnostic.origin} {diagnostic.element} {diagnostic.field}: "
+            f"  [{'BLOCKER' if diagnostic.blocking else 'LIMITATION'}] "
+            f"{diagnostic.origin} {diagnostic.element} {diagnostic.field}: "
             f"{diagnostic.reason} [{diagnostic.code}]"
         )
     if report.dry_run:
-        ui.info("Dry run: nothing written. Re-run without --dry-run to apply.")
+        if report.plan.blocked:
+            ui.warn("Activation: BLOCKED. Resolve blockers before applying.")
+            ui.info("Dry run: nothing written.")
+        else:
+            ui.info(
+                "Activation: READY for apply; managed native audit is still required."
+            )
+            if any(action.status in ("MANUAL", "HELD") for action in report.actions):
+                ui.info(
+                    "Only supported contributions activate; "
+                    "MANUAL elements stay inactive."
+                )
+            ui.info("Dry run: nothing written. Re-run without --dry-run to apply.")
 
 
 def _print_report(report: MigrateReport) -> None:

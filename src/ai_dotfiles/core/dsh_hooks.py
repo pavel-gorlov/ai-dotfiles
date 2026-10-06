@@ -14,7 +14,7 @@ import json
 import math
 import re
 import shlex
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
     from ai_dotfiles.core.dsh_migrate import DshLocalSource
 
 
-DSH_HOOKS_GENERATOR_VERSION = 1
+DSH_HOOKS_GENERATOR_VERSION = 2
 DSH_HOOKS_SCHEMA_VERSION = 1
 DSH_HOOKS_PACKAGE = "@deepseek-ai/dsh-hooks-claude-code"
 DSH_HOOKS_ROW_ID = "ai-dotfiles-hooks"
@@ -143,6 +143,105 @@ _LAUNCH = re.compile(
     r"\A(?P<prefix>\s*(?:(?:/bin/|/usr/bin/)?(?:bash|sh|python3?|node)\s+)?)"
     r"(?P<target>\"[^\"\n]+\"|'[^'\n]+'|[^\s;&|<>]+)"
 )
+# Exact reviewed stock sources, not a filename/command-based hook exemption.
+_GITFLOW_SCRIPT_SHA = "4289082608856bca6735d552f4394654e79271d07d5d689b7d209ff1180386b6"
+_GITFLOW_RULE_SHA = "4654745ce9729e280cfecefa2991e6781d4d78a90789f1ea24620880d2363a87"
+_GITFLOW_AGENT_SHA = "2b27ba39b6ef359af22bb0c8ee439ba751a4d48db6a05e3213ab3d5e222651e3"
+
+
+def _gitflow_policy_fallback(
+    source: DshHookSource, plans: Sequence[DshInstallPlan]
+) -> tuple[tuple[DshProvenance, ...], str | None]:
+    """Prove selected stock sources and the same precedence used by composition.
+
+    Only the reviewed no-path rule and inherited-model agent qualify. Runtime
+    delivery is still required by the existing bridge's selected-tree audit;
+    source readiness alone never releases a native surface.
+    """
+    root = source.path.parent.absolute()
+    if (
+        source.origin != "@gitflow"
+        or source.element != "@gitflow"
+        or source.path.name != "settings.fragment.json"
+        or source.source_root is None
+        or source.source_root.absolute() != root
+        or source.local_source is not None
+        or source.required_semantics
+    ):
+        return (), "selected stock catalog origin is unproven"
+    ordered = sorted(plans, key=lambda plan: plan.layout.project_root is not None)
+    matching = [
+        plan
+        for plan in ordered
+        if ("project" if plan.layout.project_root is not None else "global")
+        == source.scope
+        and any(
+            resource.source.absolute() == root
+            and resource.relative_path == Path("domains/gitflow")
+            and resource.provenance.origin == "@gitflow"
+            and resource.provenance.element == "@gitflow"
+            for resource in plan.resources
+        )
+    ]
+    if len(matching) != 1:
+        return (), "selected stock catalog resource is unproven"
+    script = root / "hooks/route-to-agent.sh"
+    try:
+        digest = hashlib.sha256(_read(script)).hexdigest()
+    except ConfigError:
+        return (), "stock context-only script is unavailable"
+    if digest != _GITFLOW_SCRIPT_SHA:
+        return (), "context-only script differs from the reviewed stock bytes"
+    agents = {
+        result.payload.name: result
+        for plan in ordered
+        for result in plan.ready_agents
+        if result.payload is not None
+    }
+    rules = {
+        result.payload.name: result
+        for plan in ordered
+        for result in plan.literal_rules
+        if result.payload is not None
+    }
+    rule = rules.get("gitflow")
+    agent = agents.get("git-workflow-assistant")
+    for result, relative, expected, label in (
+        (rule, "rules/gitflow.md", _GITFLOW_RULE_SHA, "always-on routing rule"),
+        (
+            agent,
+            "agents/git-workflow-assistant.md",
+            _GITFLOW_AGENT_SHA,
+            "callable inherited-model agent",
+        ),
+    ):
+        if (
+            result is None
+            or result.provenance.source.absolute() != root / relative
+            or result.provenance.origin != "@gitflow"
+            or result.provenance.element != "@gitflow/" + relative
+            or result.provenance.source_sha256 != expected
+            or hashlib.sha256(_read(result.provenance.source)).hexdigest() != expected
+        ):
+            return (), f"effective stock {label} is unavailable or changed"
+    assert rule is not None and agent is not None and agent.payload is not None
+    if agent.payload.row["config"] != {
+        "provider": "spawn",
+        "toolName": "ai_dotfiles_agent_git-workflow-assistant",
+        "persona": agent.payload.persona,
+    }:
+        return (), "stock agent does not retain its callable inherited-model route"
+    return (
+        DshProvenance(
+            script,
+            "@gitflow",
+            "@gitflow/hooks/route-to-agent.sh",
+            digest,
+            DSH_HOOKS_GENERATOR_VERSION,
+        ),
+        rule.provenance,
+        agent.provenance,
+    ), None
 
 
 @dataclass(frozen=True)
@@ -499,6 +598,7 @@ def collect_dsh_hooks(
     layout: DshLayout,
     *,
     project_root: Path | None = None,
+    install_plans: Sequence[DshInstallPlan] = (),
 ) -> DshHookPlan:
     """Combine originals global-first, preserving source order and repeats.
 
@@ -637,10 +737,57 @@ def collect_dsh_hooks(
                 )
                 translated = []
                 for number, handler in enumerate(handlers):
+                    handler_field = f"{group_field}.hooks[{number}]"
+                    if (
+                        valid_group
+                        and event == "PreToolUse"
+                        and group.get("matcher") == "Bash"
+                        and isinstance(handler, dict)
+                        and handler.get("if") in ("Bash(git *)", "Bash(gh *)")
+                        and handler
+                        == {
+                            "type": "command",
+                            "if": handler["if"],
+                            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/"
+                            "route-to-agent.sh",
+                        }
+                    ):
+                        evidence, reason = _gitflow_policy_fallback(
+                            source, install_plans
+                        )
+                        if reason is None:
+                            provenance.extend(evidence)
+                            diagnostics.append(
+                                DshDiagnostic(
+                                    "HOOK_GITFLOW_POLICY_FALLBACK",
+                                    source.origin,
+                                    source.element,
+                                    handler_field,
+                                    "Retired verified stock context-only reminder; "
+                                    "the always-on gitflow routing policy and "
+                                    "callable ai_dotfiles_agent_git-workflow-assistant "
+                                    "remain required by managed native audit. "
+                                    "The per-command hook nudge is absent: DSH "
+                                    "ignores PreToolUse additionalContext and if "
+                                    "is not translated",
+                                    False,
+                                )
+                            )
+                            continue
+                        diagnostics.append(
+                            _gap(
+                                source,
+                                handler_field + ".if",
+                                "Stock gitflow policy fallback unavailable: "
+                                + reason
+                                + "; restore the stock sources and native rule/"
+                                "agent delivery, or adapt this hook manually",
+                            )
+                        )
                     native = _handler(
                         source,
                         event,
-                        f"{group_field}.hooks[{number}]",
+                        handler_field,
                         handler,
                         root,
                         binding,
@@ -696,7 +843,7 @@ def collect_dsh_hooks(
         hooks,
         tuple(resources.values()),
         tuple(item for item in planned.outputs if item.path in resource_paths),
-        tuple(provenance),
+        tuple(dict.fromkeys(provenance)),
         tuple(diagnostics),
         tuple(
             source.local_source for source in ordered if source.local_source is not None

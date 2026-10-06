@@ -1045,3 +1045,118 @@ def test_required_native_failure_never_releases_ready_or_a_turn(
         env["PROOF"]
     ).exists(), "Failure must precede Ready, session, and LLM turn"
     assert _bytes(profile.parent.parent) == before
+
+
+@pytest.mark.parametrize("failure", [None, "agent-disabled", "policy-removed"])
+def test_stock_gitflow_native_policy_and_inherited_agent_before_ready(
+    runtime_case: tuple[Path, Path, DshNativeRuntime, dict[str, str]],
+    tmp_path: Path,
+    failure: str | None,
+) -> None:
+    from ai_dotfiles.core.dsh_migrate import migrate_project_to_dsh
+    from tests.integration.test_dsh_gitflow import copy_stock_catalog
+
+    project, profile, runtime, env = runtime_case
+    catalog = Path(env["AI_DOTFILES_HOME"]) / "catalog"
+    copy_stock_catalog(catalog)
+    packages = ["@acceptance", "@gitflow", "@python"]
+    (project / "ai-dotfiles.json").write_text(
+        json.dumps({"targets": ["dsh"], "packages": packages})
+    )
+    migration = migrate_project_to_dsh(project, packages, catalog, ["dsh"])
+    assert not migration.plan.blocked
+    assert (
+        len(
+            [
+                d
+                for d in migration.diagnostics
+                if d.code == "HOOK_GITFLOW_POLICY_FALLBACK"
+            ]
+        )
+        == 2
+    )
+    stock_agent = next(
+        r.payload
+        for r in migration.plan.install.ready_agents
+        if r.payload.name == "git-workflow-assistant"
+    )
+    stock_rule = next(
+        r.payload
+        for r in migration.plan.install.literal_rules
+        if r.payload.name == "gitflow"
+    )
+    assert stock_agent is not None and stock_rule is not None
+    env["EXPECT_PERSONA"] = stock_agent.persona
+    (profile / "provider.mjs").write_text(
+        SCRIPTED_PROVIDER.replace(
+            "call('ai_dotfiles_agent_reviewer'",
+            "call('ai_dotfiles_agent_git-workflow-assistant'",
+        )
+    )
+    args = ["proof"]
+    if failure is not None:
+        patch = tmp_path / "removed-policy.json"
+        if failure == "agent-disabled":
+            rows = [
+                {"id": "ai-dotfiles-agent-git-workflow-assistant", "disabled": True}
+            ]
+        else:
+            bridge = next(
+                row
+                for row in migration.plan.config.rows
+                if row["id"] == "ai-dotfiles-bridge"
+            )
+            config = dict(bridge["config"])
+            config["rules"] = []
+            rows = [{"id": "ai-dotfiles-bridge", "config": config}]
+        patch.write_text(json.dumps(rows))
+        args.extend(["--patch", str(patch)])
+    args.extend(["acceptance", "--json"])
+    before = _bytes(profile.parent.parent)
+    result = _run_command(
+        [os.sys.executable, "-m", "ai_dotfiles", "dsh", "launch", *args],
+        cwd=project,
+        env=env,
+        logs=tmp_path / "commands",
+        timeout=45,
+    )
+    assert _bytes(profile.parent.parent) == before
+    if failure is not None:
+        assert result.returncode != 0, result.stdout + result.stderr
+        assert (
+            "changed/removed managed identity, literal instructions or restrictions"
+            in result.stderr
+        )
+        assert "native surface released" not in result.stderr
+        assert not Path(
+            env["PROOF"]
+        ).exists(), "Failure must precede Ready and LLM turns"
+        return
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Retired verified stock context-only reminder" in result.stderr
+    events = [json.loads(line) for line in Path(env["PROOF"]).read_text().splitlines()]
+    assert (
+        events[0]["event"] == "ready"
+        and events[0]["sessions"] == events[0]["tasks"] == 0
+    )
+    assert "ai-dotfiles-agent-git-workflow-assistant" in events[0]["required"]
+    parent = next(row for row in events if row.get("kind") == "parent")
+    assert stock_rule.body in parent["system"]
+    assert "invoke `git-workflow-assistant`" in parent["system"]
+    tool = next(
+        tool
+        for tool in parent["tools"]
+        if tool["name"] == "ai_dotfiles_agent_git-workflow-assistant"
+    )
+    assert tool["description"] == stock_agent.description
+    child = next(
+        row
+        for row in events
+        if row["event"] == "agent" and row.get("origin") == "subagent"
+    )
+    assert child["options"]["model"] == "parent-current"
+    assert child["options"]["provider"] == "local"
+    child_turn = next(row for row in events if row.get("kind") == "child")
+    assert stock_agent.persona in child_turn["system"]
+    assert "actual child completed" in result.stdout
+    assert all(row["event"] != "hook-result" for row in events)

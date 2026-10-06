@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv sync:*)",
+      "Bash(uv lock:*)",
+      "Bash(uv add:*)",
+      "Bash(uv remove:*)",
+      "Bash(uv run:*)",
+      "Bash(uv pip:*)",
+      "Bash(uv tool:*)",
+      "Bash(uv python:*)",
+      "Bash(uv build:*)",
+      "Bash(uv publish:*)",
+      "Bash(uvx:*)",
+      "Bash(poetry install:*)",
+      "Bash(poetry lock:*)",
+      "Bash(poetry show:*)",
+      "Bash(poetry add:*)",
+      "Bash(poetry remove:*)",
+      "Bash(poetry run:*)",
+      "Bash(poetry build:*)",
+      "Bash(poetry publish:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(ruff check:*)",
+      "Bash(ruff format:*)",
+      "Bash(mypy:*)",
+      "Bash(pytest:*)",
+      "Bash(bandit:*)",
+      "Bash(pip-audit:*)",
+      "Bash(pre-commit:*)",
+      "Bash(py-spy:*)",
+      "Bash(memray:*)",
+      "Bash(scalene:*)"
+    ]
+  }
+}

@@ -854,6 +854,7 @@ def plan_dsh_migration(
         (*sources, *hook_sources, *inputs.hook_sources),
         inputs.layout,
         project_root=inputs.layout.project_root,
+        install_plans=(inputs.install,),
     )
     assert inputs.layout.project_root is not None
     for resource in hooks.resources:

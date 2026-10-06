@@ -208,6 +208,24 @@ Handlers execute serially without deduplication; config is loaded once per
 process. A runtime handler crash is logged by the native plugin and is not
 itself a guaranteed run-level stop.
 
+The reviewed stock `@gitflow` pair is a narrowly guarded exception to activation
+refusal, **not** an `if` translation. Its exact context-only
+`hooks/route-to-agent.sh`, unconditional `rules/gitflow.md` and
+`agents/git-workflow-assistant.md` must match the reviewed catalog contents.
+The selected catalog resource and effective rule/agent contributions must be
+proved, including project-over-global precedence. The two reminders are retired
+from DSH hooks with `HOOK_GITFLOW_POLICY_FALLBACK`, retaining their originals and
+source hashes. Routing remains in the always-on policy and the callable native
+`ai_dotfiles_agent_git-workflow-assistant`; its model inherits the current session.
+The additional **per-command hook nudge is absent**: the bridge ignores
+PreToolUse `additionalContext`. Managed launch still requires actual policy
+delivery and agent availability through its native composition/selected-tree
+audit before Ready or a model turn. Changed or missing stock sources, an
+unproved local/custom origin, or unavailable policy/agent retain an actionable
+blocking diagnostic. Other `if` handlers and required hook semantics remain
+blocked. This same guard applies to project/global catalog lifecycle and
+project-local migration; it does not edit Claude/Codex originals or profiles.
+
 | Event | Supported behavior | Payload/output limits |
 |---|---|---|
 | `SessionStart` | Event-keyed JSON `additionalContext` | Plain stdout context, `initialUserMessage`, `sessionTitle`, `watchPaths`, `reloadSkills`, `CLAUDE_ENV_FILE` unsupported. Detached context can miss the first request; `model`, `agent_type`, `session_title` omitted. |
@@ -328,6 +346,14 @@ registry, activation or profile bytes. DSH can preserve valid local skills,
 agents, compatible rules/on-demand commands and supported raw settings, hooks
 and user MCP contributions. Catalog links, domain links and copy-owned content
 are excluded from local adoption.
+
+The preview labels diagnostics `BLOCKER` or `LIMITATION` and reports activation
+as `BLOCKED` or `READY for apply`. A blocked preview never recommends applying;
+resolve its config/hook/permission blockers first. Individual `MANUAL` elements
+remain inactive even when the supported contributions are ready. Apply readiness
+is a source/configuration preflight, not proof of native runtime readiness;
+the managed launch audit is still required. `ALLOW_UNMAPPED` and the verified
+stock gitflow policy fallback are nonblocking limitations and grant nothing.
 
 Mixed-target settings/MCP are projected from fresh originals and their ownership
 ledgers, with present/absent guards. Supported user permissions/hooks/MCP are
