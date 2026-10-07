@@ -364,8 +364,6 @@ def plan_dsh_reconciliation(
             project_root=layout.project_root,
             install_plans=(install,),
         )
-        if hooks.blocked:
-            hooks.require_activatable()
         contribution = hooks.contribution()
         config = collect_dsh_configuration(
             sources,
