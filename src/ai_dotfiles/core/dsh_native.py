@@ -21,7 +21,7 @@ from ai_dotfiles.core.errors import ConfigError, ExternalError
 
 DSH_NATIVE_VERSION = "0.2.0-rc.2"
 DSH_NATIVE_SCHEMA_VERSION = 1
-DSH_COMPOSE_GENERATOR_VERSION = 1
+DSH_COMPOSE_GENERATOR_VERSION = 2
 _NATIVE_PACKAGES = (
     "dsh-app-boot",
     "dsh-skill-filesystem",

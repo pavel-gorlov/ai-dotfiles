@@ -211,8 +211,10 @@ ai-dotfiles dsh launch --profile headless --patch ./review.json --patch ./local.
 
 Launch requires **separately installed official `@deepseek-ai/dsh@0.2.0-rc.2`**,
 `node`/`dsh` on PATH, an existing native profile and its required providers. It
-never installs a runtime, creates/repairs profiles or changes native home/profile
-patches. Put repeatable `--patch` and `--profile` before verbatim app argv; no
+never installs a runtime or creates/repairs profiles. Launch composition leaves
+native home/profile patches intact; native Web volatile-settings edits persist
+to the existing profile's `cordis.patch.yml`. Put repeatable `--patch` and
+`--profile` before verbatim app argv; no
 default profile, global launch switch or new permission preset exists.
 
 Native order: bundles → profile → home → managed global → managed project →
@@ -230,6 +232,17 @@ with the native `standard` consumer. Native HMR is disabled; overlays are
 immutable and require restart after updates or project changes. One process
 retains its launching project's MCP/hooks/agents; Web switching is not hard
 isolation.
+
+Native Web forms can edit schema-declared volatile fields on unique
+profile-owned entries, including Preview Notice acknowledgement, with native
+revision checks and secret redaction. Values update live and survive refresh
+and restart. Ordinary fields are retained; YAML comments and expressions
+outside replaced values remain intact. Resetting to the inherited config removes
+the matching native profile config override.
+Managed/domain-owned entries and config overridden by a domain, home patch or
+CLI overlay cannot be edited. Changed composition/source refuses persistence
+until restart. Native dynamic directory-picker packages resolve from the
+installed runtime while profile-relative resources retain their original base.
 
 | Surface | DSH behavior and boundary |
 |---|---|

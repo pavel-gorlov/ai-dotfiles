@@ -152,6 +152,18 @@ preset-free headless profile, or the preset-aware Web consumer (the native
 
 Managed overlays are immutable during a process. The known official native HMR
 path is disabled; refresh with `install`/`reconcile`, stop DSH and restart.
+Native Web settings remain writable for unique profile-owned entries with
+schema-declared volatile fields, including the Preview Notice acknowledgement.
+Edits update the running values and persist only to the native profile's
+`cordis.patch.yml`; they survive refresh and restart. Native forms retain their
+revision checks and secret redaction. The editor preserves ordinary config
+values, YAML comments and expression nodes outside replaced values. A native
+reset to the inherited config removes the matching profile config override.
+Managed entries, domain-owned rows and entries whose config is overridden by
+a domain, home patch or CLI overlay are excluded from editing. A changed
+composition or source refuses the write and requires a managed restart.
+Dynamic native directory-picker entries resolve their packages from the
+installed runtime; profile-relative modules and resources keep their own base.
 One process stays bound to the launching project's MCP, hooks and agents.
 Restart from the other project when changing projects. Web workspace switching
 does not provide hard isolation between these project configurations.

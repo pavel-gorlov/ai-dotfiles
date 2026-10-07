@@ -16,6 +16,7 @@ import subprocess
 import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from importlib import resources
 from pathlib import Path
 from typing import Literal
 
@@ -68,7 +69,7 @@ from ai_dotfiles.core.errors import AiDotfilesError, ConfigError, ExternalError
 from ai_dotfiles.core.shared_instructions import project_instruction_plan
 from ai_dotfiles.core.targets import Target
 
-DSH_LAUNCH_GENERATOR_VERSION = 1
+DSH_LAUNCH_GENERATOR_VERSION = 2
 RESTART_NOTICE = (
     "Managed DSH stays bound to this project's MCP, hooks and agents. "
     "Restart after managed updates or when changing projects. "
@@ -84,6 +85,7 @@ import { readFileSync, lstatSync, realpathSync } from 'node:fs';
 import { isAbsolute, resolve, relative, dirname, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 const state = { trees: [], released: false, requiredIds: new Set() };
 const helper = await import('./compose.mjs');
 const runtimeAnchor = __RUNTIME_ANCHOR__;
@@ -104,6 +106,8 @@ const includes = new Set(['cordis:include', '@deepseek-ai/cordis-plugin-include'
 function freezeRows(rows, baseUrl, ancestors = new Set()) {
   return rows.map(original => {
     const row = structuredClone(original);
+    if (row.name === '@deepseek-ai/dsh-config-editor')
+      row.name = new URL('./managed-settings.mjs', import.meta.url).href;
     // Official HMR replaces the host root from mutable user profile patches.
     // Managed composition is immutable and requires an explicit restart.
     if (row.name === '@deepseek-ai/dsh-hmr') {
@@ -322,6 +326,28 @@ function verifySourceGuards(request) {
   }
 }
 
+function settingsSnapshot(rows, id, config) {
+  const result = structuredClone(rows);
+  let count = 0;
+  const walk = rows => {
+    for (const row of rows) {
+      if (row.id === id) {
+        if (config === undefined) delete row.config;
+        else row.config = structuredClone(config);
+        count++;
+      }
+      else {
+        if (Array.isArray(row.config)) walk(row.config);
+        if (Array.isArray(row.config?.plugins)) walk(row.config.plugins);
+        if (Array.isArray(row.config?.entries)) walk(row.config.entries);
+      }
+    }
+  };
+  walk(result);
+  if (count !== 1) throw new Error('Settings entry id is not unique in composition');
+  return result;
+}
+
 export async function runManaged(request, args) {
   if (request.runtimeAnchor !== runtimeAnchor)
     throw new Error('Managed host runtime anchor changed');
@@ -381,6 +407,10 @@ export async function runManaged(request, args) {
     ctx = await native.boot.boot('ai-dotfiles dsh', request.rootPath, patches,
       async host => {
       ctx = host;
+      // Dynamic native loader.create({ name }) entries use the root Loader,
+      // unlike profile rows. Bind its public context to the installed runtime;
+      // ImmutableProfileTree keeps each profile/include's own relative base.
+      host.loader.root.ctx.baseUrl = pathToFileURL(request.runtimeAnchor).href;
       host.provide('profileContext', profileContext);
       host.provide(environment.DSH_LAUNCH_ENVIRONMENT_KEY, launchEnvironment);
       await host.plugin(native.boot.PluginPackages, { resolution });
@@ -388,8 +418,37 @@ export async function runManaged(request, args) {
       const prepared = native.boot.prepareProfilePatches(host,
         inspected.patches, baseUrl, 'ai-dotfiles dsh');
       const entries = native.boot.composeEntries([prepared]);
+      let snapshot = freezeRows(entries, baseUrl);
+      const initialSettings = helper.inspectSettingsComposition(native,
+        request.composition);
+      const allowed = new Set(initialSettings.editableIds);
+      const frozen = layers => freezeRows(native.boot.composeEntries([
+        native.boot.prepareProfilePatches(host, layers.patches, baseUrl,
+          'ai-dotfiles dsh')]), baseUrl);
+      host.provide('aiDotfilesManagedSettings', {
+        owns: entry => allowed.has(entry.options.id)
+          && !state.requiredIds.has(entry.options.id)
+          && entry.parent.tree === state.trees[0],
+        read: patches => helper.inspectSettingsComposition(native,
+          request.composition, patches),
+        inherited: (profile, id) => helper.inheritedSettingsConfig(native,
+          request.composition, profile, id),
+        validate(layers, entry, next) {
+          verifySourceGuards(request);
+          if (!layers.valid || !layers.editableIds.includes(entry.options.id))
+            throw new Error('Settings entry is managed or overridden by a '
+              + 'domain, home patch or command-line overlay');
+          const expected = settingsSnapshot(snapshot, entry.options.id, next);
+          if (!isDeepStrictEqual(frozen(layers), expected))
+            throw new Error('Settings composition changed; restart managed DSH '
+              + 'before editing its native profile');
+        },
+        committed(entry, next) {
+          snapshot = settingsSnapshot(snapshot, entry.options.id, next);
+        },
+      });
       patches.push({ insert: [{ id: 'ai-dotfiles-host', name: import.meta.url,
-        config: { baseUrl, entries: freezeRows(entries, baseUrl) } }] });
+        config: { baseUrl, entries: snapshot } }] });
     }, pathToFileURL(request.runtimeAnchor).href);
     if (requestedExit !== undefined) return;
     // The boot root contains only our origin-bound immutable native tree.
@@ -558,6 +617,20 @@ def launch_module_text(runtime: DshNativeRuntime) -> str:
         + _HOST_MODULE.replace(
             "__RUNTIME_ANCHOR__", json.dumps(str(runtime.install_anchor))
         )
+    )
+
+
+def managed_settings_module_text(runtime: DshNativeRuntime) -> str:
+    """Render the bounded native editor against the verified installed runtime."""
+    source = resources.files("ai_dotfiles.scaffold.templates").joinpath(
+        "dsh_managed_settings.mjs"
+    )
+    try:
+        content = source.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise ConfigError(f"Cannot read shipped DSH settings editor: {exc}") from exc
+    return content.replace(
+        "__RUNTIME_ANCHOR__", json.dumps(str(runtime.install_anchor))
     )
 
 
@@ -916,6 +989,10 @@ def prepare_dsh_launch(
         for path, content in (
             (host_path, launch_module_text(runtime)),
             (helper_path, compose_module_text()),
+            (
+                layout.owned_dir / "managed-settings.mjs",
+                managed_settings_module_text(runtime),
+            ),
             (root_path, "[]\n"),
         )
     )
