@@ -257,7 +257,8 @@ delivery, including project-over-global precedence and managed native audit.
 The agent inherits the current session model. The per-command hook nudge is
 absent: DSH ignores PreToolUse `additionalContext`; `if` is not translated.
 Changed/missing sources, unproved local/custom hooks or unavailable rule/agent
-remain blockers. The same guard covers project/global catalog lifecycle and
+retain one actionable `.if` blocker per stock reminder. Unrelated problems are
+still reported. The same guard covers project/global catalog lifecycle and
 project migration; other hooks and deny/ask blockers are retained. Allow grants
 remain nonblocking `ALLOW_UNMAPPED` and do not alter native permissions/presets.
 
