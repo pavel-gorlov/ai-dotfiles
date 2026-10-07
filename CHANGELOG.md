@@ -1,3 +1,9 @@
+## v0.4.2 (2026-10-07)
+
+### Fix
+
+- **dsh**: support explicit native permission mode
+
 ## v0.4.1 (2026-10-07)
 
 ### Fix
