@@ -1,3 +1,13 @@
+## v0.4.3 (2026-10-07)
+
+### Fix
+
+- **dsh**: persist managed web settings
+  - Preview Notice acknowledgement and other permitted native volatile settings
+    survive refresh and managed restart without changing managed policy.
+  - Resolve dynamically created native directory-picker plugins from the
+    installed runtime; preserve profile-relative resources and strict guards.
+
 ## v0.4.2 (2026-10-07)
 
 ### Fix
