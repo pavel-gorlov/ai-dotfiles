@@ -1,3 +1,14 @@
+## v0.4.1 (2026-10-07)
+
+### Fix
+
+- **dsh**: avoid duplicate stock fallback diagnostics
+- **ai-ykwgd**: unblock stock gitflow migration to dsh
+
+### Refactor
+
+- **dsh**: remove redundant hook activation guard
+
 ## v0.4.0 (2026-10-06)
 
 ### Feat
