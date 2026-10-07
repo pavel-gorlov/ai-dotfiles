@@ -225,6 +225,9 @@ def _gitflow_policy_fallback(
         ):
             return (), f"effective stock {label} is unavailable or changed"
     assert rule is not None and agent is not None and agent.payload is not None
+    # dsh_render.render_agent / DSH_RENDER_GENERATOR_VERSION (currently 1)
+    # define this callable inherited-model shape. Renderer shape/version changes
+    # require fallback/native proof re-review; keep unknown config keys rejected.
     if agent.payload.row["config"] != {
         "provider": "spawn",
         "toolName": "ai_dotfiles_agent_git-workflow-assistant",
