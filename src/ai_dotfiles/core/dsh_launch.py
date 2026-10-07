@@ -959,6 +959,9 @@ def prepare_dsh_launch(
     source_hashes.update(
         {str(item["source"]): str(item["source_sha256"]) for item in config.sources}
     )
+    source_hashes.update(
+        {str(path.absolute()): digest for path, _, digest in config.permission_modes}
+    )
     for local in local_inputs:
         verify_dsh_local_inputs(local)
         source_hashes.update(

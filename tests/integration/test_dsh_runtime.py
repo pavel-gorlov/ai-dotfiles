@@ -21,6 +21,7 @@ from threading import Thread
 
 import pytest
 
+from ai_dotfiles.core.dsh_install import apply_dsh_install
 from ai_dotfiles.core.dsh_launch import prepare_dsh_launch
 from ai_dotfiles.core.dsh_native import DshNativeRuntime
 from tests.e2e.test_dsh_launch import (
@@ -274,10 +275,40 @@ def runtime_case(
     return project, profile, runtime, env
 
 
+@pytest.mark.parametrize("native_auto", [False, True])
 def test_same_managed_host_actually_invokes_named_stock_child_and_native_gates(
-    runtime_case: tuple[Path, Path, DshNativeRuntime, dict[str, str]], tmp_path: Path
+    runtime_case: tuple[Path, Path, DshNativeRuntime, dict[str, str]],
+    tmp_path: Path,
+    native_auto: bool,
 ) -> None:
     project, profile, runtime, env = runtime_case
+    if native_auto:
+        storage = Path(env["AI_DOTFILES_HOME"])
+        (storage / "global").mkdir()
+        global_source = storage / "global/settings.json"
+        local_source = project / ".claude/settings.local.json"
+        local_source.parent.mkdir()
+        raw = (
+            b'{"permissions":{"defaultMode":"auto"},\r\n'
+            b' "skipAutoPermissionPrompt":true}\r\n'
+        )
+        global_source.write_bytes(raw)
+        local_source.write_bytes(raw)
+        (storage / "global.json").write_text(
+            '{"packages":[],"targets":["claude"],"dsh_permission_mode":"native"}'
+        )
+        selected = project / "ai-dotfiles.json"
+        data = json.loads(selected.read_bytes())
+        data["dsh_permission_mode"] = "native"
+        selected.write_text(json.dumps(data))
+        migrated = _run_command(
+            [os.sys.executable, "-m", "ai_dotfiles", "migrate", "--to", "dsh"],
+            cwd=project,
+            env=env,
+            logs=tmp_path / "commands",
+        )
+        assert migrated.returncode == 0, migrated.stdout + migrated.stderr
+        assert "DEFAULT_MODE_NATIVE" in migrated.stderr
     before = _bytes(profile.parent.parent)
     plan = prepare_dsh_launch(
         ["proof", "acceptance", "--json"], cwd=project, process_env=env, runtime=runtime
@@ -370,6 +401,9 @@ def test_same_managed_host_actually_invokes_named_stock_child_and_native_gates(
     assert "actual parent completed" in result.stdout
     assert "tools/call" in Path(env["MCP_PROOF"]).read_text()
     assert _bytes(profile.parent.parent) == before
+    if native_auto:
+        assert global_source.read_bytes() == local_source.read_bytes() == raw
+        assert sum(item.code == "DEFAULT_MODE_NATIVE" for item in plan.diagnostics) == 2
 
 
 @pytest.fixture
@@ -920,7 +954,18 @@ def test_archives_ship_all_helpers_and_isolated_installed_wheel_runs_real_child(
 
 @pytest.mark.parametrize(
     "failure",
-    ["runtime", "read_image", "spawn", "optional-import", "optional-apply", "preset"],
+    [
+        "runtime",
+        "read_image",
+        "spawn",
+        "optional-import",
+        "optional-apply",
+        "preset",
+        "strict-auto",
+        "cross-scope-auto",
+        "native-unknown-mode",
+        "native-deny-gap",
+    ],
 )
 def test_required_native_failure_never_releases_ready_or_a_turn(
     runtime_case: tuple[Path, Path, DshNativeRuntime, dict[str, str]],
@@ -937,6 +982,40 @@ def test_required_native_failure_never_releases_ready_or_a_turn(
         empty_bin.mkdir()
         env["PATH"] = str(empty_bin)
         expected = "Official dsh executable is missing from PATH"
+    elif failure in {
+        "strict-auto",
+        "cross-scope-auto",
+        "native-unknown-mode",
+        "native-deny-gap",
+    }:
+        storage = Path(env["AI_DOTFILES_HOME"])
+        (storage / "global").mkdir()
+        value = "auto" if failure != "native-unknown-mode" else "bypassPermissions"
+        permissions = {"defaultMode": value}
+        if failure == "native-deny-gap":
+            permissions["deny"] = ["Bash(git:*)"]
+        (storage / "global/settings.json").write_text(
+            json.dumps({"permissions": permissions})
+        )
+        global_mode = "native" if failure.startswith("native-") else "strict"
+        (storage / "global.json").write_text(
+            json.dumps(
+                {
+                    "packages": [],
+                    "targets": ["claude"],
+                    "dsh_permission_mode": global_mode,
+                }
+            )
+        )
+        selected = project / "ai-dotfiles.json"
+        data = json.loads(selected.read_bytes())
+        data["dsh_permission_mode"] = (
+            "native" if failure == "cross-scope-auto" else "strict"
+        )
+        selected.write_text(json.dumps(data))
+        expected = (
+            "defaultMode" if failure != "native-deny-gap" else "permissions.deny[0]"
+        )
     elif failure == "read_image":
         source = (profile / "provider.mjs").read_text()
         (profile / "provider.mjs").write_text(
@@ -1044,6 +1123,63 @@ def test_required_native_failure_never_releases_ready_or_a_turn(
     assert not Path(
         env["PROOF"]
     ).exists(), "Failure must precede Ready, session, and LLM turn"
+    assert _bytes(profile.parent.parent) == before
+
+
+def test_acknowledgement_revoked_after_install_refuses_actual_host_before_ready(
+    runtime_case: tuple[Path, Path, DshNativeRuntime, dict[str, str]], tmp_path: Path
+) -> None:
+    project, profile, runtime, env = runtime_case
+    storage = Path(env["AI_DOTFILES_HOME"])
+    (storage / "global").mkdir()
+    (storage / "global/settings.json").write_text(
+        '{"permissions":{"defaultMode":"auto"}}'
+    )
+    selected = storage / "global.json"
+    selected.write_text(
+        '{"packages":[],"targets":["claude"],"dsh_permission_mode":"native"}'
+    )
+    plan = prepare_dsh_launch(
+        ["proof", "acceptance", "--json"], cwd=project, process_env=env, runtime=runtime
+    )
+    for install in plan.installs:
+        apply_dsh_install(install)
+    selected.write_text(
+        '{"packages":[],"targets":["claude"],"dsh_permission_mode":"strict"}'
+    )
+    request = dict(plan.request)
+    request.pop("inspected", None)
+    transport = tmp_path / "request.json"
+    transport.write_text(json.dumps(request))
+    host = (plan.config.layout.owned_dir / "launch.mjs").as_uri()
+    bootstrap = (
+        "const {readFileSync} = await import('node:fs'); "
+        f"const host = await import({json.dumps(host)}); "
+        "await host.runManaged(JSON.parse(readFileSync("
+        f"{json.dumps(str(transport))}, 'utf8')), process.argv.slice(1));"
+    )
+    before = _bytes(profile.parent.parent)
+    result = _run_command(
+        [
+            str(runtime.node),
+            "--input-type=module",
+            "-e",
+            bootstrap,
+            "--",
+            *plan.arguments.app_args,
+        ],
+        cwd=project,
+        env=env,
+        logs=tmp_path / "commands",
+        timeout=45,
+    )
+    assert result.returncode != 0
+    assert "Managed DSH source changed before readiness" in result.stderr
+    assert str(selected) in result.stderr
+    assert "native surface released" not in result.stderr
+    assert not Path(
+        env["PROOF"]
+    ).exists(), "Revocation must precede Ready, session and tool execution"
     assert _bytes(profile.parent.parent) == before
 
 

@@ -249,6 +249,22 @@ applying a blocked preview; it never recommends unconditional apply. Individual
 MANUAL elements stay inactive; ready supported contributions still need the
 managed native launch audit. Dry-run and refused apply preserve existing bytes.
 
+Both manifests accept top-level `"dsh_permission_mode": "strict" | "native"`.
+Absent means `strict`; malformed choices fail. Strict blocks Claude
+`permissions.defaultMode`, including `"auto"`. An explicit `native` choice
+acknowledges **only** `defaultMode: "auto"` as a nonblocking `DEFAULT_MODE_NATIVE`
+translation limitation, keeping the exact raw value, hash and provenance.
+Set it in each original source scope: global settings require
+`$AI_DOTFILES_HOME/global.json` (default `~/.ai-dotfiles/global.json`); project
+`ai-dotfiles.json` cannot acknowledge global sources. `skipAutoPermissionPrompt`
+remains a nonblocking `SETTINGS_FIELD_UNMAPPED` diagnostic. Claude settings stay
+unchanged; no DSH Auto/preset selection, sandbox/approval changes or allow grants
+are generated. Other defaultMode values, unknown fields, invalid types and
+deny/ask gaps still block. All lifecycle/migration/status/reconciliation and fresh
+launch paths use the choice before merging. Revocation refuses affected prepared
+activation before writes/readiness. Reconcile the edited scope (`-g` for global)
+and restart managed DSH.
+
 For the exact reviewed stock `@gitflow` context-only PreToolUse pair, DSH reports
 `HOOK_GITFLOW_POLICY_FALLBACK` and retires the redundant reminders. This requires
 proved catalog origin, unchanged reviewed script/routing-rule/agent contents and

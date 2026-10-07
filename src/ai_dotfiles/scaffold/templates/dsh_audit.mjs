@@ -2,7 +2,7 @@
 export const name = 'ai-dotfiles-audit';
 export const inject = ['loader'];
 export const schemaVersion = 1;
-export const generator = 2;
+export const generator = 3;
 
 // Public Cordis FiberState constants in the pinned release (const enum).
 const PENDING = 0;
@@ -155,7 +155,7 @@ export async function auditReady(ctx, input, { scope } = {}) {
     }
   }
   const bridge = serviceFor('aiDotfilesBridge');
-  if (bridge === undefined || bridge.schemaVersion !== 1 || bridge.generator !== 1 || typeof bridge.verify !== 'function') {
+  if (bridge === undefined || bridge.schemaVersion !== 1 || bridge.generator !== 2 || typeof bridge.verify !== 'function') {
     add('aiDotfilesBridge', 'MISSING_BRIDGE', 'the versioned literal/policy bridge did not activate');
   } else {
     // Derive required data too: a caller cannot omit a bridge filter/policy tool.

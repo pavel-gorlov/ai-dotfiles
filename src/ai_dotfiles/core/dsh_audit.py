@@ -39,9 +39,9 @@ from ai_dotfiles.core.dsh_render import (
 from ai_dotfiles.core.errors import ConfigError
 
 DSH_BRIDGE_SCHEMA_VERSION = 1
-DSH_BRIDGE_GENERATOR_VERSION = 1
+DSH_BRIDGE_GENERATOR_VERSION = 2
 DSH_AUDIT_SCHEMA_VERSION = 1
-DSH_AUDIT_GENERATOR_VERSION = 2
+DSH_AUDIT_GENERATOR_VERSION = 3
 DSH_BRIDGE_ROW_ID = "ai-dotfiles-bridge"
 DSH_AUDIT_ROW_ID = "ai-dotfiles-audit"
 _EMPTY_PERMISSIONS = DshPermissionPolicy()

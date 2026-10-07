@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from ai_dotfiles.core.errors import ConfigError
 
@@ -119,6 +119,33 @@ def get_link_mode(path: Path) -> str:
             f"{sorted(_LINK_MODES)}, got {value!r}"
         )
     return value
+
+
+DshPermissionMode = Literal["strict", "native"]
+
+
+def get_dsh_permission_mode(path: Path) -> DshPermissionMode:
+    """Return this source scope's explicit DSH permission acknowledgement.
+
+    Missing manifests/fields retain strict translation. Native mode acknowledges
+    only Claude's recognized auto default; it selects no native permission
+    preset and cannot acknowledge a source from another scope.
+    """
+    return validate_dsh_permission_mode(
+        read_manifest(path).get("dsh_permission_mode", "strict"), path=path
+    )
+
+
+def validate_dsh_permission_mode(value: object, *, path: Path) -> DshPermissionMode:
+    """Validate a mode from already-read manifest bytes without rereading it."""
+    if value == "strict":
+        return "strict"
+    if value == "native":
+        return "native"
+    raise ConfigError(
+        f"Manifest {path} 'dsh_permission_mode' must be one of "
+        f"['native', 'strict'], got {value!r}"
+    )
 
 
 def get_flag(path: Path, key: str, default: bool) -> bool:

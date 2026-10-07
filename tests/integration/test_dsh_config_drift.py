@@ -41,7 +41,7 @@ from tests.integration.test_dsh_bridge import (
 
 bridge_native_runtime = _bridge_native_runtime
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("tmp_storage")]
 HELPER = (
     Path(__file__).parents[2] / "src/ai_dotfiles/scaffold/templates/dsh_compose.mjs"
 )
@@ -615,7 +615,7 @@ def test_snapshot_schema_generator_source_contribution_drift_read_only(
     elif change == "checksum":
         value["environment"] = {"A": "changed"}
     elif change == "generator":
-        value["generator"] = 2
+        value["generator"] += 1
     elif change == "source":
         value["sources"] = [{}]
     else:

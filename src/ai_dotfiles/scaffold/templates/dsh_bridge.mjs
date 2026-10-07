@@ -3,7 +3,7 @@
 export const name = 'ai-dotfiles-bridge';
 export const inject = ['systemPrompt', 'tools'];
 export const schemaVersion = 1;
-export const generator = 1;
+export const generator = 2;
 
 const PERSONA = 'deployment:persona-prefix';
 const MARKER = 'ai-dotfiles:literal-bridge';
@@ -34,7 +34,7 @@ function provenance(value, label) {
 
 function policy(value) {
   fields(value, ['schemaVersion', 'generator', 'deny', 'ask', 'requiredTools', 'blocked', 'contributions', 'diagnostics'], 'permissions');
-  if (value.schemaVersion !== 1 || value.generator !== 1) fail('unknown permission schema/generator');
+  if (value.schemaVersion !== 1 || value.generator !== 2) fail('unknown permission schema/generator');
   if (value.blocked !== false) fail('blocked or malformed permission policy; correct the original source');
   for (const key of ['deny', 'ask', 'requiredTools']) strings(value[key], `permissions.${key}`);
   if (!Array.isArray(value.contributions) || !Array.isArray(value.diagnostics)) fail('malformed permission source records');
