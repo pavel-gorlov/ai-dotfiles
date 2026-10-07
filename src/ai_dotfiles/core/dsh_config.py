@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 from urllib.parse import urlsplit
 
+from ai_dotfiles.core import manifest, paths
 from ai_dotfiles.core.dependencies import topological_sort
 from ai_dotfiles.core.dsh_audit import (
     DSH_AUDIT_ROW_ID,
@@ -55,7 +56,7 @@ if TYPE_CHECKING:
 
 
 DSH_CONFIG_SCHEMA_VERSION = 1
-DSH_CONFIG_GENERATOR_VERSION = 1
+DSH_CONFIG_GENERATOR_VERSION = 2
 DSH_MCP_PACKAGE = "@deepseek-ai/dsh-mcp-client"
 Scope = Literal["global", "project"]
 SourceKind = Literal["settings", "mcp", "native"]
@@ -174,6 +175,7 @@ class DshConfigPlan:
     rows: tuple[dict[str, object], ...] = ()
     custom_skill_dirs: tuple[str, ...] = ()
     local_sources: tuple[DshLocalSource, ...] = ()
+    permission_modes: tuple[tuple[Path, manifest.DshPermissionMode, str], ...] = ()
 
     @property
     def blocked(self) -> bool:
@@ -718,12 +720,40 @@ def collect_dsh_configuration(
     source means recomputing this declarative union, so other sources survive.
     """
     ordered = sorted(sources, key=lambda source: source.scope == "project")
+    permission_manifests = {"global": paths.global_manifest_path()}
+    if layout.project_root is not None:
+        permission_manifests["project"] = paths.project_manifest_path(
+            layout.project_root
+        )
+    permission_modes: dict[Scope, manifest.DshPermissionMode] = {
+        "global": "strict",
+        "project": "strict",
+    }
+    manifest_provenance: dict[Scope, DshProvenance] = {}
+    for scope in permission_modes:
+        path = permission_manifests.get(scope)
+        if path is None or not any(source.scope == scope for source in ordered):
+            continue
+        if path.exists():
+            data, provenance = _load(
+                DshConfigSource(
+                    path, "settings", scope, "manifest", str(path), path.parent
+                ),
+                layout,
+            )
+            if not isinstance(data, dict):
+                raise ConfigError(f"Manifest {path} must contain a JSON object")
+            permission_modes[scope] = manifest.validate_dsh_permission_mode(
+                data.get("dsh_permission_mode", "strict"), path=path
+            )
+            manifest_provenance[scope] = provenance
     records: list[dict[str, object]] = []
     diagnostics: list[DshDiagnostic] = []
     policies: list[DshPermissionPolicy] = []
     env: dict[str, str] = {}
     patches: list[dict[str, object]] = []
     native = list(contributions)
+    acknowledged_modes: dict[Path, tuple[manifest.DshPermissionMode, str]] = {}
     for source in ordered:
         if source.scope not in ("global", "project") or source.kind not in (
             "settings",
@@ -767,9 +797,15 @@ def collect_dsh_configuration(
             native.extend(_mcp_rows(source, value, provenance, diagnostics))
             continue
         if "permissions" in value:
-            policies.append(
-                translate_permissions(value["permissions"], provenance=provenance)
+            policy = translate_permissions(
+                value["permissions"],
+                provenance=provenance,
+                mode=permission_modes[source.scope],
             )
+            policies.append(policy)
+            if any(item.code == "DEFAULT_MODE_NATIVE" for item in policy.diagnostics):
+                part = manifest_provenance[source.scope]
+                acknowledged_modes[part.source] = ("native", part.source_sha256)
         for key in value.keys() - {"permissions", "env", "hooks"}:
             diagnostics.append(
                 _gap(
@@ -828,6 +864,9 @@ def collect_dsh_configuration(
         tuple(diagnostics),
         local_sources=tuple(
             source.local_source for source in ordered if source.local_source is not None
+        ),
+        permission_modes=tuple(
+            (path, mode, digest) for path, (mode, digest) in acknowledged_modes.items()
         ),
     )
 
@@ -954,6 +993,9 @@ def attach_dsh_config_outputs(
     keys = {output.path for output in install.outputs}
     return replace(
         install,
+        permission_modes=tuple(
+            dict.fromkeys((*install.permission_modes, *config.permission_modes))
+        ),
         resources=tuple(resources),
         outputs=(
             *install.outputs,

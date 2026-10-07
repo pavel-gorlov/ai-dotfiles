@@ -668,15 +668,16 @@ def test_generated_modules_and_sources_have_generator_drift(tmp_path: Path) -> N
     record = result.inventory.records["ai-dotfiles/bridge.mjs"]
     assert record["provenance"][0]["origin"] == "builtin"
     assert record["provenance"][0]["element"] == "dsh-bridge"
-    assert record["generators"] == {"bridge": 1}
-    bumped = replace(module, generators={"bridge": 2})
+    assert record["generators"] == module.generators
+    bumped = replace(module, generators={"bridge": module.generators["bridge"] + 1})
     assert output_drift(bumped, record) == ("generator changed",)
     result = apply_dsh_install(
         replace(plan, outputs=tuple(bumped if o == module else o for o in plan.outputs))
     )
-    assert result.inventory.records["ai-dotfiles/bridge.mjs"]["generators"] == {
-        "bridge": 2
-    }
+    assert (
+        result.inventory.records["ai-dotfiles/bridge.mjs"]["generators"]
+        == bumped.generators
+    )
     assert result.changed_paths == (layout.provenance_path,)
 
 

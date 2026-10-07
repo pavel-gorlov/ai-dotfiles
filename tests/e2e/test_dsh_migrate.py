@@ -104,6 +104,62 @@ def _domain(catalog: Path) -> None:
     _write(domain / "fake.mjs", "process.exit(0);\n")
 
 
+@pytest.mark.integration
+@pytest.mark.parametrize("scope", ["project", "global"])
+def test_native_mode_lifecycle_and_revocation_preserve_original_claude_auto(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scope: str
+) -> None:
+    root = _project(tmp_path, monkeypatch, ["@policy"], ["dsh"])
+    storage = tmp_path / "storage"
+    raw = (
+        b'{ "permissions": {"defaultMode":"auto"},\r\n'
+        b' "skipAutoPermissionPrompt":true }\r\n'
+    )
+    original = _write(storage / "global/settings.json", raw.decode())
+    fragment = _write(storage / "catalog/policy/settings.fragment.json", raw.decode())
+    _skill(storage / "catalog", "extra")
+    args = ("-g",) if scope == "global" else ()
+    selected = (
+        storage / "global.json" if scope == "global" else root / "ai-dotfiles.json"
+    )
+    _json(selected, {"packages": ["@policy"], "targets": ["dsh"]})
+    strict = _invoke("install", *args, exit_code=1)
+    assert "defaultMode" in strict.output
+    _json(
+        selected,
+        {"packages": ["@policy"], "targets": ["dsh"], "dsh_permission_mode": "native"},
+    )
+    _invoke("install", *args)
+    if scope == "project":
+        local = _write(root / ".claude/settings.local.json", raw.decode())
+        preview = _invoke("migrate", "--to", "dsh", "--dry-run")
+        assert (
+            "DEFAULT_MODE_NATIVE" in preview.output
+            and "READY for apply" in preview.output
+        )
+        _invoke("migrate", "--to", "dsh")
+        assert local.read_bytes() == raw
+    _invoke("add", "skill:extra", *args)
+    _invoke("remove", "skill:extra", *args)
+    _invoke("status", *args)
+    _invoke("reconcile", *args, "--check")
+    layout = global_layout() if scope == "global" else project_layout(root)
+    before = _snapshot(layout.dsh_dir)
+    value = json.loads(selected.read_bytes())
+    value["dsh_permission_mode"] = "strict"
+    _json(selected, value)
+    status = _invoke("status", *args, exit_code=1)
+    assert "defaultMode" in status.output
+    refused = _invoke("reconcile", *args, exit_code=1)
+    assert "defaultMode" in refused.output
+    assert _snapshot(layout.dsh_dir) == before
+    value["dsh_permission_mode"] = "native"
+    _json(selected, value)
+    _invoke("reconcile", *args)
+    _invoke("reconcile", *args, "--check")
+    assert fragment.read_bytes() == original.read_bytes() == raw
+
+
 def test_migration_help_default_and_unknown_target(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

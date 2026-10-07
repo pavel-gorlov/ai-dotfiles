@@ -27,7 +27,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Literal, TypedDict, cast
 
-from ai_dotfiles.core import agents_md
+from ai_dotfiles.core import agents_md, manifest
 from ai_dotfiles.core.codex_local_registry import load_local_registry, registry_path
 from ai_dotfiles.core.codex_render import split_body
 from ai_dotfiles.core.dsh_audit import (
@@ -142,6 +142,7 @@ class DshInstallPlan:
     outputs: tuple[DshOutput, ...]
     permissions: DshPermissionPolicy
     instructions: ProjectInstructionPlan | None
+    permission_modes: tuple[tuple[Path, manifest.DshPermissionMode, str], ...] = ()
 
     @property
     def desired_output_keys(self) -> frozenset[str]:
@@ -1049,6 +1050,15 @@ def preflight_dsh_install(
     retirement/prune and the desired/protected deletion union belong to them.
     This read-only operation never creates roots, profiles or snapshots.
     """
+    for path, mode, digest in plan.permission_modes:
+        if (
+            manifest.get_dsh_permission_mode(path) != mode
+            or _sha(path.read_bytes()) != digest
+        ):
+            raise ConfigError(
+                f"DSH permission mode changed after planning: {path}; "
+                "recollect the original sources before activation"
+            )
     _validate_output_plan(plan)
     _guard_local_registries(plan.layout)
     inventory = read_dsh_inventory(plan.layout)

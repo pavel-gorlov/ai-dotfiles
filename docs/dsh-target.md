@@ -192,6 +192,29 @@ deny/cancel/ask and the sandbox. A child with native approval `never` rejects as
 without an approval bypass. This is a bounded adapter, not a complete Claude
 permission engine or a security isolation mechanism.
 
+Both `ai-dotfiles.json` and `global.json` accept the optional top-level
+`"dsh_permission_mode": "strict" | "native"`. Missing means `strict`;
+invalid values fail. Strict mode blocks Claude `permissions.defaultMode`,
+including `"auto"`, because it has no implemented native equivalent.
+
+To retain Claude auto while using DSH's existing native policy, set
+`"dsh_permission_mode": "native"` in the manifest of **each original source
+scope** that contains `permissions.defaultMode: "auto"`. For global Claude
+settings, use `~/.ai-dotfiles/global.json` (or `$AI_DOTFILES_HOME/global.json`);
+a project choice cannot acknowledge a global source. This reports
+`DEFAULT_MODE_NATIVE` as a nonblocking limitation, retaining the exact raw value,
+source hash and provenance. `skipAutoPermissionPrompt` remains a nonblocking
+`SETTINGS_FIELD_UNMAPPED` limitation.
+
+This acknowledgement does not enable DSH Auto, select a preset, change approval
+or sandbox defaults, or generate allow grants. Other defaultMode values, unknown
+fields, invalid types and unrepresentable deny/ask entries still block. The
+choice applies before source merging throughout install/add/remove, migration,
+status/reconcile and fresh managed launch. Revoking it blocks affected activation
+and prepared plans before writes or native readiness. After editing a manifest,
+run `ai-dotfiles reconcile` in that scope (`-g` for global), then restart managed
+DSH. Claude source files and native profiles remain unchanged.
+
 ## Hooks
 
 All origins feed one generated `hooks.json` and

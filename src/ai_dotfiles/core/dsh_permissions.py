@@ -29,8 +29,9 @@ from ai_dotfiles.core.dsh_render import (
     DshProvenance,
     native_tool_names,
 )
+from ai_dotfiles.core.manifest import DshPermissionMode
 
-DSH_PERMISSION_GENERATOR_VERSION = 1
+DSH_PERMISSION_GENERATOR_VERSION = 2
 DSH_PERMISSION_SCHEMA_VERSION = 1
 PermissionDecision = Literal["deny", "ask"]
 
@@ -214,7 +215,10 @@ def _gap(
 
 
 def translate_permissions(
-    permissions: object, *, provenance: DshProvenance
+    permissions: object,
+    *,
+    provenance: DshProvenance,
+    mode: DshPermissionMode = "strict",
 ) -> DshPermissionPolicy:
     """Translate one original source's permissions object without editing it.
 
@@ -223,6 +227,8 @@ def translate_permissions(
     is not stripped and Tool(argument), even Tool() or Tool(*), stays unmapped.
     Invalid source shapes and unknown fields get blocking diagnostics, while
     valid allow entries are retained as nonblocking unimplemented grants.
+    Explicit native mode acknowledges only defaultMode="auto" as a reported
+    translation gap. It never changes native permissions, presets or sandbox.
     """
     if not isinstance(permissions, Mapping):
         return DshPermissionPolicy(
@@ -307,6 +313,21 @@ def translate_permissions(
                     )
     for key, value in permissions.items():
         if key not in ("deny", "ask", "allow"):
+            if key == "defaultMode" and value == "auto" and mode == "native":
+                gaps.append(
+                    _gap(
+                        provenance,
+                        "permissions['defaultMode']",
+                        value,
+                        "DEFAULT_MODE_NATIVE",
+                        "Claude defaultMode=auto has no implemented native "
+                        "equivalent; this source scope explicitly acknowledges "
+                        "the limitation via dsh_permission_mode=native. DSH keeps "
+                        "its existing permissions, presets and sandbox decisions",
+                        blocking=False,
+                    )
+                )
+                continue
             gaps.append(
                 _gap(
                     provenance,

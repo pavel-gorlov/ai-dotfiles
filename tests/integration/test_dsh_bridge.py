@@ -556,13 +556,19 @@ def test_audit_generator_config_module_and_ownership_drift(tmp_path: Path) -> No
     )
     from ai_dotfiles.core.dsh_layout import project_layout
 
-    assert DSH_AUDIT_GENERATOR_VERSION == 2
-    assert DshAuditRequirements().as_dict()["generator"] == 2
-    assert "// generator: 2\n" in audit_module_text()
-    assert "export const generator = 2;" in audit_module_text()
+    assert DshAuditRequirements().as_dict()["generator"] == DSH_AUDIT_GENERATOR_VERSION
+    assert f"// generator: {DSH_AUDIT_GENERATOR_VERSION}\n" in audit_module_text()
+    assert (
+        f"export const generator = {DSH_AUDIT_GENERATOR_VERSION};"
+        in audit_module_text()
+    )
     plan = plan_dsh_install(project_layout(tmp_path))
     result = apply_dsh_install(plan)
-    output = next(item for item in plan.outputs if item.generators == {"audit": 2})
+    output = next(
+        item
+        for item in plan.outputs
+        if item.generators == {"audit": DSH_AUDIT_GENERATOR_VERSION}
+    )
     record = result.inventory.records["ai-dotfiles/audit.mjs"]
     assert output_drift(output, record) == ()
     record["generators"] = {"audit": 1}

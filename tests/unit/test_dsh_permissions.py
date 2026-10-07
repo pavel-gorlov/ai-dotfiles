@@ -6,6 +6,7 @@ import copy
 import json
 from pathlib import Path
 from types import MappingProxyType
+from typing import cast
 
 import pytest
 
@@ -17,6 +18,7 @@ from ai_dotfiles.core.dsh_permissions import (
     translate_permissions,
 )
 from ai_dotfiles.core.dsh_render import DshProvenance
+from ai_dotfiles.core.manifest import DshPermissionMode
 
 _EXACT_TOOLS = [
     ("Read", ("read", "read_image")),
@@ -213,6 +215,62 @@ def test_unknown_permission_fields_cannot_select_a_preset_or_drop_restrictions(
     assert policy.diagnostics[0].code == "FIELD_UNMAPPED"
     assert policy.diagnostics[0].field == f"permissions[{field!r}]"
     assert "inferring a DSH preset" in policy.diagnostics[0].reason
+
+
+@pytest.mark.parametrize("mode", ["strict", "native"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "auto",
+        "default",
+        "acceptEdits",
+        "bypassPermissions",
+        "dontAsk",
+        "plan",
+        "Auto",
+        None,
+        True,
+        1,
+        [],
+        {},
+    ],
+)
+def test_native_acknowledges_only_exact_auto_and_never_grants(
+    mode: str, value: object
+) -> None:
+    provenance = _provenance()
+    raw = {"defaultMode": value, "deny": ["Write"], "ask": ["Bash"]}
+    policy = translate_permissions(
+        raw, provenance=provenance, mode=cast(DshPermissionMode, mode)
+    )
+    assert policy.blocked is not (mode == "native" and value == "auto")
+    assert policy.deny == ("write",) and policy.ask == ("bash",)
+    assert policy.gaps[0].value == value
+    assert policy.gaps[0].provenance == provenance
+    assert policy.gaps[0].diagnostic.blocking == policy.blocked
+    assert raw == {"defaultMode": value, "deny": ["Write"], "ask": ["Bash"]}
+
+
+@pytest.mark.parametrize(
+    "restriction",
+    [
+        {"deny": ["Bash(git:*)"]},
+        {"ask": ["Unknown"]},
+        {"deny": None},
+        {"unknown": True},
+        {"allow": [False]},
+    ],
+)
+def test_native_auto_acknowledgement_never_waives_other_permission_gaps(
+    restriction: dict[str, object],
+) -> None:
+    policy = translate_permissions(
+        {"defaultMode": "auto", **restriction}, provenance=_provenance(), mode="native"
+    )
+    assert policy.blocked
+    auto = next(gap for gap in policy.gaps if gap.value == "auto")
+    assert not auto.diagnostic.blocking
+    assert any(item.blocking for item in policy.diagnostics)
 
 
 def test_names_deduplicate_but_every_source_entry_and_origin_survives_merge() -> None:
