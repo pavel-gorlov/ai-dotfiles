@@ -3,7 +3,7 @@
 // identity/namespace conflicts which require evaluation are refused.
 import { createRequire } from 'node:module';
 import { readFileSync, realpathSync } from 'node:fs';
-import { extname, isAbsolute } from 'node:path';
+import { extname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const VERSION = '0.2.0-rc.2';
@@ -333,16 +333,19 @@ function assertEffectiveDomainNamespaces(entries, chosen, selection, bindings, c
 
 /** No initProfile/loadProfile/prepareProfile/runProfile/dump-config or boot here. */
 export async function inspectComposition(native, request) {
+  return inspectProfileComposition(native, request);
+}
+
+// Candidate profiles are internal, detached native layer snapshots. They are
+// never accepted by the stdin request protocol and never reconcile a Loader.
+function inspectProfileComposition(native, request, candidateProfile) {
   const { boot } = native;
   const profileDir = absolute(request.profileDir, 'profileDir');
   const home = absolute(request.home, 'home');
   const cwd = absolute(request.cwd, 'cwd');
   const origin = profileDir;
-  let manifest;
-  try { manifest = boot.readProfileManifest('ai-dotfiles', profileDir); }
-  catch (error) { refuse('PROFILE_UNAVAILABLE', origin, origin, 'package.json', String(error)); }
-  if ((manifest.dsh?.profile?.bundles ?? []).includes('@deepseek-ai/dsh-experimental-schedule-bundle')) refuse('PROFILE_WRITE_REQUIRED', origin, origin, 'dsh.profile.bundles', 'native loadProfileDirectory would remove a retired schedule bundle and rewrite package.json; inspection refuses user-profile repair');
-  const profile = boot.loadProfileDirectory('ai-dotfiles', profileDir, native.runtimeAnchor);
+  assertReadOnlyProfile(native, profileDir);
+  const profile = candidateProfile ?? boot.loadProfileDirectory('ai-dotfiles', profileDir, native.runtimeAnchor);
   if (profile.skippedBundles.length) refuse('PROFILE_BUNDLE_UNAVAILABLE', origin, origin, 'dsh.profile.bundles', profile.skippedBundles.map(item => `${item.packageName}: ${item.reason}`).join('; '));
   const cliLayers = (request.cliPatchFiles ?? []).map(file => ({ origin: absolute(file, 'CLI overlay'), element: 'CLI', patches: boot.loadOverlayPatches('ai-dotfiles', file) }));
   const cli = cliLayers.flatMap(layer => layer.patches);
@@ -481,6 +484,63 @@ export async function inspectComposition(native, request) {
   }
   return { entries, patches, selection, diagnostics, valid: !diagnostics.some(item => item.blocking),
     profile: { name: profile.name, dir: profile.dir, patchPath: profile.patchPath, startedBundles: context.startedBundles } };
+}
+
+function assertReadOnlyProfile(native, profileDir) {
+  let manifest;
+  try { manifest = native.boot.readProfileManifest('ai-dotfiles', profileDir); }
+  catch (error) { refuse('PROFILE_UNAVAILABLE', profileDir, profileDir, 'package.json', String(error)); }
+  if ((manifest.dsh?.profile?.bundles ?? []).includes('@deepseek-ai/dsh-experimental-schedule-bundle')) refuse('PROFILE_WRITE_REQUIRED', profileDir, profileDir, 'dsh.profile.bundles', 'native loadProfileDirectory would remove a retired schedule bundle and rewrite package.json; inspection refuses user-profile repair');
+}
+
+/** Read-only native settings layers, with the complete managed composition guard. */
+export function inspectSettingsComposition(native, request, candidatePatches) {
+  assertReadOnlyProfile(native, request.profileDir);
+  const profile = native.boot.loadProfileDirectory('ai-dotfiles', request.profileDir,
+    native.runtimeAnchor, { userLayer: false });
+  profile.patches = candidatePatches === undefined
+    ? native.boot.loadOptionalPatches('ai-dotfiles', profile.patchPath) ?? []
+    : structuredClone(candidatePatches);
+  if (candidatePatches !== undefined) {
+    // Native parsePatchList anchors inserted filesystem plugin names beside
+    // the patch. Candidate data uses exactly that same origin, without writes.
+    const visit = row => {
+      if (typeof row.name === 'string' && (isAbsolute(row.name)
+        || row.name.startsWith('./') || row.name.startsWith('../')))
+        row.name = pathToFileURL(resolve(profile.dir, row.name)).href;
+      if (row.group && Array.isArray(row.config)) row.config.forEach(visit);
+    };
+    for (const patch of profile.patches) patch.insert?.forEach(visit);
+  }
+  const context = { dir: profile.dir, installAnchor: native.runtimeAnchor,
+    patchPath: profile.patchPath, home: request.home, overlays: [],
+    telemetryDisabledEnv: request.telemetryDisabledEnv };
+  const rows = native.boot.composeEntries([native.boot.readProfilePatches('ai-dotfiles', context, profile)]);
+  const flat = entriesIn(rows, profile.dir);
+  const domains = (request.domainLayers ?? []).flatMap(layer => layer.patches);
+  const higher = [...native.boot.loadOptionalPatches('ai-dotfiles', `${request.home}/cordis.patch.yml`) ?? [],
+    ...domains, ...(request.cliPatchFiles ?? []).flatMap(path => native.boot.loadOverlayPatches('ai-dotfiles', path))];
+  const blocked = new Set(higher.filter(row => row.config !== undefined).map(row => row.id));
+  for (const patch of domains) if (patch.insert)
+    for (const row of entriesIn(patch.insert, 'domain', { presets: true })) blocked.add(row.id);
+  const counts = new Map();
+  for (const row of flat) counts.set(row.id, (counts.get(row.id) ?? 0) + 1);
+  const editableIds = flat.filter(row => typeof row.id === 'string'
+    && counts.get(row.id) === 1 && !blocked.has(row.id)).map(row => row.id);
+  const inspected = inspectProfileComposition(native, request, profile);
+  return { ...inspected, loadedProfile: profile, editableIds };
+}
+
+/** Inherited values exclude only explicit profile config overrides, as native does. */
+export function inheritedSettingsConfig(native, request, profile, id) {
+  const patches = profile.patches.map(patch => {
+    if (patch.id !== id || patch.insert !== undefined) return patch;
+    const rest = { ...patch };
+    delete rest.config;
+    return rest;
+  });
+  const inherited = inspectProfileComposition(native, request, { ...profile, patches });
+  return structuredClone(entriesIn(inherited.entries, profile.dir).find(row => row.id === id)?.config ?? {});
 }
 function same(left, right) {
   if (left === right) return true;
