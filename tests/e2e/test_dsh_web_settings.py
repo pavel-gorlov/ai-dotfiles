@@ -20,7 +20,8 @@ SETTINGS_PROOF = r"""
 import assert from 'node:assert/strict';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-export const inject = ['settingsController', 'webServer', 'connection'];
+export const inject = ['settingsController', 'webServer', 'connection',
+  'directoryPicker'];
 export function apply(ctx) {
   ctx.appReady.onReady(() => setTimeout(async () => {
     try {
@@ -55,12 +56,34 @@ export function apply(ctx) {
       const welcome = find(describe, 'ui-settings-general');
       assert.ok(welcome);
       const entries = [...ctx.loader.entries()];
-      for (const suffix of ['dsh-host-directory-picker-native',
-        'dsh-client-ui-directory-picker-native']) {
-        const entry = entries.find(row =>
+      // The isolated fixture has no display or SSH markers. RC2 therefore
+      // chooses native on darwin/win32 and browse on headless Linux.
+      assert.equal(ctx.webServer.host, '127.0.0.1');
+      for (const key of ['DISPLAY', 'WAYLAND_DISPLAY', 'SSH_CONNECTION', 'SSH_TTY'])
+        assert.equal(process.env[key], undefined, `isolated fixture ${key}`);
+      const pickerBackend = ['darwin', 'win32'].includes(process.platform)
+        ? 'native' : 'browse';
+      const opposite = pickerBackend === 'native' ? 'browse' : 'native';
+      for (const suffix of [`dsh-host-directory-picker-${pickerBackend}`,
+        `dsh-client-ui-directory-picker-${pickerBackend}`]) {
+        const matches = entries.filter(row =>
           row.options.name === `@deepseek-ai/${suffix}`);
-        assert.equal(entry?.fiber?.state, 2, `directory picker ${suffix} mounted`);
+        assert.equal(matches.length, 1, `one directory picker ${suffix}`);
+        assert.equal(matches[0].fiber?.state, 2,
+          `directory picker ${suffix} mounted`);
       }
+      for (const suffix of [`dsh-host-directory-picker-${opposite}`,
+        `dsh-client-ui-directory-picker-${opposite}`])
+        assert.ok(!entries.some(row => row.options.name === `@deepseek-ai/${suffix}`));
+      const capability = ctx.directoryPicker.capability();
+      assert.equal(capability.kind, pickerBackend);
+      assert.equal(capability, ctx.directoryPicker.capability());
+      if (pickerBackend === 'browse') {
+        const listing = await capability.list(process.cwd());
+        assert.equal(listing.path, process.cwd());
+        assert.ok(listing.entries.some(row => row.name === 'picker-child'
+          && row.path === `${process.cwd()}/picker-child`));
+      } else assert.equal(typeof capability.pick, 'function');
       if (process.env.SETTINGS_PHASE === 'restart') {
         assert.equal(welcome.value.welcomeNoticeVersion, '2026-09-28.1');
         assert.equal(find(describe, 'fixture-preferences').secrets[0].set, true);
@@ -154,7 +177,7 @@ export function apply(ctx) {
       assert.equal(managed(), digest);
       writeFileSync(process.env.SETTINGS_PROOF, JSON.stringify({
         phase: process.env.SETTINGS_PHASE, namespaces: describe.value.namespaces.length,
-        pickerMounted: true, managedUnchanged: true }), { mode: 0o600 });
+        pickerBackend, pickerMounted: true, managedUnchanged: true }), { mode: 0o600 });
       ctx.appExit(23);
     } catch (error) {
       process.stderr.write(`Settings HTTP proof failed: ${error.stack}\n`);
@@ -170,6 +193,7 @@ def managed_web(
     managed_fixture: tuple[Path, Path, DshNativeRuntime, dict[str, str]], tmp_path: Path
 ) -> tuple[Path, Path, DshNativeRuntime, dict[str, str]]:
     project, directory, runtime, env = managed_fixture
+    (project / "picker-child").mkdir()
     (directory / "package.json").write_text(
         json.dumps(
             {
@@ -248,6 +272,9 @@ def test_native_http_ack_refresh_restart_refusals_secrets_and_picker(
         )
         proof = json.loads(Path(env["SETTINGS_PROOF"]).read_text())
         assert proof["pickerMounted"] and proof["managedUnchanged"]
+        assert proof["pickerBackend"] == (
+            "native" if sys.platform in ("darwin", "win32") else "browse"
+        )
         assert proof["namespaces"] > 0
     assert all(path.read_bytes() == before for path, before in immutable.items())
     assert not list(directory.glob("*.lock"))
@@ -255,6 +282,7 @@ def test_native_http_ack_refresh_restart_refusals_secrets_and_picker(
     stored = (directory / "cordis.patch.yml").read_text()
     assert "ai-dotfiles-host" not in stored and "ai-dotfiles-audit" not in stored
     assert "directory-picker-native" not in stored
+    assert "directory-picker-browse" not in stored
 
 
 @pytest.mark.parametrize("layer", ["home", "domain", "cli"])
