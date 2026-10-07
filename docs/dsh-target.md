@@ -221,10 +221,11 @@ The additional **per-command hook nudge is absent**: the bridge ignores
 PreToolUse `additionalContext`. Managed launch still requires actual policy
 delivery and agent availability through its native composition/selected-tree
 audit before Ready or a model turn. Changed or missing stock sources, an
-unproved local/custom origin, or unavailable policy/agent retain an actionable
-blocking diagnostic. Other `if` handlers and required hook semantics remain
-blocked. This same guard applies to project/global catalog lifecycle and
-project-local migration; it does not edit Claude/Codex originals or profiles.
+unproved local/custom origin, or unavailable policy/agent retain one actionable
+blocking `.if` diagnostic per stock reminder. Unrelated problems are still
+reported. Other `if` handlers and required hook semantics remain blocked. This
+same guard applies to project/global catalog lifecycle and project-local
+migration; it does not edit Claude/Codex originals or profiles.
 
 | Event | Supported behavior | Payload/output limits |
 |---|---|---|

@@ -42,6 +42,19 @@ def test_fallback_requires_original_catalog_plan_and_guards_all_three_sources(
     unproven = collect_dsh_hooks(sources, layout)
     assert unproven.blocked and not unproven.hooks
     assert any("catalog resource is unproven" in d.reason for d in unproven.diagnostics)
+    blockers = [d for d in unproven.diagnostics if d.blocking]
+    assert len(blockers) == 2
+    assert {d.field for d in blockers} == {
+        "hooks.PreToolUse[0].hooks[0].if",
+        "hooks.PreToolUse[0].hooks[1].if",
+    }
+    assert all(
+        d.reason.startswith("Stock gitflow policy fallback unavailable:")
+        and "catalog resource is unproven" in d.reason
+        for d in blockers
+    )
+    with pytest.raises(ConfigError, match="catalog resource is unproven"):
+        unproven.contribution()
     hooks = collect_dsh_hooks(sources, layout, install_plans=(install,))
     assert not hooks.blocked and hooks.contribution() is None
     assert hooks.hooks == {}

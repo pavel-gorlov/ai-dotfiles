@@ -784,6 +784,7 @@ def collect_dsh_hooks(
                                 "agent delivery, or adapt this hook manually",
                             )
                         )
+                        continue
                     native = _handler(
                         source,
                         event,
