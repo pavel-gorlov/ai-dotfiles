@@ -44,6 +44,11 @@ from ai_dotfiles.core.codex_targets import (
     iter_codex_rule_plans,
 )
 from ai_dotfiles.core.dependencies import topological_sort
+from ai_dotfiles.core.dsh_admission import (
+    refused_diagnostics,
+    require_admission,
+    skipped_diagnostics,
+)
 from ai_dotfiles.core.dsh_config import (
     DshConfigPlan,
     DshConfigSource,
@@ -78,6 +83,7 @@ from ai_dotfiles.core.dsh_local_registry import (
     save_dsh_local_registry,
     validate_dsh_local_registry,
 )
+from ai_dotfiles.core.dsh_native import native_frontmatter_failure
 from ai_dotfiles.core.dsh_permissions import merge_permission_policies
 from ai_dotfiles.core.dsh_render import (
     DshAgentPayload,
@@ -103,6 +109,7 @@ from ai_dotfiles.core.errors import (
     ConfigError,
     ElementError,
     LinkError,
+    SourceError,
 )
 from ai_dotfiles.core.local_discovery import (
     is_catalog_managed_path,
@@ -217,12 +224,21 @@ class DshMigrationPlan:
     registry: DshLocalRegistry
 
     @property
+    def skipped(self) -> tuple[DshDiagnostic, ...]:
+        return skipped_diagnostics(self.diagnostics)
+
+    @property
+    def partial(self) -> bool:
+        return bool(self.skipped)
+
+    @property
     def diagnostics(self) -> tuple[DshDiagnostic, ...]:
         return (
             *self.inputs.diagnostics,
             *self.config.diagnostics,
             *self.config.permissions.diagnostics,
             *self.hooks.diagnostics,
+            *(item for _, item in self.install.source_errors),
         )
 
     @property
@@ -256,6 +272,14 @@ class DshMigrateReport:
     plan: DshMigrationPlan
     changed_paths: tuple[Path, ...] = ()
     dry_run: bool = False
+
+    @property
+    def skipped(self) -> tuple[DshDiagnostic, ...]:
+        return skipped_diagnostics(self.diagnostics)
+
+    @property
+    def partial(self) -> bool:
+        return bool(self.skipped)
 
 
 def _guard_file(project_root: Path, path: Path) -> DshSourceGuard:
@@ -453,7 +477,11 @@ def _command_result(
         )
     if any(item.blocking for item in diagnostics):
         return replace(
-            result, payload=None, diagnostics=tuple(diagnostics), status="MANUAL"
+            result,
+            payload=None,
+            diagnostics=tuple(diagnostics),
+            status="MANUAL",
+            native_name=result.payload.name,
         )
     return result
 
@@ -484,6 +512,8 @@ def merge_dsh_local_install(
         resources=(*catalog.resources, *local.resources),
         permissions=merge_permission_policies((catalog.permissions, local.permissions)),
         instructions=catalog.instructions,
+        strict=catalog.strict or local.strict,
+        source_errors=(*catalog.source_errors, *local.source_errors),
     )
     # Retain source link/copy modes and externally attached producer outputs.
     retained: dict[Path, DshOutput] = {}
@@ -492,7 +522,22 @@ def merge_dsh_local_install(
         if prior is not None and prior != output:
             raise ConfigError(f"Conflicting catalog/local DSH output: {output.path}")
         retained[output.path] = output
-    return replace(plan, outputs=tuple(retained.values()))
+    return replace(
+        plan,
+        outputs=tuple(retained.values()),
+        activation_diagnostics=(
+            *catalog.activation_diagnostics,
+            *local.activation_diagnostics,
+        ),
+        rejected_skill_sources=(
+            *catalog.rejected_skill_sources,
+            *local.rejected_skill_sources,
+        ),
+        rejected_skill_paths=(
+            *catalog.rejected_skill_paths,
+            *local.rejected_skill_paths,
+        ),
+    )
 
 
 def collect_dsh_local_inputs(
@@ -503,6 +548,7 @@ def collect_dsh_local_inputs(
     mode: InstallMode = "link",
     native_frontmatter: Mapping[Path, Mapping[str, object]] | None = None,
     registered_only: bool = False,
+    strict: bool = False,
 ) -> DshLocalInputs:
     """Discover fresh originals without snapshots, profiles or runtime writes.
 
@@ -534,6 +580,7 @@ def collect_dsh_local_inputs(
     agents: list[DshRenderResult[DshAgentPayload]] = []
     rules: list[DshRenderResult[DshRulePayload]] = []
     actions: list[DshMigrationAction] = []
+    source_errors: list[tuple[Path, DshDiagnostic]] = []
     guards = [
         registry_guard,
         *(_guard_file(root, root / source) for source in registry.sources),
@@ -572,31 +619,56 @@ def collect_dsh_local_inputs(
         if selected is not None and str(original.relative_to(root)) not in selected:
             continue
         guard_local_path(root, path, tree=element.type is ElementType.SKILL)
-        if element.type is ElementType.SKILL:
-            path /= "SKILL.md"
-            rendered: RenderResult = validate_skill(
-                path,
-                origin="local",
-                element=element.raw,
-                native_frontmatter=metadata.get(path),
+        try:
+            if element.type is ElementType.SKILL:
+                path /= "SKILL.md"
+                rendered: RenderResult = validate_skill(
+                    path,
+                    origin="local",
+                    element=element.raw,
+                    native_frontmatter=metadata.get(path),
+                )
+                rendered = native_frontmatter_failure(
+                    cast(DshRenderResult[DshSkillPayload], rendered), native_frontmatter
+                )
+                skills.append(rendered)
+            elif element.type is ElementType.AGENT:
+                rendered = render_agent(
+                    path,
+                    origin="local",
+                    element=element.raw,
+                    native_frontmatter=metadata.get(path),
+                )
+                rendered = native_frontmatter_failure(rendered, native_frontmatter)
+                agents.append(rendered)
+            else:
+                rendered = render_rule(
+                    path,
+                    origin="local",
+                    element=element.raw,
+                    native_frontmatter=metadata.get(path),
+                )
+                rendered = native_frontmatter_failure(rendered, native_frontmatter)
+                rules.append(rendered)
+        except SourceError as exc:
+            if element.type is ElementType.RULE:
+                raise
+            diagnostic = DshDiagnostic(
+                "SOURCE_UNAVAILABLE", "local", element.raw, "source", str(exc)
             )
-            skills.append(cast(DshRenderResult[DshSkillPayload], rendered))
-        elif element.type is ElementType.AGENT:
-            rendered = render_agent(
-                path,
-                origin="local",
-                element=element.raw,
-                native_frontmatter=metadata.get(path),
+            source_errors.append((path, diagnostic))
+            actions.append(
+                DshMigrationAction(
+                    path,
+                    element.type.value,
+                    element.raw,
+                    "native-" + element.type.value,
+                    "MANUAL",
+                    "MANUAL",
+                    (diagnostic,),
+                )
             )
-            agents.append(rendered)
-        else:
-            rendered = render_rule(
-                path,
-                origin="local",
-                element=element.raw,
-                native_frontmatter=metadata.get(path),
-            )
-            rules.append(rendered)
+            continue
         guards.append(_guard_file(root, path))
         results.append(rendered)
         actions.append(
@@ -628,7 +700,10 @@ def collect_dsh_local_inputs(
             ):
                 continue
             guard_local_path(root, command_source)
-            command = _command_result(command_source, metadata.get(command_source))
+            command = native_frontmatter_failure(
+                _command_result(command_source, metadata.get(command_source)),
+                native_frontmatter,
+            )
             commands.append(command)
             guards.append(_guard_file(root, command_source))
             actions.append(
@@ -719,9 +794,36 @@ def collect_dsh_local_inputs(
                 )
             )
     local = plan_dsh_install(
-        layout, skills=skills, agents=agents, rules=rules, mode=mode
+        layout,
+        skills=skills,
+        agents=agents,
+        rules=rules,
+        mode=mode,
+        strict=strict,
+        source_errors=source_errors,
     )
-    local = replace(local, outputs=(*local.outputs, *command_outputs))
+    local = replace(
+        local,
+        outputs=(*local.outputs, *command_outputs),
+        activation_diagnostics=tuple(
+            item for result in commands for item in result.diagnostics
+        ),
+        rejected_skill_sources=tuple(
+            result.provenance.source for result in commands if result.status != "READY"
+        ),
+        rejected_skill_paths=tuple(
+            layout.skills_dir / f"{name}.md"
+            for result in commands
+            if result.status != "READY"
+            for name in {
+                result.provenance.source.stem,
+                result.native_name,
+                result.payload.name if result.payload is not None else None,
+            }
+            if name is not None
+        ),
+    )
+    local.require_activatable()
     install = (
         merge_dsh_local_install(catalog_plan, local)
         if catalog_plan is not None
@@ -857,6 +959,7 @@ def plan_dsh_migration(
     *,
     config_sources: Sequence[DshConfigSource] = (),
     hook_sources: Sequence[DshHookSource] = (),
+    strict: bool = False,
 ) -> DshMigrationPlan:
     """Compose raw sources once, with exactly one combined hook contribution.
 
@@ -875,13 +978,18 @@ def plan_dsh_migration(
     for resource in hooks.resources:
         if resource.provenance.origin == "local":
             guard_local_path(inputs.layout.project_root, resource.source, tree=True)
-    contribution = None if hooks.blocked else hooks.contribution()
+    contribution = (
+        None if strict and hooks.blocked else hooks.contribution(strict=strict)
+    )
     contributions = (contribution,) if contribution is not None else ()
     config = collect_dsh_configuration(
-        sources, inputs.layout, contributions=contributions
+        sources, inputs.layout, contributions=contributions, strict=strict
     )
     install = inputs.install
-    if not config.blocked and not hooks.blocked:
+    if not refused_diagnostics(
+        (*config.diagnostics, *config.permissions.diagnostics, *hooks.diagnostics),
+        strict=strict,
+    ):
         assert inputs.layout.project_root is not None
         config = compose_dsh_configuration(
             config,
@@ -889,7 +997,7 @@ def plan_dsh_migration(
             target_plans=(project_target_plan(inputs.layout.project_root),),
         )
         if hooks.sources:
-            install = attach_dsh_hook_outputs(install, hooks)
+            install = attach_dsh_hook_outputs(install, hooks, strict=strict)
         install = attach_dsh_config_outputs(install, config)
         # Config's path-only producer knows JSON contributions; add the rendered
         # original provenance used by its aggregate rows. Empty compositions use
@@ -964,6 +1072,7 @@ def migrate_to_dsh(
     mode: InstallMode = "link",
     native_frontmatter: Mapping[Path, Mapping[str, object]] | None = None,
     dry_run: bool = False,
+    strict: bool = False,
 ) -> DshMigrateReport:
     """Project-only migration; dry-run writes zero bytes, including snapshots."""
     inputs = collect_dsh_local_inputs(
@@ -972,26 +1081,23 @@ def migrate_to_dsh(
         catalog_plan=catalog_plan,
         mode=mode,
         native_frontmatter=native_frontmatter,
+        strict=strict,
     )
     plan = plan_dsh_migration(
-        inputs, config_sources=config_sources, hook_sources=hook_sources
+        inputs, config_sources=config_sources, hook_sources=hook_sources, strict=strict
     )
     changed: tuple[Path, ...] = ()
     preflight_dsh_install(plan.install)
     if not dry_run:
-        if plan.blocked:
-            raise ConfigError(
-                "Cannot activate local DSH migration: "
-                + "; ".join(
-                    f"{item.origin} {item.element} {item.field}: {item.reason}"
-                    for item in plan.diagnostics
-                    if item.blocking
-                )
-            )
+        require_admission(
+            plan.diagnostics,
+            strict=strict,
+            context="Cannot activate local DSH migration",
+        )
         verify_dsh_local_inputs(plan.inputs)
         validate_dsh_local_registry(project_root, plan.registry)
         preflight_dsh_install(plan.install)
-        result = apply_dsh_install(plan.install)
+        result = apply_dsh_install(plan.install, strict=strict)
         changed = result.changed_paths
         if save_dsh_local_registry(project_root, plan.registry):
             changed += (plan.inputs.layout.local_registry_path,)
@@ -1031,6 +1137,7 @@ def plan_dsh_full_lifecycle(
     targets: Sequence[str],
     *,
     mode: InstallMode = "link",
+    strict: bool = False,
 ) -> DshReconcilePlan | None:
     """Plan full fresh reconciliation for opted-in or explicitly owned scopes.
 
@@ -1052,6 +1159,7 @@ def plan_dsh_full_lifecycle(
         targets=enabled_targets,
         include_catalog=enabled,
         mode=mode,
+        strict=strict,
     )
 
 
@@ -1063,6 +1171,7 @@ def migrate_project_to_dsh(
     *,
     mode: InstallMode = "link",
     dry_run: bool = False,
+    strict: bool = False,
 ) -> DshMigrateReport:
     """Merge fresh selected catalog/native inputs with full local migration.
 
@@ -1073,7 +1182,7 @@ def migrate_project_to_dsh(
     enabled_targets = tuple(target for target in Target if target.value in targets)
     selected = parse_elements(list(packages)) if Target.DSH in enabled_targets else []
     catalog_plan = collect_dsh_elements(
-        selected, layout, catalog, targets=enabled_targets, mode=mode
+        selected, layout, catalog, targets=enabled_targets, mode=mode, strict=strict
     )
     return migrate_to_dsh(
         project_root,
@@ -1082,6 +1191,7 @@ def migrate_project_to_dsh(
         config_sources=collect_dsh_config_sources(selected, catalog, layout),
         mode=mode,
         dry_run=dry_run,
+        strict=strict,
     )
 
 
@@ -1092,6 +1202,7 @@ def plan_dsh_catalog_lifecycle(
     targets: Sequence[str],
     *,
     mode: InstallMode = "link",
+    strict: bool = False,
 ) -> DshReconcilePlan | None:
     """Preflight catalog changes while refreshing only registered local sources.
 
@@ -1111,7 +1222,7 @@ def plan_dsh_catalog_lifecycle(
     local_inputs = None
     if project_root is not None and layout.local_registry_path.exists():
         catalog_plan = collect_dsh_elements(
-            selected, layout, catalog, targets=enabled_targets, mode=mode
+            selected, layout, catalog, targets=enabled_targets, mode=mode, strict=strict
         )
         local_inputs = collect_dsh_local_inputs(
             project_root,
@@ -1119,6 +1230,7 @@ def plan_dsh_catalog_lifecycle(
             catalog_plan=catalog_plan,
             mode=mode,
             registered_only=True,
+            strict=strict,
         )
     return plan_dsh_reconciliation(
         layout,
@@ -1128,6 +1240,7 @@ def plan_dsh_catalog_lifecycle(
         include_catalog=enabled,
         mode=mode,
         local_inputs=local_inputs,
+        strict=strict,
     )
 
 
@@ -1138,14 +1251,15 @@ def apply_dsh_catalog_lifecycle(
     targets: Sequence[str],
     *,
     mode: InstallMode = "link",
+    strict: bool = False,
 ) -> DshReconcileReport | None:
     """Apply one fresh registered-local/catalog plan before Codex shared writes."""
     from ai_dotfiles.core.dsh_reconcile import apply_dsh_reconciliation
 
     plan = plan_dsh_catalog_lifecycle(
-        project_root, packages, catalog, targets, mode=mode
+        project_root, packages, catalog, targets, mode=mode, strict=strict
     )
-    return apply_dsh_reconciliation(plan) if plan is not None else None
+    return apply_dsh_reconciliation(plan, strict=strict) if plan is not None else None
 
 
 def catalog_instruction_blocks(

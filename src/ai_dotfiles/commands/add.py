@@ -22,13 +22,18 @@ from ai_dotfiles.commands._codex_config_writer import (
     write_codex_mcp,
     write_codex_rules,
 )
-from ai_dotfiles.commands.install import _report_dsh_result
+from ai_dotfiles.commands.install import _report_codex_skips, _report_dsh_result
 from ai_dotfiles.core import (
     claude_copy,
     codex_global,
     codex_install,
     manifest,
     symlinks,
+)
+from ai_dotfiles.core.catalog_admission import (
+    CodexAdmissionReport,
+    apply_admitted_codex_pair,
+    preflight_codex_pairs,
 )
 from ai_dotfiles.core.codex_layout import CodexLayout, global_layout, project_layout
 from ai_dotfiles.core.codex_targets import (
@@ -116,7 +121,13 @@ def _link_element(
         symlinks.safe_symlink(source, target, backup_dir())
 
 
-def _link_codex_element(element: Element, layout: CodexLayout, catalog: Path) -> None:
+def _link_codex_element(
+    element: Element,
+    layout: CodexLayout,
+    catalog: Path,
+    *,
+    admission: CodexAdmissionReport | None = None,
+) -> None:
     """Render and write Codex artefacts for a single element.
 
     Skills become ``<skills_dir>/<name>/`` (generated ``SKILL.md`` +
@@ -129,6 +140,7 @@ def _link_codex_element(element: Element, layout: CodexLayout, catalog: Path) ->
     global scope — warned). Domain ``hooks/`` has no Codex surface — the
     skip is reported.
     """
+    admission = admission or preflight_codex_pairs([element], layout, catalog)
     for sub in codex_skipped_domain_subdirs(element, catalog):
         ui.warn(
             f"@{element.name}: {sub}/ skipped for the Codex target "
@@ -142,20 +154,11 @@ def _link_codex_element(element: Element, layout: CodexLayout, catalog: Path) ->
                 f"skills/rule-{name} instead."
             )
     for pair in iter_codex_pairs(element, layout, catalog):
-        if pair.element_type is ElementType.SKILL:
-            if (
-                layout.project_root is None
-                and codex_install.skill_symlink_ok(pair.source, pair.target.name)[0]
-            ):
-                codex_install.symlink_codex_skill(
-                    pair.source, pair.target, relative=False
-                )
-            else:
-                codex_install.install_codex_skill(pair.source, pair.target)
-        elif pair.element_type is ElementType.RULE:
-            codex_install.install_codex_rule_skill(pair.source, pair.target)
-        else:
-            codex_install.install_codex_agent(pair.source, pair.target)
+        entry = admission.by_pair[pair]
+        if entry.error is not None:
+            ui.warn(f"[SKIPPED ERROR] Codex {pair.source}: {entry.error}")
+            continue
+        apply_admitted_codex_pair(pair, global_scope=layout.project_root is None)
     for plan in iter_codex_rule_plans(element, layout, catalog):
         if layout.project_root is None:
             codex_global.ensure_not_reserved(plan.source)
@@ -235,7 +238,17 @@ def _maybe_sync_gitignore(
     help="Do not touch .gitignore even if the project manages vendored "
     "symlink paths.",
 )
-def add(packages: tuple[str, ...], is_global: bool, no_gitignore: bool) -> None:
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Refuse source/adaptation errors instead of installing the supported subset.",
+)
+def add(
+    packages: tuple[str, ...],
+    is_global: bool,
+    no_gitignore: bool,
+    strict: bool = False,
+) -> None:
     """Add PACKAGES to the manifest and install them for selected targets."""
     try:
         user_elements = parse_elements(list(packages))
@@ -261,9 +274,6 @@ def add(packages: tuple[str, ...], is_global: bool, no_gitignore: bool) -> None:
             if "codex" in targets
             else None
         )
-        if "claude" in targets:
-            claude_dir.mkdir(parents=True, exist_ok=True)
-
         # Expand each user-supplied element to include its transitive deps,
         # in topological order (deps appear first). The user's explicit
         # ones come at the end of each subtree so the manifest reads
@@ -272,24 +282,32 @@ def add(packages: tuple[str, ...], is_global: bool, no_gitignore: bool) -> None:
         explicit_set = {el.raw for el in user_elements}
 
         raw_items = [element.raw for element in expanded]
-        added = manifest.add_packages(manifest_path, raw_items)
-        added_set = set(added)
-
         manifest_name = manifest_path.name
-
-        if not added:
+        existing_packages = manifest.get_packages(manifest_path)
+        if all(raw in existing_packages for raw in raw_items):
             ui.info(f"All packages already installed in {manifest_name}")
             return
-
-        ui.info(f"Added to {manifest_name}:")
-        all_packages = manifest.get_packages(manifest_path)
+        all_packages = list(dict.fromkeys([*existing_packages, *raw_items]))
+        codex_admission = (
+            preflight_codex_pairs(
+                parse_elements(all_packages), codex_layout, catalog, strict=strict
+            )
+            if codex_layout is not None
+            else None
+        )
         plan_dsh_catalog_lifecycle(
             project_root,
             all_packages,
             catalog,
             targets,
             mode="copy" if link_mode == "copy" else "link",
+            strict=strict,
         )
+        added = manifest.add_packages(manifest_path, raw_items)
+        added_set = set(added)
+        ui.info(f"Added to {manifest_name}:")
+        if "claude" in targets:
+            claude_dir.mkdir(parents=True, exist_ok=True)
         for element in expanded:
             if element.raw not in added_set:
                 continue
@@ -323,12 +341,17 @@ def add(packages: tuple[str, ...], is_global: bool, no_gitignore: bool) -> None:
                 catalog,
                 targets,
                 mode="copy" if link_mode == "copy" else "link",
+                strict=strict,
             )
         )
         if codex_layout is not None:
+            if codex_admission is not None:
+                _report_codex_skips(codex_admission)
             for element in expanded:
                 if element.raw in added_set:
-                    _link_codex_element(element, codex_layout, catalog)
+                    _link_codex_element(
+                        element, codex_layout, catalog, admission=codex_admission
+                    )
             # The codex_config writers round-trip the WHOLE managed region,
             # so feed them every package now in the manifest — not just the
             # freshly-added ones. Passing a delta would drop a sibling

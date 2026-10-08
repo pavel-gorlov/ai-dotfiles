@@ -21,6 +21,11 @@ from urllib.parse import urlsplit
 
 from ai_dotfiles.core import manifest, paths
 from ai_dotfiles.core.dependencies import topological_sort
+from ai_dotfiles.core.dsh_admission import (
+    admitted_permissions,
+    require_admission,
+    skipped_diagnostics,
+)
 from ai_dotfiles.core.dsh_audit import (
     DSH_AUDIT_ROW_ID,
     DSH_BRIDGE_ROW_ID,
@@ -56,7 +61,7 @@ if TYPE_CHECKING:
 
 
 DSH_CONFIG_SCHEMA_VERSION = 1
-DSH_CONFIG_GENERATOR_VERSION = 2
+DSH_CONFIG_GENERATOR_VERSION = 3
 DSH_MCP_PACKAGE = "@deepseek-ai/dsh-mcp-client"
 Scope = Literal["global", "project"]
 SourceKind = Literal["settings", "mcp", "native"]
@@ -176,6 +181,7 @@ class DshConfigPlan:
     custom_skill_dirs: tuple[str, ...] = ()
     local_sources: tuple[DshLocalSource, ...] = ()
     permission_modes: tuple[tuple[Path, manifest.DshPermissionMode, str], ...] = ()
+    strict: bool = True
 
     @property
     def blocked(self) -> bool:
@@ -183,17 +189,21 @@ class DshConfigPlan:
             item.blocking for item in self.diagnostics
         )
 
+    @property
+    def skipped(self) -> tuple[DshDiagnostic, ...]:
+        return skipped_diagnostics((*self.diagnostics, *self.permissions.diagnostics))
+
+    @property
+    def partial(self) -> bool:
+        return bool(self.skipped)
+
     def require_activatable(self) -> None:
         """Refuse malformed/unsupported restrictions and unresolved inputs."""
-        if self.blocked:
-            raise ConfigError(
-                "Cannot activate managed DSH configuration: "
-                + "; ".join(
-                    f"{item.origin} {item.element} {item.field}: {item.reason}"
-                    for item in (*self.diagnostics, *self.permissions.diagnostics)
-                    if item.blocking
-                )
-            )
+        require_admission(
+            (*self.diagnostics, *self.permissions.diagnostics),
+            strict=self.strict,
+            context="Cannot activate managed DSH configuration",
+        )
 
     def child_environment(self, process_env: Mapping[str, str]) -> dict[str, str]:
         """Explicit inherited process environment wins, including empty values.
@@ -713,6 +723,7 @@ def collect_dsh_configuration(
     layout: DshLayout,
     *,
     contributions: Iterable[DshNativeContribution] = (),
+    strict: bool = True,
 ) -> DshConfigPlan:
     """Collect raw source permissions/env/MCP/native patches in stable scope order.
 
@@ -868,6 +879,7 @@ def collect_dsh_configuration(
         permission_modes=tuple(
             (path, mode, digest) for path, (mode, digest) in acknowledged_modes.items()
         ),
+        strict=strict,
     )
 
 
@@ -902,7 +914,9 @@ def compose_dsh_configuration(
         [*(plan.permissions for plan in plans), config.permissions]
     )
     bridge = build_bridge_config(
-        agents.values(), rules.values(), permissions=permissions
+        agents.values(),
+        rules.values(),
+        permissions=admitted_permissions(permissions, strict=config.strict),
     )
     effective = {item.name: item for item in config.contributions}
     ids: list[str] = []
@@ -993,6 +1007,11 @@ def attach_dsh_config_outputs(
     keys = {output.path for output in install.outputs}
     return replace(
         install,
+        activation_diagnostics=(
+            *install.activation_diagnostics,
+            *config.diagnostics,
+            *config.permissions.diagnostics,
+        ),
         permission_modes=tuple(
             dict.fromkeys((*install.permission_modes, *config.permission_modes))
         ),

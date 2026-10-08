@@ -19,6 +19,7 @@ from typing import cast
 from ai_dotfiles.core import agents_md
 from ai_dotfiles.core.codex_local_registry import load_local_registry, registry_path
 from ai_dotfiles.core.codex_render import split_body
+from ai_dotfiles.core.dsh_admission import require_admission, skipped_diagnostics
 from ai_dotfiles.core.dsh_config import (
     DshConfigSource,
     attach_dsh_config_outputs,
@@ -93,6 +94,14 @@ class DshReconcilePlan:
             else (*self.install.diagnostics, *self.activation_diagnostics)
         )
 
+    @property
+    def skipped(self) -> tuple[DshDiagnostic, ...]:
+        return skipped_diagnostics(self.diagnostics)
+
+    @property
+    def partial(self) -> bool:
+        return bool(self.skipped)
+
 
 @dataclass
 class DshReconcileReport:
@@ -102,6 +111,14 @@ class DshReconcileReport:
     check_only: bool = False
     changed_paths: tuple[Path, ...] = ()
     diagnostics: tuple[DshDiagnostic, ...] = ()
+
+    @property
+    def skipped(self) -> tuple[DshDiagnostic, ...]:
+        return skipped_diagnostics(self.diagnostics)
+
+    @property
+    def partial(self) -> bool:
+        return bool(self.skipped)
 
     @property
     def exit_code(self) -> int:
@@ -300,6 +317,7 @@ def plan_dsh_reconciliation(
     hook_sources: Sequence[DshHookSource] = (),
     native_frontmatter: Mapping[Path, Mapping[str, object]] | None = None,
     local_inputs: DshLocalInputs | None = None,
+    strict: bool = False,
 ) -> DshReconcilePlan:
     """Collect fresh catalog/local originals and prove every retirement first.
 
@@ -318,6 +336,7 @@ def plan_dsh_reconciliation(
         mode=mode,
         targets=targets,
         native_frontmatter=native_frontmatter,
+        strict=strict,
     )
     if local_inputs is not None:
         _verify_local_catalog_plan(local_inputs, install)
@@ -339,21 +358,19 @@ def plan_dsh_reconciliation(
                 catalog_plan=install,
                 mode=mode,
                 native_frontmatter=native_frontmatter,
+                strict=strict,
             )
             migration = plan_dsh_migration(
                 inputs,
                 config_sources=sources,
                 hook_sources=hook_sources,
+                strict=strict,
             )
-            if migration.blocked:
-                raise ConfigError(
-                    "Cannot reconcile local DSH activation: "
-                    + "; ".join(
-                        f"{item.origin} {item.element} {item.field}: {item.reason}"
-                        for item in migration.diagnostics
-                        if item.blocking
-                    )
-                )
+            require_admission(
+                migration.diagnostics,
+                strict=strict,
+                context="Cannot reconcile local DSH activation",
+            )
             install = migration.install
             registry = _current_local_registry(migration)
             validate_dsh_local_registry(layout.project_root, registry)
@@ -364,11 +381,12 @@ def plan_dsh_reconciliation(
             project_root=layout.project_root,
             install_plans=(install,),
         )
-        contribution = hooks.contribution()
+        contribution = hooks.contribution(strict=strict)
         config = collect_dsh_configuration(
             sources,
             layout,
             contributions=(contribution,) if contribution is not None else (),
+            strict=strict,
         )
         config = compose_dsh_configuration(
             config,
@@ -382,7 +400,7 @@ def plan_dsh_reconciliation(
             ),
         )
         if hooks.sources:
-            install = attach_dsh_hook_outputs(install, hooks)
+            install = attach_dsh_hook_outputs(install, hooks, strict=strict)
         install = attach_dsh_config_outputs(install, config)
         # Aggregate rows depend on rendered originals as well as JSON sources.
         provenance = tuple(
@@ -556,10 +574,15 @@ def plan_dsh_reconciliation(
 
 
 def apply_dsh_reconciliation(
-    plan: DshReconcilePlan, *, check_only: bool = False
+    plan: DshReconcilePlan, *, check_only: bool = False, strict: bool = False
 ) -> DshReconcileReport:
     """Recheck all custody and originals before the first mutation."""
     layout = plan.install.layout
+    require_admission(
+        plan.diagnostics,
+        strict=strict or plan.install.strict,
+        context="Cannot reconcile DSH activation",
+    )
     for path, expected in plan.protected_sources:
         if (
             not path.is_file()
@@ -584,7 +607,9 @@ def apply_dsh_reconciliation(
     )
     if check_only or not plan.drift:
         return report
-    result = apply_dsh_install(plan.install, local_rule_custody=plan.local_rule_custody)
+    result = apply_dsh_install(
+        plan.install, local_rule_custody=plan.local_rule_custody, strict=strict
+    )
     changed = list(result.changed_paths)
     for key in plan.retired_outputs:
         path = layout.dsh_dir / key
@@ -652,6 +677,7 @@ def reconcile_dsh(
     mode: InstallMode = "link",
     native_frontmatter: Mapping[Path, Mapping[str, object]] | None = None,
     local_inputs: DshLocalInputs | None = None,
+    strict: bool = False,
 ) -> DshReconcileReport:
     """Refresh/retire one project's catalog and migrated local contributions."""
     return apply_dsh_reconciliation(
@@ -664,8 +690,10 @@ def reconcile_dsh(
             mode=mode,
             native_frontmatter=native_frontmatter,
             local_inputs=local_inputs,
+            strict=strict,
         ),
         check_only=check_only,
+        strict=strict,
     )
 
 
@@ -678,6 +706,7 @@ def reconcile_dsh_global(
     configured_home: str | Path | None = None,
     mode: InstallMode = "link",
     native_frontmatter: Mapping[Path, Mapping[str, object]] | None = None,
+    strict: bool = False,
 ) -> DshReconcileReport:
     """User scope visits only recorded outputs and explicit instruction blocks."""
     return apply_dsh_reconciliation(
@@ -688,8 +717,10 @@ def reconcile_dsh_global(
             include_catalog=include_catalog,
             mode=mode,
             native_frontmatter=native_frontmatter,
+            strict=strict,
         ),
         check_only=check_only,
+        strict=strict,
     )
 
 

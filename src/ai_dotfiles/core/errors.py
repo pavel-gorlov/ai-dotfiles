@@ -21,6 +21,10 @@ class ElementError(AiDotfilesError):
     """Invalid element specifier or missing element in catalog."""
 
 
+class SourceError(ElementError):
+    """Unreadable or invalid source data detected before materialization."""
+
+
 class LinkError(AiDotfilesError):
     """Symlink operation failed."""
 

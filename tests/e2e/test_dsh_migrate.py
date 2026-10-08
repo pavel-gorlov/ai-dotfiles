@@ -123,7 +123,7 @@ def test_native_mode_lifecycle_and_revocation_preserve_original_claude_auto(
         storage / "global.json" if scope == "global" else root / "ai-dotfiles.json"
     )
     _json(selected, {"packages": ["@policy"], "targets": ["dsh"]})
-    strict = _invoke("install", *args, exit_code=1)
+    strict = _invoke("install", *args, "--strict", exit_code=1)
     assert "defaultMode" in strict.output
     _json(
         selected,
@@ -150,7 +150,7 @@ def test_native_mode_lifecycle_and_revocation_preserve_original_claude_auto(
     _json(selected, value)
     status = _invoke("status", *args, exit_code=1)
     assert "defaultMode" in status.output
-    refused = _invoke("reconcile", *args, exit_code=1)
+    refused = _invoke("reconcile", *args, "--strict", exit_code=1)
     assert "defaultMode" in refused.output
     assert _snapshot(layout.dsh_dir) == before
     value["dsh_permission_mode"] = "native"
@@ -590,12 +590,12 @@ def test_unsupported_raw_permission_dry_run_reports_manual_without_writes(
         {"permissions": {"deny": ["Bash(git *)"]}},
     )
     before = _snapshot(tmp_path)
-    dry = _invoke("migrate", "--to", "dsh", "--dry-run")
+    dry = _invoke("migrate", "--to", "dsh", "--dry-run", "--strict")
     assert "[MANUAL]" in dry.output
     assert "local .claude/settings.local.json" in dry.output
     assert "PERMISSION_UNMAPPED" in dry.output
     assert "arguments" in dry.output
-    _invoke("migrate", "--to", "dsh", exit_code=1)
+    _invoke("migrate", "--to", "dsh", "--strict", exit_code=1)
     assert _snapshot(tmp_path) == before
 
 
@@ -853,13 +853,20 @@ def test_stock_fallback_negative_preview_and_refused_apply_are_write_free(
             {"permissions": {failure: ["Bash(git *)"]}},
         )
     before = _snapshot(tmp_path)
-    dry = _invoke("migrate", "--to", "dsh", "--dry-run")
+    if failure in {"rule-scoped", "agent-manual"}:
+        dry = _invoke("migrate", "--to", "dsh", "--dry-run", "--strict", exit_code=1)
+        assert "Cannot activate DSH install" in dry.output
+        assert _snapshot(tmp_path) == before
+        _invoke("migrate", "--to", "dsh", "--strict", exit_code=1)
+        assert _snapshot(tmp_path) == before
+        return
+    dry = _invoke("migrate", "--to", "dsh", "--dry-run", "--strict")
     assert "[BLOCKER]" in dry.output
     assert "[LIMITATION]" in dry.output
     assert "Activation: BLOCKED" in dry.output
     assert "Re-run without --dry-run to apply" not in dry.output
     assert _snapshot(tmp_path) == before
-    refused = _invoke("migrate", "--to", "dsh", exit_code=1)
+    refused = _invoke("migrate", "--to", "dsh", "--strict", exit_code=1)
     assert "Cannot activate local DSH migration" in refused.output
     assert _snapshot(tmp_path) == before
 
@@ -877,10 +884,10 @@ def test_changed_stock_source_refusal_preserves_existing_outputs_and_ownership(
     script = catalog / "gitflow/hooks/route-to-agent.sh"
     _write(script, script.read_text() + "\nexit 2\n")
     before = _snapshot(tmp_path)
-    dry = _invoke("migrate", "--to", "dsh", "--dry-run")
+    dry = _invoke("migrate", "--to", "dsh", "--dry-run", "--strict")
     assert "Activation: BLOCKED" in dry.output
-    _invoke("migrate", "--to", "dsh", exit_code=1)
-    _invoke("install", "--no-gitignore", exit_code=1)
-    _invoke("reconcile", "--check", exit_code=1)
-    _invoke("reconcile", exit_code=1)
+    _invoke("migrate", "--to", "dsh", "--strict", exit_code=1)
+    _invoke("install", "--no-gitignore", "--strict", exit_code=1)
+    _invoke("reconcile", "--check", "--strict", exit_code=1)
+    _invoke("reconcile", "--strict", exit_code=1)
     assert _snapshot(tmp_path) == before

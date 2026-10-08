@@ -12,16 +12,17 @@ import os
 import shutil
 import subprocess
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib import resources
 from pathlib import Path
 from typing import cast
 
+from ai_dotfiles.core.dsh_render import DshDiagnostic, DshRenderResult
 from ai_dotfiles.core.errors import ConfigError, ExternalError
 
 DSH_NATIVE_VERSION = "0.2.0-rc.2"
 DSH_NATIVE_SCHEMA_VERSION = 1
-DSH_COMPOSE_GENERATOR_VERSION = 2
+DSH_COMPOSE_GENERATOR_VERSION = 3
 _NATIVE_PACKAGES = (
     "dsh-app-boot",
     "dsh-skill-filesystem",
@@ -201,13 +202,49 @@ def invoke_native(
     return cast(dict[str, object], native_result)
 
 
+class DshNativeFrontmatter(dict[Path, dict[str, object]]):
+    """Successful native metadata and explicit per-file parse failures."""
+
+    def __init__(
+        self,
+        metadata: dict[Path, dict[str, object]],
+        errors: dict[Path, DshDiagnostic],
+    ) -> None:
+        super().__init__(metadata)
+        self.errors = errors
+
+
+def native_frontmatter_failure[
+    T
+](
+    result: DshRenderResult[T],
+    metadata: Mapping[Path, Mapping[str, object]] | None,
+) -> DshRenderResult[T]:
+    """Record a failed native parse as MANUAL without fabricating metadata."""
+    if not isinstance(metadata, DshNativeFrontmatter):
+        return result
+    error = metadata.errors.get(result.provenance.source.absolute())
+    if error is None:
+        return result
+    diagnostic = replace(
+        error, origin=result.provenance.origin, element=result.provenance.element
+    )
+    return replace(
+        result,
+        payload=None,
+        status="MANUAL",
+        diagnostics=(*result.diagnostics, diagnostic),
+    )
+
+
 def native_frontmatter(
     runtime: DshNativeRuntime,
     sources: Sequence[Path],
     *,
     cwd: Path,
     env: Mapping[str, str],
-) -> dict[Path, dict[str, object]]:
+    strict: bool = True,
+) -> DshNativeFrontmatter:
     """Parse original skill/agent/rule frontmatter using DSH's YAML dependency.
 
     Pass the resulting mapping to collect_dsh_elements(native_frontmatter=...).
@@ -220,17 +257,44 @@ def native_frontmatter(
             "schemaVersion": DSH_NATIVE_SCHEMA_VERSION,
             "operation": "frontmatter",
             "paths": [str(path.absolute()) for path in sources],
+            "strict": strict,
         },
         cwd=cwd,
         env=env,
     )
     metadata = result.get("frontmatter")
-    if not isinstance(metadata, dict) or set(metadata) != {
-        str(path.absolute()) for path in sources
-    }:
+    errors = result.get("errors", {})
+    requested = {str(path.absolute()) for path in sources}
+    if (
+        set(result) != ({"frontmatter"} if strict else {"frontmatter", "errors"})
+        or not isinstance(metadata, dict)
+        or not isinstance(errors, dict)
+        or set(metadata) & set(errors)
+        or set(metadata) | set(errors) != requested
+    ):
         raise ConfigError("Malformed native frontmatter result")
     if any(not isinstance(value, dict) for value in metadata.values()):
         raise ConfigError("Native frontmatter must contain mapping values")
-    return {
-        Path(path): cast(dict[str, object], value) for path, value in metadata.items()
-    }
+    failures = {}
+    for path, error in errors.items():
+        if (
+            not isinstance(error, dict)
+            or set(error)
+            != {"code", "origin", "element", "field", "reason", "blocking"}
+            or error["code"] != "FRONTMATTER_INVALID"
+            or error["origin"] != path
+            or error["element"] != path
+            or error["field"] != "frontmatter"
+            or not isinstance(error["reason"], str)
+            or not error["reason"]
+            or error["blocking"] is not True
+        ):
+            raise ConfigError("Malformed native frontmatter failure")
+        failures[Path(path)] = DshDiagnostic(**error)
+    return DshNativeFrontmatter(
+        {
+            Path(path): cast(dict[str, object], value)
+            for path, value in metadata.items()
+        },
+        failures,
+    )

@@ -30,6 +30,11 @@ from ai_dotfiles.core import (
     paths,
     settings_merge,
 )
+from ai_dotfiles.core.catalog_admission import (
+    CodexSourceAdmission,
+    apply_admitted_codex_pair,
+    preflight_codex_pairs,
+)
 from ai_dotfiles.core.codex_layout import global_layout, project_layout
 from ai_dotfiles.core.codex_local_registry import load_local_registry
 from ai_dotfiles.core.codex_targets import (
@@ -51,6 +56,7 @@ class ReconcileReport:
 
     drift: list[str] = field(default_factory=list)
     check_only: bool = False
+    skipped: list[CodexSourceAdmission] = field(default_factory=list)
 
 
 def reconcile_codex(
@@ -60,6 +66,7 @@ def reconcile_codex(
     *,
     check_only: bool = False,
     include_catalog: bool = True,
+    strict: bool = False,
 ) -> ReconcileReport:
     """Refresh every stale/missing Codex artefact; return what drifted.
 
@@ -74,12 +81,18 @@ def reconcile_codex(
     layout = project_layout(project_root)
 
     if include_catalog:
-        for element in elements.parse_elements(packages):
+        parsed = elements.parse_elements(packages)
+        admission = preflight_codex_pairs(parsed, layout, catalog, strict=strict)
+        report.skipped.extend(admission.skipped)
+        decisions = admission.by_pair
+        for element in parsed:
             for pair in iter_codex_pairs(element, layout, catalog):
+                if decisions[pair].error is not None:
+                    continue
                 if _pair_needs_refresh(pair):
                     report.drift.append(_pair_label(pair))
                     if not check_only:
-                        _apply_pair(pair)
+                        apply_admitted_codex_pair(pair)
             for plan in iter_codex_rule_plans(element, layout, catalog):
                 _reconcile_rule_plan(plan, project_root, report, check_only)
         _reconcile_config(
@@ -95,6 +108,7 @@ def reconcile_codex_global(
     catalog: Path,
     *,
     check_only: bool = False,
+    strict: bool = False,
 ) -> ReconcileReport:
     """Refresh every stale/missing *global* Codex artefact.
 
@@ -111,13 +125,18 @@ def reconcile_codex_global(
     """
     report = ReconcileReport(check_only=check_only)
     layout = global_layout()
-
-    for element in elements.parse_elements(packages):
+    parsed = elements.parse_elements(packages)
+    admission = preflight_codex_pairs(parsed, layout, catalog, strict=strict)
+    report.skipped.extend(admission.skipped)
+    decisions = admission.by_pair
+    for element in parsed:
         for pair in iter_codex_pairs(element, layout, catalog):
+            if decisions[pair].error is not None:
+                continue
             if _global_pair_needs_refresh(pair):
                 report.drift.append(_pair_label(pair))
                 if not check_only:
-                    _apply_global_pair(pair)
+                    apply_admitted_codex_pair(pair, global_scope=True)
         for plan in iter_codex_rule_plans(element, layout, catalog):
             _reconcile_rule_plan(plan, layout.codex_dir, report, check_only)
     _reconcile_config(packages, layout.codex_dir, catalog, report, check_only)

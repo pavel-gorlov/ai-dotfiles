@@ -18,6 +18,7 @@ from typing import Any
 import click
 
 from ai_dotfiles import ui
+from ai_dotfiles.commands._dsh_report import print_dsh_diagnostics
 from ai_dotfiles.core import (
     codex_config,
     codex_global,
@@ -535,7 +536,8 @@ def _print_dsh_target(
     for label in report.drift:
         ui.info(f"    {_BROKEN} {label} STALE")
     if not report.drift:
-        ui.info(f"    {_OK} artefacts up to date")
+        qualifier = "supported " if report.partial else ""
+        ui.info(f"    {_OK} {qualifier}artefacts up to date")
     for rendered in (*plan.install.skills, *plan.install.agents, *plan.install.rules):
         source = rendered.provenance
         if source.origin != "local":
@@ -546,11 +548,7 @@ def _print_dsh_target(
                 f"    [{action.classification}] local {action.element} "
                 f"({action.source})"
             )
-    for diagnostic in report.diagnostics:
-        ui.warn(
-            f"    - {diagnostic.origin} {diagnostic.element} {diagnostic.field}: "
-            f"{diagnostic.reason} [{diagnostic.code}]"
-        )
+    print_dsh_diagnostics(report.diagnostics, indent="    ")
     ui.info("    Runtime audit: run 'ai-dotfiles dsh launch'.")
     if report.drift:
         command = "ai-dotfiles reconcile" + (" -g" if project_root is None else "")

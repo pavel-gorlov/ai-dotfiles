@@ -493,14 +493,14 @@ def test_unsupported_config_restrictions_block_all_writes(
     _skill(tmp_path)
     _json(tmp_path / ".claude/settings.json", value)
     before = _snapshot(tmp_path)
-    report = migrate_to_dsh(tmp_path, dry_run=True)
+    report = migrate_to_dsh(tmp_path, dry_run=True, strict=True)
     assert report.plan.blocked
     assert any(action.classification == "MANUAL" for action in report.actions)
     assert any(
         item.blocking and item.field and item.reason for item in report.diagnostics
     )
     with pytest.raises(ConfigError, match="Cannot activate"):
-        migrate_to_dsh(tmp_path)
+        migrate_to_dsh(tmp_path, strict=True)
     assert _snapshot(tmp_path) == before
 
 
@@ -1462,7 +1462,11 @@ def test_registered_local_unsupported_restriction_refuses_without_target_writes(
     )
     migrate_to_dsh(project)
     plan = prepare_dsh_launch(
-        ["proof", "task"], cwd=project, process_env=env, runtime=runtime
+        ["proof", "task"],
+        cwd=project,
+        process_env=env,
+        runtime=runtime,
+        strict=restriction == "exact-deny",
     )
     value = (
         {"permissions": {"deny": ["Bash(echo)"]}}
@@ -1475,7 +1479,11 @@ def test_registered_local_unsupported_restriction_refuses_without_target_writes(
         ConfigError, match="permissions.deny|LOCAL_ORIGINAL_UNPROVEN|aggregate field"
     ):
         prepare_dsh_launch(
-            ["proof", "task"], cwd=project, process_env=env, runtime=runtime
+            ["proof", "task"],
+            cwd=project,
+            process_env=env,
+            runtime=runtime,
+            strict=restriction == "exact-deny",
         )
     result = _run(plan, env, tmp_path)
     assert result.returncode != 0

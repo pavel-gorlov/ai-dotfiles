@@ -23,6 +23,7 @@ from typing import Literal
 from ai_dotfiles.core import manifest, paths
 from ai_dotfiles.core.agents_md import block_markers
 from ai_dotfiles.core.dependencies import topological_sort
+from ai_dotfiles.core.dsh_admission import require_admission, skipped_diagnostics
 from ai_dotfiles.core.dsh_audit import DshAuditRequirements
 from ai_dotfiles.core.dsh_config import (
     DshConfigPlan,
@@ -48,6 +49,8 @@ from ai_dotfiles.core.dsh_install import (
     collect_dsh_elements,
     plan_dsh_install,
     preflight_dsh_install,
+    skipped_skill_output_keys,
+    verify_dsh_owned_output,
 )
 from ai_dotfiles.core.dsh_layout import DshLayout, global_layout, project_layout
 from ai_dotfiles.core.dsh_local_registry import load_dsh_local_registry
@@ -60,6 +63,7 @@ from ai_dotfiles.core.dsh_native import (
     DshNativeRuntime,
     compose_module_text,
     native_frontmatter,
+    native_frontmatter_failure,
     resolve_dsh_runtime,
 )
 from ai_dotfiles.core.dsh_render import DshDiagnostic, DshProvenance, render_rule
@@ -523,6 +527,15 @@ class DshLaunchPlan:
     request: Mapping[str, object]
     diagnostics: tuple[DshDiagnostic, ...]
     local_inputs: tuple[DshLocalInputs, ...] = ()
+    strict: bool = False
+
+    @property
+    def skipped(self) -> tuple[DshDiagnostic, ...]:
+        return skipped_diagnostics(self.diagnostics)
+
+    @property
+    def partial(self) -> bool:
+        return bool(self.skipped)
 
 
 def parse_dsh_launch_arguments(args: Sequence[str], *, cwd: Path) -> DshLaunchArguments:
@@ -644,6 +657,7 @@ def _collect_plan(
     targets: Sequence[Target],
     *,
     mode: InstallMode = "link",
+    strict: bool = False,
 ) -> DshInstallPlan:
     plan = collect_dsh_elements(elements, layout, catalog, targets=targets, mode=mode)
     deferred = tuple(
@@ -652,7 +666,9 @@ def _collect_plan(
         if result.status == "DEFERRED"
     )
     if deferred:
-        metadata = native_frontmatter(runtime, deferred, cwd=cwd, env=env)
+        metadata = native_frontmatter(
+            runtime, deferred, cwd=cwd, env=env, strict=strict
+        )
         plan = collect_dsh_elements(
             elements,
             layout,
@@ -660,17 +676,24 @@ def _collect_plan(
             targets=targets,
             mode=mode,
             native_frontmatter=metadata,
+            strict=strict,
         )
+    plan.require_activatable(strict=strict)
     return plan
 
 
-def _refuse_retired_discovery(plan: DshInstallPlan) -> None:
+def _refuse_retired_discovery(plan: DshInstallPlan, *, strict: bool = False) -> None:
+    plan.require_activatable(strict=strict)
     inventory = preflight_dsh_install(plan)
+    skipped = skipped_skill_output_keys(plan, inventory)
+    for key in skipped:
+        verify_dsh_owned_output(plan.layout, key, inventory=inventory)
     retired = [
         key
         for key in inventory.records
         if key.startswith("skills/")
         and key not in plan.desired_output_keys
+        and key not in skipped
         and (plan.layout.dsh_dir / key).exists()
     ]
     desired = {
@@ -704,6 +727,7 @@ def prepare_dsh_launch(
     runtime: DshNativeRuntime | None = None,
     extra_sources: Sequence[DshConfigSource] = (),
     extra_install_plans: Sequence[DshInstallPlan] = (),
+    strict: bool = False,
 ) -> DshLaunchPlan:
     """Collect current global/project originals and inspect without profile writes.
 
@@ -769,6 +793,7 @@ def prepare_dsh_launch(
                 process_env,
                 targets,
                 mode=mode,
+                strict=strict,
             )
             if "dsh" in names
             else plan_dsh_install(scope_layout, instructions=instructions)
@@ -791,7 +816,7 @@ def prepare_dsh_launch(
             )
             if deferred:
                 metadata = native_frontmatter(
-                    runtime, deferred, cwd=cwd, env=process_env
+                    runtime, deferred, cwd=cwd, env=process_env, strict=strict
                 )
                 local = collect_dsh_local_inputs(
                     root,
@@ -800,6 +825,7 @@ def prepare_dsh_launch(
                     mode=mode,
                     registered_only=True,
                     native_frontmatter=metadata,
+                    strict=strict,
                 )
             local_inputs.append(local)
             plan = local.install
@@ -812,10 +838,18 @@ def prepare_dsh_launch(
                 result = render_rule(block.sources[0])
                 if result.status == "DEFERRED":
                     metadata = native_frontmatter(
-                        runtime, [block.sources[0]], cwd=cwd, env=process_env
+                        runtime,
+                        [block.sources[0]],
+                        cwd=cwd,
+                        env=process_env,
+                        strict=strict,
                     )
-                    result = render_rule(
-                        block.sources[0], native_frontmatter=metadata[block.sources[0]]
+                    result = native_frontmatter_failure(
+                        render_rule(
+                            block.sources[0],
+                            native_frontmatter=metadata.get(block.sources[0]),
+                        ),
+                        metadata,
                     )
                 if result.status == "READY":
                     continue
@@ -933,7 +967,7 @@ def prepare_dsh_launch(
     hooks = collect_dsh_hooks(
         (*sources, *hook_sources), layout, project_root=root, install_plans=installs
     )
-    contribution = hooks.contribution()
+    contribution = hooks.contribution(strict=strict)
     skill_results = {
         result.payload.name: result
         for plan in sorted(
@@ -961,11 +995,15 @@ def prepare_dsh_launch(
                 DshAuditRequirements((), (), ("skills",), ()),
             )
         )
-    config = collect_dsh_configuration(sources, layout, contributions=contributions)
+    config = collect_dsh_configuration(
+        sources, layout, contributions=contributions, strict=strict
+    )
     config = compose_dsh_configuration(
         config, installs, target_plans=(project_target_plan(root, cwd),)
     )
-    current = attach_dsh_config_outputs(attach_dsh_hook_outputs(current, hooks), config)
+    current = attach_dsh_config_outputs(
+        attach_dsh_hook_outputs(current, hooks, strict=strict), config
+    )
     host_path, helper_path, root_path = (
         layout.owned_dir / name
         for name in ("launch.mjs", "compose.mjs", "launch-root.json")
@@ -1012,7 +1050,7 @@ def prepare_dsh_launch(
     )
     installs = [plan for plan in installs if plan.layout != layout] + [current]
     for plan in installs:
-        _refuse_retired_discovery(plan)
+        _refuse_retired_discovery(plan, strict=strict)
     home = paths.dsh_home()
     profile_dir = home / "profiles" / arguments.profile
     inspected = inspect_dsh_configuration(
@@ -1092,11 +1130,15 @@ def prepare_dsh_launch(
         for item in config.sources
         if item["kind"] == "native"
     ]
-    diagnostics = (
-        *config.diagnostics,
-        *config.permissions.diagnostics,
-        *hooks.diagnostics,
-        *(item for plan in installs for item in plan.diagnostics),
+    diagnostics = tuple(
+        dict.fromkeys(
+            (
+                *config.diagnostics,
+                *config.permissions.diagnostics,
+                *hooks.diagnostics,
+                *(item for plan in installs for item in plan.diagnostics),
+            )
+        )
     )
     return DshLaunchPlan(
         runtime,
@@ -1107,17 +1149,19 @@ def prepare_dsh_launch(
         request,
         tuple(diagnostics),
         tuple(local_inputs),
+        strict,
     )
 
 
 def execute_dsh_launch(plan: DshLaunchPlan, *, process_env: Mapping[str, str]) -> int:
     """Materialize guarded outputs and run the installed native host shell-free."""
+    require_admission(plan.diagnostics, strict=plan.strict, context="Cannot launch DSH")
     for local in plan.local_inputs:
         verify_dsh_local_inputs(local)
     for install in plan.installs:
-        _refuse_retired_discovery(install)
+        _refuse_retired_discovery(install, strict=plan.strict)
     for install in plan.installs:
-        apply_dsh_install(install)
+        apply_dsh_install(install, strict=plan.strict)
     request = dict(plan.request)
     request.pop("inspected", None)
     # Final entries are inspected again by the actual host; origin base remains
