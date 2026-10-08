@@ -3,5 +3,7 @@
     "agent:tech-docs-writer",
     "@gitflow",
     "@python"
-  ]
+  ],
+  "targets": ["claude", "codex", "dsh"],
+  "dsh_permission_mode": "native"
 }

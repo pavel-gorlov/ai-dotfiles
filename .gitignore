@@ -29,10 +29,12 @@ coverage.xml
 /.claude/skills/mypy-strict-migration
 /.claude/skills/pandas-pipeline
 /.claude/skills/pr-authoring
+/.claude/skills/pr-comments
 /.claude/skills/pr-reflection
 /.claude/skills/pre-commit-config
 /.claude/skills/pydantic-modeling
 /.claude/skills/pytest-asyncio
+/.claude/skills/pytest-perf-infra
 /.claude/skills/pytest-setup
 /.claude/skills/python-cli-typer
 /.claude/skills/python-performance-profile
@@ -41,3 +43,11 @@ coverage.xml
 /.claude/skills/revert-merged-pr
 # >>> end ai-dotfiles managed <<<
 .taskmanager/.id-counter
+
+# Generated project configuration
+/.agents/
+/.codex/agents/
+/.codex/rules/ai-dotfiles.rules
+/.codex/hooks.json
+/.codex/.ai-dotfiles-hooks-ownership.json
+/.dsh/
