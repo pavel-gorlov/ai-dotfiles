@@ -49,7 +49,9 @@ from ai_dotfiles.core.settings_merge import (
     write_settings,
 )
 from ai_dotfiles.core.settings_ownership import (
+    EnabledMcpjsonServersOwnership,
     delete_settings_ownership,
+    load_enabled_mcpjson_servers_ownership,
     load_settings_ownership,
     save_settings_ownership,
 )
@@ -88,6 +90,10 @@ def rebuild_claude_config(
     # away. What survives is the user-authored portion of the file.
     prev_settings_ownership = load_settings_ownership(claude_dir)
     user_base = strip_owned(existing_settings, prev_settings_ownership)
+    # This field is rebuilt below from the fresh original. Retaining it here
+    # would change key order on the second rebuild (before MCP permissions),
+    # needlessly invalidating DSH's original-source hashes after migration.
+    user_base.pop("enabledMcpjsonServers", None)
     settings = assemble_settings(settings_fragments, base=user_base)
 
     mcp_fragments = collect_mcp_fragments(packages, catalog)
@@ -107,11 +113,17 @@ def rebuild_claude_config(
     effective_servers = merged.get("mcpServers", {})
 
     # Capture user-authored enabledMcpjsonServers entries before we rewrite
-    # settings. An entry is user-authored if it is NOT in the previous
-    # ownership map (either a manual edit, or a domain the user removed
-    # but whose allowlist line they chose to keep — rare, but honoured).
+    # settings. New proof distinguishes generated names from preexisting user
+    # entries even when a user entry also names a domain server. Legacy ledgers
+    # retain the previous MCP-server ownership fallback for a genuine rebuild;
+    # migration itself never accepts that fallback as allowlist origin proof.
     settings_path = claude_dir / "settings.json"
-    prior_owned_names = set(previous_ownership.keys())
+    previous_allowlist_ownership = load_enabled_mcpjson_servers_ownership(claude_dir)
+    prior_owned_names = set(
+        previous_allowlist_ownership.generated
+        if previous_allowlist_ownership is not None
+        else previous_ownership.keys()
+    )
     user_allowlist: list[str] = []
     prior_list = existing_settings.get("enabledMcpjsonServers")
     if isinstance(prior_list, list):
@@ -151,20 +163,32 @@ def rebuild_claude_config(
         if perm not in new_settings_ownership["permissions_allow"]:
             new_settings_ownership["permissions_allow"].append(perm)
 
+    allowlist_ownership = None
     if settings:
         # Drop a symlinked settings.json so we don't write through into storage.
         if settings_path.is_symlink():
             settings_path.unlink()
         write_settings(settings, settings_path)
+        if domain_owned or previous_allowlist_ownership is not None:
+            written_allowlist = settings.get("enabledMcpjsonServers")
+            if isinstance(written_allowlist, list):
+                allowlist_ownership = EnabledMcpjsonServersOwnership.from_written(
+                    written_allowlist,
+                    [name for name in domain_owned if name not in user_allowlist],
+                )
     elif settings_path.exists() or settings_path.is_symlink():
         # No fragments and no user content -> drop generated settings.json.
         settings_path.unlink()
 
     # Persist or clear settings ownership symmetric to .mcp.json handling.
-    if ownership_is_empty(new_settings_ownership):
+    if ownership_is_empty(new_settings_ownership) and allowlist_ownership is None:
         delete_settings_ownership(claude_dir)
     else:
-        save_settings_ownership(claude_dir, new_settings_ownership)
+        save_settings_ownership(
+            claude_dir,
+            new_settings_ownership,
+            enabled_mcpjson_servers=allowlist_ownership,
+        )
 
     # Write order matters for crash recovery. Two files (.mcp.json and the
     # ownership map) are updated together but cannot be made atomic across

@@ -1,3 +1,16 @@
+## v0.4.4 (2026-10-08)
+
+### Fix
+
+- **dsh**: track generated MCP settings provenance
+  - Record the actual CLI-generated `enabledMcpjsonServers` contribution so
+    DSH migration no longer rejects it as unproven local aggregate settings.
+  - Preserve the local original and refuse edited or invalid ownership proof;
+    matching current catalog values alone does not establish origin.
+  - Before the first local DSH registration after upgrading, run `install`
+    followed by `migrate --to dsh` to record fresh generated provenance. Registered
+    sources with edited or invalid proof remain subject to strict preflight.
+
 ## v0.4.3 (2026-10-07)
 
 ### Fix

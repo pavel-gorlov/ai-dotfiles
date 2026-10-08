@@ -316,9 +316,19 @@ keep their original bases and bytes. Removal retires only proved owned outputs.
 Source SHA, renderer generator, resource inventories and copy/link provenance
 drive status/check/reconcile. Foreign/modified files are preserved on refusal.
 Supported fresh user permissions/hooks/MCP project from original ownership
-ledgers; ambiguous aggregate env/scalars remain `LOCAL_ORIGINAL_UNPROVEN` and
-block activation. Never infer origin from value equality, delete ledgers or use
-old config snapshots. Catalog lifecycle/launch keeps registered locals; full
+ledgers. Project `install`/`add`/`remove` records the generated
+`enabledMcpjsonServers` contribution and a hash of the written list; migration
+checks that proof against the fresh source and preserves user entries. Before
+the first local migration, run `ai-dotfiles install` to refresh a legacy ledger.
+Legacy rebuilds retain the old MCP ownership fallback; they cannot recover
+previously ambiguous user/domain name overlaps.
+Edited lists, missing/mismatched proof and ambiguous aggregate env/scalars remain
+`LOCAL_ORIGINAL_UNPROVEN` and block activation; malformed proof is also refused.
+Registered-source preflight can
+also refuse a rebuild; `install` is not a bypass for an edited registered source.
+Never infer origin from
+value equality, delete ledgers or use old config snapshots.
+Catalog lifecycle/launch keeps registered locals; full
 migration/reconciliation discovers new locals and retires missing sources.
 Dry-run/check write nothing; clean drift is not runtime readiness. The repository
 guide `docs/dsh-target.md` contains the complete payload/matcher/output matrix
