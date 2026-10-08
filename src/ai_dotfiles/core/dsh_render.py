@@ -25,7 +25,7 @@ from typing import Literal, Required, TypedDict
 
 from ai_dotfiles.core.agents_md import rule_name_of
 from ai_dotfiles.core.codex_render import source_sha256, split_body
-from ai_dotfiles.core.errors import ElementError
+from ai_dotfiles.core.errors import ElementError, SourceError
 from ai_dotfiles.core.frontmatter import parse_frontmatter
 
 DSH_RENDER_GENERATOR_VERSION = 1
@@ -134,6 +134,7 @@ class DshRenderResult[T]:
     payload: T | None
     diagnostics: tuple[DshDiagnostic, ...] = ()
     status: Literal["READY", "DEFERRED", "MANUAL"] = "READY"
+    native_name: str | None = None
 
 
 class DshSkillInvocation(TypedDict):
@@ -259,7 +260,7 @@ def _read_source(
         # read_text normalizes newlines; raw decoding preserves literal CRLF.
         text = source.read_bytes().decode("utf-8")
     except (OSError, UnicodeError) as exc:
-        raise ElementError(f"Cannot read DSH {origin} source {source}: {exc}") from exc
+        raise SourceError(f"Cannot read DSH {origin} source {source}: {exc}") from exc
     return text, DshProvenance(
         source, origin, element or str(source), source_sha256(text)
     )
@@ -490,7 +491,13 @@ def validate_skill(
             )
         )
     if any(item.blocking for item in diagnostics):
-        return DshRenderResult(provenance, None, tuple(diagnostics), "MANUAL")
+        return DshRenderResult(
+            provenance,
+            None,
+            tuple(diagnostics),
+            "MANUAL",
+            native_name=name if name and _SKILL_NAME_RE.fullmatch(name) else None,
+        )
     payload = DshSkillPayload(
         source, source.parent, text, body, name, description, invocation
     )

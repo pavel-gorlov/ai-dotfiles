@@ -43,6 +43,26 @@ rebuilds the remaining contributions. `install --prune` cleans up proven owned
 stale outputs; `--strict-deps` refuses missing transitive dependencies instead
 of adding them. `--no-gitignore` is available on `install`, `add` and `remove`.
 
+By default, healthy contributions install even when individual sources cannot
+be adapted. A rejected hook handler, skill, agent or unsupported setting is
+reported as `SKIPPED ERROR`; healthy siblings continue installing. Activation
+is explicitly `PARTIAL`, and skipped protective
+hooks or permission restrictions are **not enforced**. Managed launch is
+permitted with that warning. Original sources and blocking diagnostics remain
+intact, and all supported deny/ask restrictions still apply without granting
+extra permissions or selecting a new native preset.
+
+Use `--strict` with `install`, `add`, `remove`, `migrate --to dsh`, `reconcile`
+or `dsh launch` to refuse adaptation gaps. For CI, run
+`ai-dotfiles reconcile --check --strict`; `--check` alone checks supported-output
+drift without making skipped adaptation errors fatal. Source-custody, foreign
+ownership, invalid manifests, unrecognized blocking diagnostics and native
+runtime/audit failures remain fatal.
+Strict source/adaptation preflight refuses activation before writing outputs.
+The same defaults apply to project and user scope. Repair an original source
+and rerun `install` or `reconcile` (`-g` for user scope); skipped entries are
+checked again. Restart managed DSH after the refresh.
+
 For user scope, add `"dsh"` to `targets` in
 `$AI_DOTFILES_HOME/global.json` (default `~/.ai-dotfiles/global.json`):
 
@@ -113,12 +133,15 @@ ai-dotfiles dsh launch headless "run the tests"
 
 # Existing Web profile; --port and --no-open are native app arguments
 ai-dotfiles dsh launch --profile web --port 8080 --no-open
+ai-dotfiles dsh launch --strict --profile web --port 8080 --no-open
 
 # Explicit native JSON/YAML overlays, in order, before application arguments
 ai-dotfiles dsh launch --profile headless --patch ./review.json --patch ./local.json "review the changes"
 ```
 
-Supply `--profile` and repeatable `--patch` before native application arguments.
+Put managed `--strict` first, before `--profile`, a profile shorthand or any
+native flag. Supply `--profile` and repeatable `--patch` before native
+application arguments.
 The first application argument ends launcher-option parsing; the remaining argv
 is forwarded without a shell. There is no default profile, `-g` launch mode,
 new permission preset or target opt-out flag. Profile creation, plugin management
@@ -173,7 +196,10 @@ does not provide hard isolation between these project configurations.
 Diagnostics retain origin, element, source field and reason. `MANUAL` means
 required semantics cannot be represented; it is not an unrestricted substitute.
 Deferred YAML frontmatter is validated using the pinned native parser before
-activation, not treated as a permanent skill limitation.
+activation, not treated as a permanent skill limitation. Parse failures are
+reported per source file and skip only that file by default; valid sibling
+metadata is retained without fabricating replacement metadata. Failure to invoke
+the pinned parser or validate its response remains fatal.
 
 | Source surface | Supported result | Boundary |
 |---|---|---|
@@ -186,7 +212,7 @@ activation, not treated as a permanent skill limitation.
 | Agent `tools` / `disallowedTools` | Exact known whole-name native child filters | Unknown/constrained restrictions make the affected agent `MANUAL`; they are not dropped. Filters are not a security boundary. |
 | Agent `model` | Omitted/`inherit` uses the current parent session route | Claude aliases such as `sonnet`, `opus`, `haiku` also inherit it with `MODEL_UNMAPPED` and source-model provenance. No guessed provider/model id. Explicit native routes remain native fragment configuration. |
 | `settings.env` | Global → project → explicit process environment | Process values, including empty strings, win. Reserved bootstrap names/prefixes are rejected; no dotenv writes. |
-| `permissions.deny` / `.ask` | Exact known whole-tool gates | Argument patterns, compound Bash, wildcards and unknown names cannot be approximated. Unrepresentable deny/ask blocks activation; `allow` is reported and grants nothing. |
+| `permissions.deny` / `.ask` | Exact known whole-tool gates | Argument patterns, compound Bash, wildcards and unknown names cannot be approximated. Unsupported entries are reported and skipped; `--strict` refuses them. Supported deny/ask remains active; `allow` is reported and grants nothing. |
 | Other Claude settings | Per-field diagnostic | Native settings/plugins belong in `dsh.fragment.json`; a Claude sandbox setting does not silently select a broader native preset. |
 | Hooks | Seven command events below | Unsupported events/options/matchers and payload/output differences are explicit. |
 | MCP | stdio and Streamable HTTP client rows | No SSE conversion or MCP prompt/OAuth/helper translation; see below. |
@@ -206,8 +232,10 @@ permission engine or a security isolation mechanism.
 
 Both `ai-dotfiles.json` and `global.json` accept the optional top-level
 `"dsh_permission_mode": "strict" | "native"`. Missing means `strict`;
-invalid values fail. Strict mode blocks Claude `permissions.defaultMode`,
-including `"auto"`, because it has no implemented native equivalent.
+invalid values fail. This translation mode is independent of the CLI `--strict`
+option that refuses partial activation. The manifest's strict mode rejects
+Claude `permissions.defaultMode`, including `"auto"`, because it has no
+implemented native equivalent.
 
 To retain Claude auto while using DSH's existing native policy, set
 `"dsh_permission_mode": "native"` in the manifest of **each original source
@@ -220,10 +248,10 @@ source hash and provenance. `skipAutoPermissionPrompt` remains a nonblocking
 
 This acknowledgement does not enable DSH Auto, select a preset, change approval
 or sandbox defaults, or generate allow grants. Other defaultMode values, unknown
-fields, invalid types and unrepresentable deny/ask entries still block. The
-choice applies before source merging throughout install/add/remove, migration,
-status/reconcile and fresh managed launch. Revoking it blocks affected activation
-and prepared plans before writes or native readiness. After editing a manifest,
+fields, invalid types and unrepresentable deny/ask entries remain adaptation
+errors: skipped by default, fatal with `--strict`. The choice applies before
+source merging throughout install/add/remove, migration,
+status/reconcile and fresh managed launch. After editing a manifest,
 run `ai-dotfiles reconcile` in that scope (`-g` for global), then restart managed
 DSH. Claude source files and native profiles remain unchanged.
 
@@ -243,8 +271,8 @@ Handlers execute serially without deduplication; config is loaded once per
 process. A runtime handler crash is logged by the native plugin and is not
 itself a guaranteed run-level stop.
 
-The reviewed stock `@gitflow` pair is a narrowly guarded exception to activation
-refusal, **not** an `if` translation. Its exact context-only
+The reviewed stock `@gitflow` pair has a narrowly guarded policy fallback,
+**not** an `if` translation. Its exact context-only
 `hooks/route-to-agent.sh`, unconditional `rules/gitflow.md` and
 `agents/git-workflow-assistant.md` must match the reviewed catalog contents.
 The selected catalog resource and effective rule/agent contributions must be
@@ -258,7 +286,8 @@ delivery and agent availability through its native composition/selected-tree
 audit before Ready or a model turn. Changed or missing stock sources, an
 unproved local/custom origin, or unavailable policy/agent retain one actionable
 blocking `.if` diagnostic per stock reminder. Unrelated problems are still
-reported. Other `if` handlers and required hook semantics remain blocked. This
+reported. Other `if` handlers and required hook semantics are reported and
+skipped by default; `--strict` refuses those gaps. This
 same guard applies to project/global catalog lifecycle and project-local
 migration; it does not edit Claude/Codex originals or profiles.
 
@@ -383,11 +412,12 @@ agents, compatible rules/on-demand commands and supported raw settings, hooks
 and user MCP contributions. Catalog links, domain links and copy-owned content
 are excluded from local adoption.
 
-The preview labels diagnostics `BLOCKER` or `LIMITATION` and reports activation
-as `BLOCKED` or `READY for apply`. A blocked preview never recommends applying;
-resolve its config/hook/permission blockers first. Individual `MANUAL` elements
-remain inactive even when the supported contributions are ready. Apply readiness
-is a source/configuration preflight, not proof of native runtime readiness;
+The default preview labels adaptation errors `SKIPPED ERROR` and activation
+`PARTIAL`; nonblocking diagnostics remain `LIMITATION`. With `--strict`, gaps
+are `BLOCKER` and the preview is `BLOCKED`. A blocked preview never recommends
+applying. Individual `MANUAL` elements remain inactive even when supported
+contributions are ready. Apply readiness is a source/configuration preflight,
+not proof of native runtime readiness;
 the managed launch audit is still required. `ALLOW_UNMAPPED` and the verified
 stock gitflow policy fallback are nonblocking limitations and grant nothing.
 
@@ -415,6 +445,10 @@ disabled native-discovered assets need verified removal or a launch refusal;
 mere omission from a new config is not enough. Shared Codex/DSH blocks retire
 only after both catalog/local contributor sets and historical custody are checked.
 Collisions and modified managed outputs preserve the existing user/foreign bytes.
+When a previously active skill becomes rejected, its verified owned native
+entry is retired before Loader discovery, even without `--prune`. If safe
+retirement cannot be proved, activation fails. The original skill bundle and
+diagnostic remain available for repair and retry.
 
 `status` and `reconcile --check` detect source, generator, output, resource and
 contribution drift. Check/dry-run write zero bytes; a clean drift check is not

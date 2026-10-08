@@ -40,6 +40,7 @@ After installing completion, arguments themselves tab-complete too:
 - `ai-dotfiles install -g` — refresh `global.json` packages for its selected targets: Claude `~/.claude/`, Codex `$CODEX_HOME`, DSH `$DSH_HOME`.
 - `ai-dotfiles install --prune [-g]` — clean proven owned stale target outputs after refresh. Claude stale storage symlinks, Codex owned renders and DSH inventory/resource retirement have target-specific ownership checks; foreign/user content and protected local/shared contributions survive.
 - `ai-dotfiles install --strict-deps [-g]` — refuse to install if the manifest is missing any transitive dependencies. Without this flag, missing deps are auto-added to the manifest and a warning is printed.
+- `ai-dotfiles install --strict [-g]` — refuse source/adaptation errors before activation instead of installing the supported subset. `add`, `remove`, DSH migration and `reconcile` also accept `--strict`.
 - `ai-dotfiles add <spec>...` — add specifiers to the **project** manifest and refresh its selected targets. Transitive deps declared via `domain.json` (or frontmatter `depends:`) are prepended in topological order.
 - `ai-dotfiles add -g <spec>...` — add to the **global** manifest and refresh its selected targets immediately.
 - `ai-dotfiles remove <spec>...` — remove from project manifest and unlink. Refuses if other manifest entries declare a dependency on the target; pass `--force` to break the dependency anyway, or remove the dependents in the same call.
@@ -60,9 +61,9 @@ Migration is project-only; `--to` accepts `codex|dsh` and defaults to Codex.
 Reconciliation supports both scopes and both generated targets:
 
 - `ai-dotfiles migrate [--to codex] [--dry-run]` — migrate **LOCAL** (hand-authored, non-catalog) `.claude/` skills/agents/rules to Codex. A skill is a relative symlink `.agents/skills/<name>` → `../../.claude/skills/<name>` when its raw `SKILL.md` is within Codex's 1024-char `description` cap and the name is valid hyphen-case (auto-fresh, no drift); otherwise it is rendered with the first-sentence trim. Agents render to `.codex/agents/<name>.toml`; rules dispatch like catalog rules (synthetic `rule-<name>` skill or `AGENTS.md` block). `CLAUDE.md` stays the canonical instruction file — migrate points Codex at it via `project_doc_fallback_filenames` in `.codex/config.toml` (no rendered copy, no symlink). User-authored `.mcp.json` servers (not domain-owned) are copied to `[mcp_servers]`. Provenance is recorded in `.codex/.ai-dotfiles-local.json` so `install --prune` keeps migrated artefacts. `--dry-run` plans and classifies (MECHANICAL / REFACTOR) and lists Claude-only surfaces, writing nothing.
-- `ai-dotfiles migrate --to dsh [--dry-run]` — classify local skills/agents/rules, compatible on-demand commands, raw settings/hooks and user MCP as MECHANICAL / REFACTOR / MANUAL. Preserves whole skills and originals, excludes catalog links/copies, and records `.dsh/ai-dotfiles/local.json`. Unsupported required semantics or uncertain original ownership refuse activation. No `-g` migration.
-- `ai-dotfiles reconcile [--check]` — refresh Codex/DSH catalog and local-origin drift, including owned retired sources. `--check` writes nothing and exits nonzero on drift. Codex uses its existing source/generator/block/config checks; DSH also checks resources, contributions and source custody.
-- `ai-dotfiles reconcile -g [--check]` — refresh enabled global Codex/DSH outputs in `$CODEX_HOME`/`$DSH_HOME`; Codex includes its instructions bridge and skill symlink/render cap transition. DSH scans explicit owned roots/blocks, not the entire home.
+- `ai-dotfiles migrate --to dsh [--dry-run] [--strict]` — classify local skills/agents/rules, compatible on-demand commands, raw settings/hooks and user MCP as MECHANICAL / REFACTOR / MANUAL. Preserves whole skills and originals, excludes catalog links/copies, and records `.dsh/ai-dotfiles/local.json`. Unsupported contributions are reported and skipped by default; `--strict` refuses them. Source-custody and uncertain original-ownership failures remain fatal. No `-g` migration.
+- `ai-dotfiles reconcile [--check] [--strict]` — refresh Codex/DSH catalog and local-origin drift, including owned retired sources. `--check` writes nothing and exits nonzero on drift; add `--strict` to make isolated source/adaptation errors fatal too. Codex uses its existing source/generator/block/config checks; DSH also checks resources, contributions and source custody.
+- `ai-dotfiles reconcile -g [--check] [--strict]` — refresh enabled global Codex/DSH outputs in `$CODEX_HOME`/`$DSH_HOME`; Codex includes its instructions bridge and skill symlink/render cap transition. DSH scans explicit owned roots/blocks, not the entire home.
 
 > `migrate` works whether or not `codex` is in `targets` (it is a project-local action); `reconcile` refreshes catalog artefacts only when `codex` is in `targets`, and always refreshes migrate-origin local artefacts.
 
@@ -185,6 +186,15 @@ The `targets` array in `ai-dotfiles.json` declares which agent CLIs the project 
 
 Absent `targets` field → `["claude"]`. Every existing manifest keeps working unchanged.
 
+Codex catalog skill/agent source errors are isolated per artefact during
+project/global `install`, `add` and `reconcile`: healthy siblings continue,
+failed sources are `SKIPPED ERROR`, and the result is `PARTIAL`. A failed refresh
+preserves a previously owned, still-requested artefact, including with `--prune`.
+Repair the original and rerun the command. `--strict` refuses source errors
+before target writes; `reconcile --check --strict` is the read-only CI gate.
+Foreign destinations and write failures remain fatal. Each target validates its
+own supported format; Claude does not use DSH's syntax validator.
+
 ### DeepSeek Harness commands and contract
 
 Both project `ai-dotfiles.json` and global `global.json` accept `"dsh"`.
@@ -201,19 +211,21 @@ ai-dotfiles install -g --prune
 ai-dotfiles status -g
 ai-dotfiles migrate --to dsh --dry-run      # project only; default migrate is Codex
 ai-dotfiles migrate --to dsh
-ai-dotfiles reconcile --check              # zero-write drift gate
+ai-dotfiles reconcile --check --strict     # zero-write drift + adaptation gate
 ai-dotfiles reconcile -g --check
 ai-dotfiles dsh launch --profile headless "run the tests"
 ai-dotfiles dsh launch headless "run the tests"   # equivalent shorthand
 ai-dotfiles dsh launch --profile web --port 8080 --no-open
 ai-dotfiles dsh launch --profile headless --patch ./review.json --patch ./local.json "review changes"
+ai-dotfiles dsh launch --strict --profile web # managed flag before native flags
 ```
 
 Launch requires **separately installed official `@deepseek-ai/dsh@0.2.0-rc.2`**,
 `node`/`dsh` on PATH, an existing native profile and its required providers. It
 never installs a runtime or creates/repairs profiles. Launch composition leaves
 native home/profile patches intact; native Web volatile-settings edits persist
-to the existing profile's `cordis.patch.yml`. Put repeatable `--patch` and
+to the existing profile's `cordis.patch.yml`. Put managed `--strict` first,
+before `--profile`, shorthand or native flags. Put repeatable `--patch` and
 `--profile` before verbatim app argv; no
 default profile, global launch switch or new permission preset exists.
 
@@ -250,22 +262,39 @@ installed runtime while profile-relative resources retain their original base.
 | Rules | Agreeing always-on blocks are shared; description-only unconditional rules are DSH-only literal prompt sections. Nonempty `paths` keeps source/provenance and reports activation gap: no glob broadening or skill demotion. A conflicting effective shared Codex path block can refuse launch. |
 | Agents | Named `ai_dotfiles_agent_<name>` tools call stock in-process children with literal bodies/native and PTC descriptions, retained parent services/current session model. Omitted/inherit and Claude aliases inherit; aliases emit `MODEL_UNMAPPED` with original-model provenance. Explicit native routes stay native. No new agent engine. |
 | Child tools | Known exact `tools`/`disallowedTools` name filters; unknown/constrained restrictions make the agent MANUAL. Filters are not a security boundary. |
-| Permissions | Only exact known whole-tool deny/ask. `Read` maps to `read` plus `read_image`; Write/Edit/Glob/Grep/Bash/WebFetch/WebSearch map to write/edit/glob/grep/bash/web_fetch/web_search. Unknown Task/Agent/MCP/native names, wildcards, `Tool(...)`, compound Bash and argument restrictions are reported; deny/ask gaps block. Allow grants nothing; no full-access fallback. Ask preserves native deny/cancel/sandbox; approval-never children reject it. |
+| Permissions | Only exact known whole-tool deny/ask. `Read` maps to `read` plus `read_image`; Write/Edit/Glob/Grep/Bash/WebFetch/WebSearch map to write/edit/glob/grep/bash/web_fetch/web_search. Unknown Task/Agent/MCP/native names, wildcards, `Tool(...)`, compound Bash and argument restrictions are reported and skipped; `--strict` refuses gaps. Every supported deny/ask remains active. Allow grants nothing; no full-access fallback. Ask preserves native deny/cancel/sandbox; approval-never children reject it. |
 | Env/settings | Supported string env merges global→project→process (even empty process values win), no dotenv writes. Reserved bootstrap names/prefixes such as HOME/PATH/NODE_OPTIONS/DSH_/XDG_ are rejected. Other Claude settings are diagnosed; native settings use a fragment. |
 | MCP | Stdio argv/env/cwd and Streamable HTTP url/headers retain origins. No SSE, prompts/OAuth/helper approximation. Claude `${VAR}`/`${VAR:-default}` is `MCP_ENV_UNMAPPED`, not launcher interpolation. |
 | Hooks | Exactly SessionStart/UserPromptSubmit/PreToolUse/PostToolUse/Stop/SubagentStart/SubagentStop command handlers. Exact known tool matchers/pipe alternatives; no unknown regex conversion, async/once/if or non-command handlers. Serial execution, no dedup, config loads once. |
 | Local elements | Project-only migration, MECHANICAL/REFACTOR/MANUAL classification, catalog link/copy exclusion and `.dsh/ai-dotfiles/local.json`. Compatible on-demand commands can become skills; execution/import commands and workflows are manual. |
 
-DSH dry-run labels `BLOCKER` versus nonblocking `LIMITATION` diagnostics and
-reports `Activation: BLOCKED` or `READY for apply`. Resolve blockers before
-applying a blocked preview; it never recommends unconditional apply. Individual
-MANUAL elements stay inactive; ready supported contributions still need the
-managed native launch audit. Dry-run and refused apply preserve existing bytes.
+DSH adaptation continues with healthy individual contributions by default:
+one rejected hook handler does not remove healthy handlers in its group, and
+one bad skill does not prevent other skills from loading. Errors are listed as
+`SKIPPED ERROR` with origin, field and reason; the result is explicitly
+`PARTIAL`. Skipped hooks and permission restrictions are **not enforced**.
+Managed launch is allowed with that warning and still audits every activated
+plugin, tool, provider and supported restriction. Sources and original blocking
+diagnostics are retained; no native permissions/presets are widened.
+Use `--strict` with `install`, `add`, `remove`, `migrate --to dsh`, `reconcile`
+or `dsh launch` to refuse adaptation gaps. For CI, use
+`reconcile --check --strict`; `--check` alone checks supported-output drift.
+Source-custody, foreign ownership, invalid manifests, unrecognized blocking
+diagnostics and native runtime/audit failures remain fatal. Dry-run and refused
+apply preserve existing bytes.
+Native frontmatter parse errors are per file: a rejected file is skipped while
+healthy metadata remains usable, without replacement metadata. A previously
+active rejected DSH skill is retired from its verified owned native path before
+Loader discovery, even without `--prune`; uncertain retirement refuses
+activation. Repair original sources and rerun `install` or `reconcile` (`-g`
+for user scope), then restart managed DSH. Rejected entries are checked again.
 
 Both manifests accept top-level `"dsh_permission_mode": "strict" | "native"`.
-Absent means `strict`; malformed choices fail. Strict blocks Claude
-`permissions.defaultMode`, including `"auto"`. An explicit `native` choice
-acknowledges **only** `defaultMode: "auto"` as a nonblocking `DEFAULT_MODE_NATIVE`
+Absent means `strict`; malformed choices fail. This translation setting differs
+from the CLI `--strict` option that refuses partial activation. The manifest's
+strict mode rejects Claude `permissions.defaultMode`, including `"auto"`.
+An explicit `native` choice acknowledges **only** `defaultMode: "auto"` as a
+nonblocking `DEFAULT_MODE_NATIVE`
 translation limitation, keeping the exact raw value, hash and provenance.
 Set it in each original source scope: global settings require
 `$AI_DOTFILES_HOME/global.json` (default `~/.ai-dotfiles/global.json`); project
@@ -273,9 +302,9 @@ Set it in each original source scope: global settings require
 remains a nonblocking `SETTINGS_FIELD_UNMAPPED` diagnostic. Claude settings stay
 unchanged; no DSH Auto/preset selection, sandbox/approval changes or allow grants
 are generated. Other defaultMode values, unknown fields, invalid types and
-deny/ask gaps still block. All lifecycle/migration/status/reconciliation and fresh
-launch paths use the choice before merging. Revocation refuses affected prepared
-activation before writes/readiness. Reconcile the edited scope (`-g` for global)
+deny/ask gaps remain explicit errors: skipped by default, fatal with `--strict`.
+All lifecycle/migration/status/reconciliation and fresh launch paths use the
+choice before merging. Reconcile the edited scope (`-g` for global)
 and restart managed DSH.
 
 For the exact reviewed stock `@gitflow` context-only PreToolUse pair, DSH reports

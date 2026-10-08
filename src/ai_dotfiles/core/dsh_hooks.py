@@ -20,6 +20,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
+from ai_dotfiles.core.dsh_admission import require_admission, skipped_diagnostics
 from ai_dotfiles.core.dsh_audit import DshAuditRequirements
 from ai_dotfiles.core.dsh_config import DshConfigSource, DshNativeContribution
 from ai_dotfiles.core.dsh_install import (
@@ -40,7 +41,7 @@ if TYPE_CHECKING:
     from ai_dotfiles.core.dsh_migrate import DshLocalSource
 
 
-DSH_HOOKS_GENERATOR_VERSION = 2
+DSH_HOOKS_GENERATOR_VERSION = 3
 DSH_HOOKS_SCHEMA_VERSION = 1
 DSH_HOOKS_PACKAGE = "@deepseek-ai/dsh-hooks-claude-code"
 DSH_HOOKS_ROW_ID = "ai-dotfiles-hooks"
@@ -287,25 +288,27 @@ class DshHookPlan:
     def blocked(self) -> bool:
         return any(item.blocking for item in self.diagnostics)
 
-    def require_activatable(self) -> None:
-        """Never activate a partial mandatory guard after ignoring its options."""
-        if self.blocked:
-            raise ConfigError(
-                "Cannot activate MANUAL DSH hooks: "
-                + "; ".join(
-                    f"{item.origin} {item.element} {item.field}: {item.reason}"
-                    for item in self.diagnostics
-                    if item.blocking
-                )
-            )
+    @property
+    def skipped(self) -> tuple[DshDiagnostic, ...]:
+        return skipped_diagnostics(self.diagnostics)
 
-    def contribution(self) -> DshNativeContribution | None:
+    @property
+    def partial(self) -> bool:
+        return bool(self.skipped)
+
+    def require_activatable(self, *, strict: bool = True) -> None:
+        """Never activate a partial mandatory guard after ignoring its options."""
+        require_admission(
+            self.diagnostics, strict=strict, context="Cannot activate MANUAL DSH hooks"
+        )
+
+    def contribution(self, *, strict: bool = True) -> DshNativeContribution | None:
         """ONE logical contribution after merging every original scope/domain.
 
         Omitted projectDir lets a global plan bind to the native session's
         workspace. Managed launch supplies its actual project_root explicitly.
         """
-        self.require_activatable()
+        self.require_activatable(strict=strict)
         if not self.hooks:
             return None
         config: dict[str, object] = {
@@ -323,9 +326,9 @@ class DshHookPlan:
             ),
         )
 
-    def output(self) -> DshOutput:
+    def output(self, *, strict: bool = True) -> DshOutput:
         """One owned native file also retaining raw originals and diagnostics."""
-        self.require_activatable()
+        self.require_activatable(strict=strict)
         return DshOutput(
             self.layout.hooks_path,
             "generated",
@@ -856,7 +859,7 @@ def collect_dsh_hooks(
 
 
 def attach_dsh_hook_outputs(
-    install: DshInstallPlan, hooks: DshHookPlan
+    install: DshInstallPlan, hooks: DshHookPlan, *, strict: bool = True
 ) -> DshInstallPlan:
     """Add complete resource/source preflight and ONE hooks output, without writes.
 
@@ -866,7 +869,7 @@ def attach_dsh_hook_outputs(
     """
     if install.layout != hooks.layout:
         raise ConfigError("DSH hook and install output layouts differ")
-    hooks.require_activatable()
+    hooks.require_activatable(strict=strict)
     if hooks.local_sources:
         from ai_dotfiles.core.dsh_migrate import read_dsh_local_source
 
@@ -900,7 +903,7 @@ def attach_dsh_hook_outputs(
         permissions=install.permissions,
         instructions=install.instructions,
     )
-    output = hooks.output()
+    output = hooks.output(strict=strict)
     if any(item.path == output.path for item in install.outputs):
         raise ConfigError(
             "DSH hook output is already attached; combine all sources once"
@@ -919,6 +922,7 @@ def attach_dsh_hook_outputs(
     keys = {item.path for item in install.outputs}
     return replace(
         install,
+        activation_diagnostics=(*install.activation_diagnostics, *hooks.diagnostics),
         resources=tuple(resources),
         outputs=(
             *install.outputs,

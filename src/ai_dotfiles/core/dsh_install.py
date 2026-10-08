@@ -30,6 +30,11 @@ from typing import Literal, TypedDict, cast
 from ai_dotfiles.core import agents_md, manifest
 from ai_dotfiles.core.codex_local_registry import load_local_registry, registry_path
 from ai_dotfiles.core.codex_render import split_body
+from ai_dotfiles.core.dsh_admission import (
+    admitted_permissions,
+    require_admission,
+    skipped_diagnostics,
+)
 from ai_dotfiles.core.dsh_audit import (
     DSH_AUDIT_GENERATOR_VERSION,
     DSH_AUDIT_ROW_ID,
@@ -44,6 +49,7 @@ from ai_dotfiles.core.dsh_audit import (
 )
 from ai_dotfiles.core.dsh_layout import DshLayout
 from ai_dotfiles.core.dsh_local_registry import load_dsh_local_registry
+from ai_dotfiles.core.dsh_native import native_frontmatter_failure
 from ai_dotfiles.core.dsh_permissions import DshPermissionPolicy
 from ai_dotfiles.core.dsh_render import (
     DshAgentPayload,
@@ -57,7 +63,7 @@ from ai_dotfiles.core.dsh_render import (
     validate_skill,
 )
 from ai_dotfiles.core.elements import Element, ElementType, resolve_source_path
-from ai_dotfiles.core.errors import ConfigError, ElementError, LinkError
+from ai_dotfiles.core.errors import ConfigError, ElementError, LinkError, SourceError
 from ai_dotfiles.core.fs_copy import copy_tree_into
 from ai_dotfiles.core.shared_instructions import (
     ProjectInstructionPlan,
@@ -66,7 +72,7 @@ from ai_dotfiles.core.shared_instructions import (
 from ai_dotfiles.core.symlinks import safe_symlink
 from ai_dotfiles.core.targets import Target
 
-DSH_INSTALL_GENERATOR_VERSION = 2
+DSH_INSTALL_GENERATOR_VERSION = 3
 DSH_OWNERSHIP_SCHEMA_VERSION = 1
 DSH_SHARED_CUSTODY_GENERATOR_VERSION = 1
 InstallMode = Literal["link", "copy"]
@@ -143,6 +149,11 @@ class DshInstallPlan:
     permissions: DshPermissionPolicy
     instructions: ProjectInstructionPlan | None
     permission_modes: tuple[tuple[Path, manifest.DshPermissionMode, str], ...] = ()
+    strict: bool = False
+    activation_diagnostics: tuple[DshDiagnostic, ...] = ()
+    rejected_skill_sources: tuple[Path, ...] = ()
+    rejected_skill_paths: tuple[Path, ...] = ()
+    source_errors: tuple[tuple[Path, DshDiagnostic], ...] = ()
 
     @property
     def desired_output_keys(self) -> frozenset[str]:
@@ -168,6 +179,23 @@ class DshInstallPlan:
                 for item in result.diagnostics
             )
             + self.permissions.diagnostics
+            + self.activation_diagnostics
+            + tuple(item for _, item in self.source_errors)
+        )
+
+    @property
+    def skipped(self) -> tuple[DshDiagnostic, ...]:
+        return skipped_diagnostics(self.diagnostics)
+
+    @property
+    def partial(self) -> bool:
+        return bool(self.skipped)
+
+    def require_activatable(self, *, strict: bool = False) -> None:
+        require_admission(
+            self.diagnostics,
+            strict=strict or self.strict,
+            context="Cannot activate DSH install",
         )
 
     @property
@@ -197,7 +225,9 @@ class DshInstallPlan:
     def bridge_config(self) -> DshBridgeConfig:
         """Return scope contributions; blocked permissions raise ConfigError."""
         return build_bridge_config(
-            self.ready_agents, self.literal_rules, permissions=self.permissions
+            self.ready_agents,
+            self.literal_rules,
+            permissions=admitted_permissions(self.permissions, strict=self.strict),
         )
 
     def audit_requirements(self) -> DshAuditRequirements:
@@ -499,6 +529,8 @@ def plan_dsh_install(
     mode: InstallMode = "link",
     permissions: DshPermissionPolicy = _EMPTY_PERMISSIONS,
     instructions: ProjectInstructionPlan | None = None,
+    strict: bool = False,
+    source_errors: Iterable[tuple[Path, DshDiagnostic]] = (),
 ) -> DshInstallPlan:
     """Plan complete native bundles and source contributions without any writes.
 
@@ -514,10 +546,37 @@ def plan_dsh_install(
         tuple(rules),
     )
     resource_results = tuple(resources)
+    errors = tuple(source_errors)
     _guard_local_registries(layout)
     if layout.project_root is not None and instructions is None:
         instructions = project_instruction_plan((), (), layout.project_root, Path("."))
     outputs: list[DshOutput] = []
+    error_path = layout.resources_dir / "contributions" / "source-errors.json"
+    if errors or _output_key(layout, error_path) in read_dsh_inventory(layout).records:
+        reporting_source = Path(__file__)
+        reporting_provenance = DshProvenance(
+            reporting_source,
+            "builtin",
+            "dsh-source-errors",
+            _sha(reporting_source.read_bytes()),
+            DSH_INSTALL_GENERATOR_VERSION,
+        )
+        outputs.append(
+            DshOutput(
+                error_path,
+                "generated",
+                (reporting_provenance,),
+                {"install": DSH_INSTALL_GENERATOR_VERSION},
+                content=_json(
+                    {
+                        "errors": [
+                            {"path": str(path), "diagnostic": asdict(item)}
+                            for path, item in errors
+                        ]
+                    }
+                ),
+            )
+        )
     for result in (*skill_results, *agent_results, *rule_results):
         if result.status == "READY" and (
             result.payload is None or any(item.blocking for item in result.diagnostics)
@@ -615,10 +674,13 @@ def plan_dsh_install(
         tuple(outputs),
         permissions,
         instructions,
+        strict=strict,
+        source_errors=errors,
     )
     # Name collisions are errors even if the permission policy is blocked.
     build_bridge_config(plan.ready_agents, plan.literal_rules)
     _validate_output_plan(plan)
+    plan.require_activatable()
     return plan
 
 
@@ -631,6 +693,7 @@ def collect_dsh_elements(
     targets: Iterable[Target] = (Target.DSH,),
     native_frontmatter: Mapping[Path, Mapping[str, object]] | None = None,
     permissions: DshPermissionPolicy = _EMPTY_PERMISSIONS,
+    strict: bool = False,
 ) -> DshInstallPlan:
     """Collect selected catalog sources, including unsupported/path rule gaps.
 
@@ -643,12 +706,15 @@ def collect_dsh_elements(
     agents: list[DshRenderResult[DshAgentPayload]] = []
     rules: list[DshRenderResult[DshRulePayload]] = []
     resources: list[DshResource] = []
+    source_errors: list[tuple[Path, DshDiagnostic]] = []
     seen: set[tuple[ElementType, Path]] = set()
     seen_domains: set[Path] = set()
     _guard_local_registries(layout)
     metadata = native_frontmatter or {}
 
-    def collect(kind: ElementType, source: Path, origin: str, element: str) -> None:
+    def read_element(
+        kind: ElementType, source: Path, origin: str, element: str
+    ) -> None:
         key = kind, source.absolute()
         if key in seen:
             return
@@ -679,6 +745,22 @@ def collect_dsh_elements(
                     origin=origin,
                     element=element,
                     native_frontmatter=metadata.get(source),
+                )
+            )
+
+    def collect(kind: ElementType, source: Path, origin: str, element: str) -> None:
+        try:
+            read_element(kind, source, origin, element)
+        except SourceError as exc:
+            if kind is ElementType.RULE:
+                raise
+            instruction = source / "SKILL.md" if kind is ElementType.SKILL else source
+            source_errors.append(
+                (
+                    instruction,
+                    DshDiagnostic(
+                        "SOURCE_UNAVAILABLE", origin, element, "source", str(exc)
+                    ),
                 )
             )
 
@@ -726,13 +808,21 @@ def collect_dsh_elements(
     )
     return plan_dsh_install(
         layout,
-        skills=skills,
-        agents=agents,
-        rules=rules,
+        skills=(
+            native_frontmatter_failure(result, native_frontmatter) for result in skills
+        ),
+        agents=(
+            native_frontmatter_failure(result, native_frontmatter) for result in agents
+        ),
+        rules=(
+            native_frontmatter_failure(result, native_frontmatter) for result in rules
+        ),
         resources=resources,
         mode=mode,
         permissions=permissions,
         instructions=instructions,
+        strict=strict,
+        source_errors=source_errors,
     )
 
 
@@ -1062,6 +1152,24 @@ def preflight_dsh_install(
     _validate_output_plan(plan)
     _guard_local_registries(plan.layout)
     inventory = read_dsh_inventory(plan.layout)
+    # Omission is not isolation: native discovery still scans an existing
+    # rejected bundle. Never let an unowned counterpart bypass admission.
+    rejected_paths = (
+        {
+            plan.layout.skills_dir / result.provenance.source.parent.name
+            for result in plan.skills
+            if result.status != "READY"
+        }
+        | {
+            plan.layout.skills_dir / path.parent.name
+            for path, _ in plan.source_errors
+            if path.name == "SKILL.md"
+        }
+        | set(plan.rejected_skill_paths)
+    )
+    for path in rejected_paths:
+        _guard(path, _anchor(plan.layout))
+        _verify_owned(path, inventory.records.get(_output_key(plan.layout, path)))
     # Retained history must still describe the actual block before any output
     # refresh, including a repeat migrate that now classifies the source MANUAL.
     historical = _historical_shared_rules(inventory)
@@ -1200,8 +1308,37 @@ def _record(output: DshOutput) -> DshOwnershipRecord:
     }
 
 
+def skipped_skill_output_keys(
+    plan: DshInstallPlan, inventory: DshInventory
+) -> tuple[str, ...]:
+    """Find only prior owned skill bundles for currently rejected originals.
+
+    Ordinary removed sources remain the lifecycle owner's responsibility.
+    Verification before deletion still rejects any foreign/modified contents.
+    """
+    rejected = (
+        {
+            str(result.provenance.source)
+            for result in plan.skills
+            if result.status != "READY"
+        }
+        | {str(path) for path in plan.rejected_skill_sources}
+        | {str(path) for path, _ in plan.source_errors}
+    )
+    return tuple(
+        key
+        for key, record in inventory.records.items()
+        if key.startswith("skills/")
+        and key not in plan.desired_output_keys
+        and any(part["source"] in rejected for part in record["provenance"])
+    )
+
+
 def apply_dsh_install(
-    plan: DshInstallPlan, *, local_rule_custody: Mapping[str, str] | None = None
+    plan: DshInstallPlan,
+    *,
+    local_rule_custody: Mapping[str, str] | None = None,
+    strict: bool = False,
 ) -> DshInstallResult:
     """Materialize a wholly preflighted plan, preserving unchanged bytes/mtimes.
 
@@ -1209,7 +1346,11 @@ def apply_dsh_install(
     ownership for every planned output. No adopt/backup-and-clobber is used.
     Old records are retained for later explicit retirement; this is not prune.
     """
+    plan.require_activatable(strict=strict)
     previous = preflight_dsh_install(plan, local_rule_custody=local_rule_custody)
+    retired_skills = skipped_skill_output_keys(plan, previous)
+    for key in retired_skills:
+        verify_dsh_owned_output(plan.layout, key, inventory=previous)
     records, sources = dict(previous.records), dict(previous.source_records)
     blocks = {key: list(names) for key, names in previous.rule_blocks.items()}
     historical = deepcopy(previous.shared_rule_records)
@@ -1246,6 +1387,12 @@ def apply_dsh_install(
             historical[key] = candidate
     changed: list[Path] = []
     try:
+        for key in retired_skills:
+            path = plan.layout.dsh_dir / key
+            if path.exists() or path.is_symlink():
+                _clear_owned_output(path)
+                changed.append(path)
+            records.pop(key)
         for output in plan.outputs:
             key = _output_key(plan.layout, output.path)
             if output.mode == "generated":

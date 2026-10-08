@@ -1,3 +1,17 @@
+## v0.5.0 (2026-10-08)
+
+### Feat
+
+- **dsh**: isolate source/adaptation failures per contribution
+  - Install, migrate, reconcile and managed launch continue with supported
+    entries while explicitly reporting skipped hooks, skills and settings.
+  - Partial launch warns that skipped protective hooks and restrictions are not
+    enforced; supported deny/ask gates and native audits remain required.
+  - Add `--strict` to refuse adaptation gaps and
+    `reconcile --check --strict` for CI; preserve source/ownership safeguards.
+  - Isolate catalog skill/agent source errors for Codex installation,
+    addition and reconciliation without swallowing destination or write errors.
+
 ## v0.4.4 (2026-10-08)
 
 ### Fix

@@ -66,12 +66,15 @@ export async function loadNative(runtimeAnchor) {
 }
 
 /** Match the native provider's delimiter/parser contract for all source types. */
-export function parseFrontmatter(native, paths) {
+export function parseFrontmatter(native, paths, strict = true) {
   if (!Array.isArray(paths) || paths.some(path => typeof path !== 'string')) throw new Error('paths must be an array of paths');
+  if (typeof strict !== 'boolean') throw new Error('strict must be a boolean');
   const frontmatter = {};
+  const errors = {};
   for (const path of paths) {
     absolute(path, 'frontmatter path');
     const raw = readFileSync(path, 'utf8');
+    try {
     const lines = raw.split('\n');
     if (lines[0].replace(/\r$/, '') !== '---') refuse('FRONTMATTER_INVALID', path, path, 'frontmatter', 'missing native YAML frontmatter delimiter');
     const closing = lines.findIndex((line, index) => index > 0 && line.replace(/\r$/, '') === '---');
@@ -80,10 +83,15 @@ export function parseFrontmatter(native, paths) {
     try { data = native.yaml.parse(lines.slice(1, closing).join('\n')); }
     catch (error) { refuse('FRONTMATTER_INVALID', path, path, 'frontmatter', `native YAML parser: ${String(error)}`); }
     if (!record(data)) refuse('FRONTMATTER_INVALID', path, path, 'frontmatter', 'native YAML frontmatter must be a mapping');
-    jsonData(data, path);
+    try { jsonData(data, path); }
+    catch (error) { refuse('FRONTMATTER_INVALID', path, path, 'frontmatter', String(error)); }
     frontmatter[path] = data;
+    } catch (error) {
+      if (strict || error.diagnostic?.code !== 'FRONTMATTER_INVALID') throw error;
+      errors[path] = error.diagnostic;
+    }
   }
-  return { frontmatter };
+  return strict ? { frontmatter } : { frontmatter, errors };
 }
 
 function entriesIn(rows, origin, { presets = false, includes, prefix = 'entries', parent, locations = includes?.locations } = {}) {
@@ -628,10 +636,10 @@ export async function runRequest() {
   let ok = false;
   try {
     const request = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    exactKeys(request, ['schemaVersion', 'operation', 'runtimeAnchor', 'paths', 'profileDir', 'home', 'cwd', 'domainPatches', 'domainLayers', 'rows', 'cliPatchFiles', 'customSkillDirs', 'selectedPreset', 'telemetryDisabledEnv'], ['schemaVersion', 'operation', 'runtimeAnchor'], 'native request');
+    exactKeys(request, ['schemaVersion', 'operation', 'runtimeAnchor', 'paths', 'strict', 'profileDir', 'home', 'cwd', 'domainPatches', 'domainLayers', 'rows', 'cliPatchFiles', 'customSkillDirs', 'selectedPreset', 'telemetryDisabledEnv'], ['schemaVersion', 'operation', 'runtimeAnchor'], 'native request');
     if (request.schemaVersion !== SCHEMA) throw new Error('Unsupported native request schema version');
     const native = await loadNative(request.runtimeAnchor);
-    if (request.operation === 'frontmatter') result = parseFrontmatter(native, request.paths);
+    if (request.operation === 'frontmatter') result = parseFrontmatter(native, request.paths, request.strict ?? true);
     else if (request.operation === 'compose') {
       result = await inspectComposition(native, request);
       diagnostics.push(...result.diagnostics);
