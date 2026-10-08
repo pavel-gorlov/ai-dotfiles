@@ -1,0 +1,274 @@
+{
+  "format": 1,
+  "task": "ai-grmp6",
+  "snapshot_at": "2026-10-07T16:01:49+00:00",
+  "last_exit": "2026-10-07T16:01:49+00:00",
+  "partial": {
+    "recorded": [],
+    "computed": []
+  },
+  "unparsed": 0,
+  "totals": {
+    "tokens": {
+      "gpt-6.1-sol": {
+        "input": 712064,
+        "cache_read": 43098880,
+        "cache_write": 0,
+        "output": 106048,
+        "reasoning": 70348
+      },
+      "codex-auto-review": {
+        "input": 349510,
+        "cache_read": 5047040,
+        "cache_write": 0,
+        "output": 4841,
+        "reasoning": 2799
+      }
+    },
+    "time": {
+      "wall_clock": 5103.0,
+      "active": 5102.592,
+      "owner_wait": 0.0,
+      "idle": 0.408
+    },
+    "unattributed": {
+      "tokens": 0,
+      "share": 0.0
+    },
+    "stages": {
+      "skill": {},
+      "agent": {}
+    }
+  },
+  "intervals": {
+    "wall_clock": [
+      [
+        "2026-10-07T14:36:46+00:00",
+        "2026-10-07T16:01:49+00:00"
+      ]
+    ],
+    "active": [
+      [
+        "2026-10-07T14:36:46+00:00",
+        "2026-10-07T16:01:42.550000+00:00"
+      ],
+      [
+        "2026-10-07T16:01:42.696000+00:00",
+        "2026-10-07T16:01:48.738000+00:00"
+      ]
+    ],
+    "owner_wait": [],
+    "idle": [
+      [
+        "2026-10-07T16:01:42.550000+00:00",
+        "2026-10-07T16:01:42.696000+00:00"
+      ],
+      [
+        "2026-10-07T16:01:48.738000+00:00",
+        "2026-10-07T16:01:49+00:00"
+      ]
+    ]
+  },
+  "codex_roots": {
+    "01a106d9-5bbd-71b3-88ff-699524937b7b": "01a10349-af5a-7b11-8503-9a19885a66b3"
+  },
+  "commits": [
+    {
+      "sha": "2cfa7d948b30b121526c1ca68dfdd0d2d10f82b6",
+      "at": "2026-10-07T15:07:16+00:00",
+      "subject": "fix(dsh): support explicit native permission mode",
+      "tokens": {
+        "gpt-6.1-sol": {
+          "input": 431601,
+          "cache_read": 17868800,
+          "cache_write": 0,
+          "output": 58299,
+          "reasoning": 30942
+        },
+        "codex-auto-review": {
+          "input": 162242,
+          "cache_read": 489728,
+          "cache_write": 0,
+          "output": 1423,
+          "reasoning": 1432
+        }
+      },
+      "time": {
+        "wall_clock": 1830.0,
+        "active": 1830.0,
+        "owner_wait": 0.0,
+        "idle": 0.0
+      }
+    },
+    {
+      "sha": "11596a04015ff8994857b34b9b175e2972903bfc",
+      "at": "2026-10-07T15:12:24+00:00",
+      "subject": "chore(release): bump version to 0.4.2",
+      "tokens": {
+        "gpt-6.1-sol": {
+          "input": 21186,
+          "cache_read": 2002432,
+          "cache_write": 0,
+          "output": 6096,
+          "reasoning": 2660
+        },
+        "codex-auto-review": {
+          "input": 25633,
+          "cache_read": 282112,
+          "cache_write": 0,
+          "output": 396,
+          "reasoning": 250
+        }
+      },
+      "time": {
+        "wall_clock": 308.0,
+        "active": 308.0,
+        "owner_wait": 0.0,
+        "idle": 0.0
+      }
+    }
+  ],
+  "uncommitted_tail": {
+    "tokens": {
+      "gpt-6.1-sol": {
+        "input": 259277,
+        "cache_read": 23227648,
+        "cache_write": 0,
+        "output": 41653,
+        "reasoning": 36746
+      },
+      "codex-auto-review": {
+        "input": 161635,
+        "cache_read": 4275200,
+        "cache_write": 0,
+        "output": 3022,
+        "reasoning": 1117
+      }
+    },
+    "time": {
+      "wall_clock": 2965.0,
+      "active": 2964.592,
+      "owner_wait": 0.0,
+      "idle": 0.408
+    },
+    "after": "2026-10-07T15:12:24+00:00"
+  },
+  "sessions": [
+    {
+      "harness": "codex",
+      "id": "01a10349-af5a-7b11-8503-9a19885a66b3",
+      "bound": true,
+      "first": "2026-10-03T19:42:38.332000+00:00",
+      "last": "2026-10-07T16:01:48.738000+00:00",
+      "tokens": {
+        "gpt-6.1-sol": {
+          "input": 712064,
+          "cache_read": 43098880,
+          "cache_write": 0,
+          "output": 106048,
+          "reasoning": 70348
+        },
+        "codex-auto-review": {
+          "input": 349510,
+          "cache_read": 5047040,
+          "cache_write": 0,
+          "output": 4841,
+          "reasoning": 2799
+        }
+      },
+      "time": {
+        "wall_clock": 5102.738,
+        "active": 5102.592,
+        "owner_wait": 0.0,
+        "idle": 0.146
+      },
+      "stages": {
+        "skill": {},
+        "agent": {}
+      },
+      "unattributed": {
+        "tokens": 0,
+        "share": 0.0
+      },
+      "unparsed": 0,
+      "caveats": [
+        "autocompaction tokens are missing from Codex totals"
+      ],
+      "intervals": {
+        "active": [
+          [
+            "2026-10-07T14:36:46+00:00",
+            "2026-10-07T16:01:42.550000+00:00"
+          ],
+          [
+            "2026-10-07T16:01:42.696000+00:00",
+            "2026-10-07T16:01:48.738000+00:00"
+          ]
+        ],
+        "owner_wait": []
+      },
+      "slices": [
+        {
+          "at": "2026-10-07T15:07:16+00:00",
+          "subject": "fix(dsh): support explicit native permission mode",
+          "tokens": {
+            "gpt-6.1-sol": {
+              "input": 431601,
+              "cache_read": 17868800,
+              "cache_write": 0,
+              "output": 58299,
+              "reasoning": 30942
+            },
+            "codex-auto-review": {
+              "input": 162242,
+              "cache_read": 489728,
+              "cache_write": 0,
+              "output": 1423,
+              "reasoning": 1432
+            }
+          }
+        },
+        {
+          "at": "2026-10-07T15:12:24+00:00",
+          "subject": "chore(release): bump version to 0.4.2",
+          "tokens": {
+            "gpt-6.1-sol": {
+              "input": 21186,
+              "cache_read": 2002432,
+              "cache_write": 0,
+              "output": 6096,
+              "reasoning": 2660
+            },
+            "codex-auto-review": {
+              "input": 25633,
+              "cache_read": 282112,
+              "cache_write": 0,
+              "output": 396,
+              "reasoning": 250
+            }
+          }
+        },
+        {
+          "at": null,
+          "subject": null,
+          "tokens": {
+            "gpt-6.1-sol": {
+              "input": 259277,
+              "cache_read": 23227648,
+              "cache_write": 0,
+              "output": 41653,
+              "reasoning": 36746
+            },
+            "codex-auto-review": {
+              "input": 161635,
+              "cache_read": 4275200,
+              "cache_write": 0,
+              "output": 3022,
+              "reasoning": 1117
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

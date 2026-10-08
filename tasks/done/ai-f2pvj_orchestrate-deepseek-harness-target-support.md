@@ -1,7 +1,7 @@
 ---
 id: ai-f2pvj
 kind: task
-status: wip
+status: done
 created_at: '2026-10-04T11:50:07+00:00'
 parent: ai-47xpm
 dependencies: []
@@ -12,6 +12,11 @@ status_history:
   status: to_do
 - at: '2026-10-04T12:27:18+00:00'
   status: wip
+- at: '2026-10-08T20:45:01+00:00'
+  status: done
+  session:
+    harness: codex
+    id: 01a11cf3-4fbc-77d0-b9d7-f882324c4343
 ---
 
 # Orchestrate DeepSeek Harness target support
@@ -1434,6 +1439,27 @@ criterion remains open: one final metadata-only acceptance commit, independent
 commit proof, normal push/readyPR and actual CI follow. Merge remains owner action
 under the original execution contract; no remote run/PR/merge is claimed yet.
 
+**PR #22 review correction accepted.** The owner invoked `cc-review --fix`
+on the existing ready PR at21e62d4. Four independent fresh-context passes found
+one P2 instruction-compliance issue, confirmed by adversarial validation: new
+filesystem tests belonged in integration under the root unit no-I/O rule.
+Plain follow-up ai-xj3q9 belongs to the same epic/PR; the approved22-child cut
+and all closed implementation history remain unchanged. All84 confirmed test
+definitions moved to six integration modules with identical bodies/parameters;
+18 pure definitions remain unit, with only3 CWD stubs replacing real chdir.
+Root read the whole3516-line diff and independently verified all44 complete
+command/output records, all1458 definitions and2426 collected/JUnit cases,
+254 moved instances, zero loss/duplicates/skips, native15/15 and92.04% coverage.
+Focused337/full2426 and mypy/Ruff/Black/whitespace plus both explicit12-path and
+all-files six-hook precommit gates pass on frozen source. Worker ended; all337
+nonowned tracked paths and original main260 tracked/26 untracked bytes/modes/
+index/HEAD/status are preserved. Evidence under/private/tmp/dsh-cc-review-22:
+fix-report.json SHA08354b0a6442635435e4365d764ef6c66464268f6a01940873d419396cb857d4,
+fix-root-reviewed.json and fix-root-independent.json. Normal task acceptance/
+transition/validation and one atomic correction+done+usage+journal commit follow;
+normal push updates PR #22 and actual new-head CI remains to be verified.
+Merge remains an owner action under the original execution contract.
+
 ## Acceptance criteria
 
 - [x] All 22 subtasks are complete with their concrete acceptance gates checked.
@@ -1442,4 +1468,15 @@ under the original execution contract; no remote run/PR/merge is claimed yet.
 - [x] Required pinned native runtime acceptance passes with real child invocation and audited managed plugin readiness.
 - [x] Full regression/coverage, type, lint, format and required pre-commit gates pass with evidence from ai-pwjnx.
 - [x] README, builtin skill, shipped templates/examples and CLI help match implemented behaviour and matrix boundaries.
-- [ ] The final shippable PR is merged under the applicable git workflow and no mid-plan live cut was required.
+- [x] The final shippable PR is merged under the applicable git workflow and no mid-plan live cut was required.
+
+
+## Closure verification
+
+2026-10-08: Restored completed task records from the implementation worktree.
+All 22 child tasks have checked acceptance gates and recorded evidence.
+GitHub PR #22 is MERGED (2026-10-06T17:44:38Z), merge commit
+3e5ae01341c16f72d21c0fc3ae0b2431d3082a5a, present in origin/main.
+https://github.com/pavel-gorlov/ai-dotfiles/pull/22
+Final gate evidence is retained in ai-pwjnx; no implementation tests were
+rerun for this tracker-only repair. Subsequent releases reached v0.4.3.

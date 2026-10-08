@@ -1,7 +1,7 @@
 ---
 id: ai-47xpm
 kind: epic
-status: backlog
+status: done
 created_at: '2026-10-03T19:50:33+00:00'
 success_metrics:
 - DSH project and global lifecycle renders all faithfully representable surfaces.
@@ -17,6 +17,14 @@ out_of_scope:
 status_history:
 - at: '2026-10-03T19:50:33+00:00'
   status: backlog
+- at: '2026-10-08T20:45:07+00:00'
+  status: done
+  session:
+    harness: codex
+    id: 01a11cf3-4fbc-77d0-b9d7-f882324c4343
+  note: 'Repair stale backlog state: all 22 children accepted and done; PR #22 merged
+    as 3e5ae01341c16f72d21c0fc3ae0b2431d3082a5a on 2026-10-06; recorded implementation
+    and final-gate evidence restored.'
 ---
 
 # DeepSeek Harness target support
@@ -406,3 +414,14 @@ or deployment is included.
 ## Approval
 
 Approved by owner at Q3 on 2026-10-04.
+
+
+## Closure verification
+
+2026-10-08: Restored completed task records from the implementation worktree.
+All 22 child tasks have checked acceptance gates and recorded evidence.
+GitHub PR #22 is MERGED (2026-10-06T17:44:38Z), merge commit
+3e5ae01341c16f72d21c0fc3ae0b2431d3082a5a, present in origin/main.
+https://github.com/pavel-gorlov/ai-dotfiles/pull/22
+Final gate evidence is retained in ai-pwjnx; no implementation tests were
+rerun for this tracker-only repair. Subsequent releases reached v0.4.3.
