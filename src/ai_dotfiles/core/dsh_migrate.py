@@ -142,7 +142,8 @@ class DshSourceGuard:
 class DshLocalSource:
     """Fresh original and supported projection, never a stored aggregate.
 
-    value strips only ledger-proven catalog permissions/hooks or MCP servers.
+    value strips only ledger-proven catalog permissions/hooks, MCP allowlist
+    contributions or MCP servers.
     unproven_fields names retained aggregate fields whose user origin cannot be
     reconstructed. Consumers must exclude these fields and keep their diagnostic
     restriction; equality with a current catalog fragment is not origin proof.
@@ -353,7 +354,21 @@ def _local_json_sources(root: Path) -> tuple[DshLocalSource, ...]:
                 value = strip_owned(
                     value, settings_ownership.load_settings_ownership(claude)
                 )
-                unproven = tuple(sorted(original.keys() - {"permissions", "hooks"}))
+                proven_fields = {"permissions", "hooks"}
+                allowlist_ownership = (
+                    settings_ownership.load_enabled_mcpjson_servers_ownership(claude)
+                )
+                if allowlist_ownership is not None:
+                    user_allowlist = allowlist_ownership.project(
+                        original.get("enabledMcpjsonServers")
+                    )
+                    if user_allowlist is not None:
+                        proven_fields.add("enabledMcpjsonServers")
+                        if user_allowlist:
+                            value["enabledMcpjsonServers"] = user_allowlist
+                        else:
+                            value.pop("enabledMcpjsonServers", None)
+                unproven = tuple(sorted(original.keys() - proven_fields))
         elif kind == "mcp":
             ledger = mcp_ownership.ownership_path(claude)
             guard_local_path(root, ledger)
@@ -661,8 +676,8 @@ def collect_dsh_local_inputs(
                     "local",
                     source.provenance.element,
                     field_name,
-                    "Claude ownership ledger tracks permission strings and hook "
-                    "signatures only; this aggregate field has no provable "
+                    "Claude ownership ledger does not prove this aggregate "
+                    "field's current projection; it has no provable "
                     "original local-user origin",
                 )
             )

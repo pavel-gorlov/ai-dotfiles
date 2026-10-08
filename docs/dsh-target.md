@@ -393,10 +393,20 @@ stock gitflow policy fallback are nonblocking limitations and grant nothing.
 
 Mixed-target settings/MCP are projected from fresh originals and their ownership
 ledgers, with present/absent guards. Supported user permissions/hooks/MCP are
-joined with catalog sources once. An aggregate env/scalar field whose original
+joined with catalog sources once. Project `install`/`add`/`remove` records which
+`enabledMcpjsonServers` entries it generated and a hash of the list it wrote.
+Migration validates this proof against the current file, strips the generated
+contribution and preserves the user entries. Legacy ledgers have no such proof;
+after upgrading, run `ai-dotfiles install` before the first local DSH migration.
+Legacy rebuilds retain the previous MCP-server ownership fallback; the old ledger
+cannot reconstruct a previously ambiguous user/domain name overlap.
+An edited list or invalid proof remains a refusal. For an already registered
+source, preflight can also block `install`; it does not bypass this ownership
+check or silently adopt the edit.
+An aggregate env/scalar field whose original
 user origin cannot be proved remains `LOCAL_ORIGINAL_UNPROVEN` and blocks
-activation. Equal values are not proof of origin. Preserve or establish an unambiguous original rather
-than deleting ledgers or activating an old snapshot.
+activation. Equal values are not proof of origin. Preserve or establish an
+unambiguous original rather than deleting ledgers or activating an old snapshot.
 
 Catalog `install`/`add`/`remove` and launch preserve already registered locals
 without automatically adopting new unregistered local elements. Full migration/
