@@ -273,6 +273,7 @@ def _run(
             "ai_dotfiles",
             "dsh",
             "launch",
+            *(["--strict"] if plan.strict else []),
             "proof",
             *(app_args if app_args is not None else ["task; $(touch no)", "--json"]),
         ],

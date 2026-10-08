@@ -41,13 +41,14 @@ from pathlib import Path
 from ai_dotfiles.core import agents_md
 from ai_dotfiles.core.codex_render import (
     AGENT_GENERATOR_VERSION,
+    read_codex_source,
     render_agent_toml,
     render_rule_skill_md,
     render_skill_md,
     source_sha256,
     split_body,
 )
-from ai_dotfiles.core.errors import LinkError
+from ai_dotfiles.core.errors import LinkError, SourceError
 from ai_dotfiles.core.frontmatter import parse_frontmatter
 from ai_dotfiles.core.fs_copy import copy_tree_into
 
@@ -282,8 +283,8 @@ def install_codex_agent(source_md: Path, target_toml: Path) -> str:
     ai-1-1), not a symlink. Returns ``"created"`` or ``"updated"``.
 
     Raises:
-        ElementError: if the agent frontmatter lacks ``name`` /
-            ``description`` (propagated from the render layer).
+        SourceError: if the source cannot be read or validated before writing
+            (propagated from the render layer).
         LinkError: if the file cannot be written.
     """
     rendered = render_agent_toml(source_md)
@@ -356,12 +357,12 @@ def install_codex_skill(source_dir: Path, target_dir: Path) -> str:
     Returns ``"created"`` or ``"updated"``.
 
     Raises:
-        ElementError: if the catalog ``SKILL.md`` lacks ``description``.
+        SourceError: if the catalog ``SKILL.md`` cannot be read or validated.
         LinkError: if the skill directory cannot be materialised.
     """
     source_skill_md = source_dir / _SKILL_FILE
     rendered = render_skill_md(source_skill_md)
-    source_text = source_skill_md.read_text(encoding="utf-8")
+    source_text = read_codex_source(source_skill_md)
 
     # A symlink at the target (a previous gated-symlink install, or a
     # migrate-created link) must be dropped first — ``mkdir`` /
@@ -406,10 +407,12 @@ def skill_symlink_ok(source_dir: Path, name: str) -> tuple[bool, str]:
         return False, f"name {name!r} is not Codex hyphen-case — rendering instead"
     skill_md = source_dir / _SKILL_FILE
     try:
-        frontmatter = parse_frontmatter(skill_md.read_text(encoding="utf-8"))
-    except OSError:
+        frontmatter = parse_frontmatter(read_codex_source(skill_md))
+    except SourceError:
         return False, "SKILL.md unreadable — rendering instead"
     description = frontmatter.get("description")
+    if not isinstance(description, str) or not description:
+        return False, "SKILL.md requires a non-empty description — rendering instead"
     if isinstance(description, str) and len(description) > SKILL_DESCRIPTION_MAX:
         return (
             False,
@@ -561,7 +564,7 @@ def install_codex_rule_skill(rule_md: Path, target_dir: Path) -> str:
         LinkError: if the skill directory cannot be materialised.
     """
     rendered = render_rule_skill_md(rule_md)
-    source_text = rule_md.read_text(encoding="utf-8")
+    source_text = read_codex_source(rule_md)
     existed = target_dir.exists()
     try:
         target_dir.mkdir(parents=True, exist_ok=True)

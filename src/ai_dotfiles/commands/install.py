@@ -25,6 +25,7 @@ from ai_dotfiles.commands._codex_config_writer import (
     write_codex_mcp,
     write_codex_rules,
 )
+from ai_dotfiles.commands._dsh_report import print_dsh_diagnostics
 from ai_dotfiles.core import (
     claude_copy,
     codex_global,
@@ -34,6 +35,11 @@ from ai_dotfiles.core import (
     paths,
     settings_merge,
     symlinks,
+)
+from ai_dotfiles.core.catalog_admission import (
+    CodexAdmissionReport,
+    apply_admitted_codex_pair,
+    preflight_codex_pairs,
 )
 from ai_dotfiles.core.codex_config import ensure_project_doc_fallback
 from ai_dotfiles.core.codex_layout import CodexLayout, global_layout, project_layout
@@ -103,16 +109,28 @@ from ai_dotfiles.core.settings_ownership import (
         "to the manifest and a warning is printed."
     ),
 )
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Refuse source/adaptation errors instead of installing the supported subset.",
+)
 def install(
-    is_global: bool, prune: bool, no_gitignore: bool, strict_deps: bool
+    is_global: bool,
+    prune: bool,
+    no_gitignore: bool,
+    strict_deps: bool,
+    strict: bool = False,
 ) -> None:
     """Install packages from the manifest (project by default, or global)."""
     try:
         if is_global:
-            _install_global(prune=prune, strict_deps=strict_deps)
+            _install_global(prune=prune, strict_deps=strict_deps, strict=strict)
         else:
             _install_project(
-                prune=prune, no_gitignore=no_gitignore, strict_deps=strict_deps
+                prune=prune,
+                no_gitignore=no_gitignore,
+                strict_deps=strict_deps,
+                strict=strict,
             )
     except AiDotfilesError as exc:
         ui.error(str(exc))
@@ -124,6 +142,7 @@ def _expand_manifest_deps(
     catalog: Path,
     *,
     strict_deps: bool,
+    persist: bool = True,
 ) -> list[str]:
     """Verify (and optionally repair) transitive deps of the manifest.
 
@@ -162,8 +181,10 @@ def _expand_manifest_deps(
             f"Pulling in {el.raw} (required by an entry already in the "
             "manifest); adding it to the manifest."
         )
-    manifest.add_packages(manifest_path, [el.raw for el in missing])
-    return manifest.get_packages(manifest_path)
+    if persist:
+        manifest.add_packages(manifest_path, [el.raw for el in missing])
+        return manifest.get_packages(manifest_path)
+    return [*packages, *(el.raw for el in missing)]
 
 
 def _install_project(
@@ -171,6 +192,7 @@ def _install_project(
     prune: bool = False,
     no_gitignore: bool = False,
     strict_deps: bool = False,
+    strict: bool = False,
 ) -> None:
     root = paths.find_project_root()
     if root is None or not paths.project_manifest_path(root).is_file():
@@ -185,22 +207,34 @@ def _install_project(
     claude_dir = paths.project_claude_dir(root)
     targets = manifest.get_targets(manifest_path)
     link_mode = manifest.get_link_mode(manifest_path)
-    if "claude" in targets:
-        claude_dir.mkdir(parents=True, exist_ok=True)
-
-    packages = _expand_manifest_deps(manifest_path, catalog, strict_deps=strict_deps)
-    plan_dsh_catalog_lifecycle(
-        root, packages, catalog, targets, mode="copy" if link_mode == "copy" else "link"
+    packages = _expand_manifest_deps(
+        manifest_path, catalog, strict_deps=strict_deps, persist=not strict
     )
+    parsed = elements.parse_elements(packages)
+    codex_admission = (
+        preflight_codex_pairs(parsed, project_layout(root), catalog, strict=strict)
+        if "codex" in targets
+        else None
+    )
+    plan_dsh_catalog_lifecycle(
+        root,
+        packages,
+        catalog,
+        targets,
+        mode="copy" if link_mode == "copy" else "link",
+        strict=strict,
+    )
+    if strict:
+        manifest.add_packages(manifest_path, packages)
 
-    parsed: list[Element] = []
     linked_items: list[str] = []
     fragment_count = 0
     settings_written = False
 
     any_shim = False
+    if "claude" in targets:
+        claude_dir.mkdir(parents=True, exist_ok=True)
     if packages:
-        parsed = elements.parse_elements(packages)
         for element in parsed:
             elements.validate_element_exists(element, catalog)
 
@@ -238,10 +272,13 @@ def _install_project(
             catalog,
             targets,
             mode="copy" if link_mode == "copy" else "link",
+            strict=strict,
         )
     )
     if "codex" in targets:
-        _install_codex_target(parsed, packages, root, catalog, prune=prune)
+        _install_codex_target(
+            parsed, packages, root, catalog, prune=prune, admission=codex_admission
+        )
     _maybe_sync_gitignore(
         project_root=root,
         claude_dir=claude_dir,
@@ -257,7 +294,9 @@ def _install_project(
     _maybe_print_path_hint(any_shim)
 
 
-def _install_global(*, prune: bool = False, strict_deps: bool = False) -> None:
+def _install_global(
+    *, prune: bool = False, strict_deps: bool = False, strict: bool = False
+) -> None:
     storage = paths.storage_root()
     if not storage.is_dir():
         raise ConfigError(
@@ -278,9 +317,21 @@ def _install_global(*, prune: bool = False, strict_deps: bool = False) -> None:
 
     global_messages: list[str] = []
     packages = _expand_manifest_deps(
-        manifest_path, paths.catalog_dir(), strict_deps=strict_deps
+        manifest_path, paths.catalog_dir(), strict_deps=strict_deps, persist=not strict
     )
-    plan_dsh_catalog_lifecycle(None, packages, paths.catalog_dir(), targets)
+    parsed = elements.parse_elements(packages)
+    codex_admission = (
+        preflight_codex_pairs(
+            parsed, global_layout(), paths.catalog_dir(), strict=strict
+        )
+        if "codex" in targets
+        else None
+    )
+    plan_dsh_catalog_lifecycle(
+        None, packages, paths.catalog_dir(), targets, strict=strict
+    )
+    if strict:
+        manifest.add_packages(manifest_path, packages)
     if "claude" in targets:
         claude_dir.mkdir(parents=True, exist_ok=True)
         if global_dir.is_dir():
@@ -289,14 +340,12 @@ def _install_global(*, prune: bool = False, strict_deps: bool = False) -> None:
                 ui.success(msg)
 
     linked_items: list[str] = []
-    parsed: list[Element] = []
     settings_written = False
     fragment_count = 0
 
     any_shim = False
     if packages:
         catalog = paths.catalog_dir()
-        parsed = elements.parse_elements(packages)
         for element in parsed:
             elements.validate_element_exists(element, catalog)
 
@@ -335,10 +384,18 @@ def _install_global(*, prune: bool = False, strict_deps: bool = False) -> None:
                 save_settings_ownership(claude_dir, new_ownership)
 
     _report_dsh_result(
-        apply_dsh_catalog_lifecycle(None, packages, paths.catalog_dir(), targets)
+        apply_dsh_catalog_lifecycle(
+            None, packages, paths.catalog_dir(), targets, strict=strict
+        )
     )
     if "codex" in targets:
-        _install_codex_global(parsed, packages, paths.catalog_dir(), prune=prune)
+        _install_codex_global(
+            parsed,
+            packages,
+            paths.catalog_dir(),
+            prune=prune,
+            admission=codex_admission,
+        )
 
     if prune and "claude" in targets:
         # The global scope is always symlink-mode (the global `.claude/`
@@ -451,6 +508,7 @@ def _install_codex_target(
     catalog: Path,
     *,
     prune: bool,
+    admission: CodexAdmissionReport | None = None,
 ) -> None:
     """Render and write Codex artefacts for every element in ``parsed``.
 
@@ -467,6 +525,8 @@ def _install_codex_target(
     """
     ui.info("Codex target:")
     layout = project_layout(project_root)
+    admission = admission or preflight_codex_pairs(parsed, layout, catalog)
+    _report_codex_skips(admission)
     codex_dir = paths.project_codex_dir(project_root)
     wanted_skills: set[Path] = set()
     wanted_agents: set[Path] = set()
@@ -480,18 +540,22 @@ def _install_codex_target(
                 f"(.claude/{sub}/) installed so they resolve."
             )
         for pair in iter_codex_pairs(element, layout, catalog):
-            if pair.element_type is ElementType.SKILL:
-                status = codex_install.install_codex_skill(pair.source, pair.target)
-                wanted_skills.add(pair.target)
-                ui.success(f"skills/{pair.target.name} ({status})")
-            elif pair.element_type is ElementType.RULE:
-                status = codex_install.install_codex_rule_skill(
-                    pair.source, pair.target
-                )
+            entry = admission.by_pair[pair]
+            if entry.error is not None:
+                if pair.element_type is ElementType.AGENT:
+                    wanted_agents.add(pair.target)
+                else:
+                    wanted_skills.add(pair.target)
+                continue
+            if (
+                pair.element_type is ElementType.SKILL
+                or pair.element_type is ElementType.RULE
+            ):
+                status = apply_admitted_codex_pair(pair)
                 wanted_skills.add(pair.target)
                 ui.success(f"skills/{pair.target.name} ({status})")
             else:
-                status = codex_install.install_codex_agent(pair.source, pair.target)
+                status = apply_admitted_codex_pair(pair)
                 wanted_agents.add(pair.target)
                 ui.success(f"agents/{pair.target.name} ({status})")
         for plan in iter_codex_rule_plans(element, layout, catalog):
@@ -529,6 +593,7 @@ def _install_codex_global(
     catalog: Path,
     *,
     prune: bool,
+    admission: CodexAdmissionReport | None = None,
 ) -> None:
     """Render the global packages into Codex's user scope (``$CODEX_HOME``).
 
@@ -551,6 +616,8 @@ def _install_codex_global(
     """
     layout = global_layout()
     ui.info("Codex target (global):")
+    admission = admission or preflight_codex_pairs(parsed, layout, catalog)
+    _report_codex_skips(admission)
     wanted_skills: set[Path] = set()
     wanted_agents: set[Path] = set()
     wanted_rule_blocks: dict[Path, set[str]] = {}
@@ -569,26 +636,22 @@ def _install_codex_global(
                 f"skills/rule-{name} instead."
             )
         for pair in iter_codex_pairs(element, layout, catalog):
-            if pair.element_type is ElementType.SKILL:
-                can_link, _reason = codex_install.skill_symlink_ok(
-                    pair.source, pair.target.name
-                )
-                if can_link:
-                    status = codex_install.symlink_codex_skill(
-                        pair.source, pair.target, relative=False
-                    )
+            entry = admission.by_pair[pair]
+            if entry.error is not None:
+                if pair.element_type is ElementType.AGENT:
+                    wanted_agents.add(pair.target)
                 else:
-                    status = codex_install.install_codex_skill(pair.source, pair.target)
-                wanted_skills.add(pair.target)
-                ui.success(f"skills/{pair.target.name} ({status})")
-            elif pair.element_type is ElementType.RULE:
-                status = codex_install.install_codex_rule_skill(
-                    pair.source, pair.target
-                )
+                    wanted_skills.add(pair.target)
+                continue
+            if (
+                pair.element_type is ElementType.SKILL
+                or pair.element_type is ElementType.RULE
+            ):
+                status = apply_admitted_codex_pair(pair, global_scope=True)
                 wanted_skills.add(pair.target)
                 ui.success(f"skills/{pair.target.name} ({status})")
             else:
-                status = codex_install.install_codex_agent(pair.source, pair.target)
+                status = apply_admitted_codex_pair(pair, global_scope=True)
                 wanted_agents.add(pair.target)
                 ui.success(f"agents/{pair.target.name} ({status})")
         for plan in iter_codex_rule_plans(element, layout, catalog):
@@ -883,10 +946,17 @@ def _report_dsh_result(report: DshReconcileReport | None) -> None:
     if report is None:
         return
     ui.info("DSH target:")
-    for diagnostic in report.diagnostics:
-        ui.warn(
-            f"{diagnostic.origin} {diagnostic.element} {diagnostic.field}: "
-            f"{diagnostic.reason} ({diagnostic.code})"
-        )
+    print_dsh_diagnostics(report.diagnostics)
     for path in report.changed_paths:
         ui.success(str(path))
+
+
+def _report_codex_skips(report: CodexAdmissionReport) -> None:
+    """Show source failures without claiming the skipped artefacts installed."""
+    for entry in report.skipped:
+        ui.warn(f"[SKIPPED ERROR] Codex {entry.pair.source}: {entry.error}")
+    if report.skipped:
+        ui.warn(
+            f"Codex installation: PARTIAL ({len(report.skipped)} source errors). "
+            "Supported entries continue; use --strict to refuse source errors."
+        )

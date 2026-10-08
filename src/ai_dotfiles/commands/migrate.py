@@ -14,6 +14,7 @@ from __future__ import annotations
 import click
 
 from ai_dotfiles import ui
+from ai_dotfiles.commands._dsh_report import print_dsh_diagnostics
 from ai_dotfiles.core import codex_migrate, manifest, paths
 from ai_dotfiles.core.codex_migrate import MigrateReport
 from ai_dotfiles.core.dsh_migrate import DshMigrateReport, migrate_project_to_dsh
@@ -35,16 +36,23 @@ from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
     help="Plan and classify every action and unsupported surface "
     "without writing anything.",
 )
-def migrate(target: str, dry_run: bool) -> None:
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Refuse DSH adaptation errors instead of migrating the supported subset.",
+)
+def migrate(target: str, dry_run: bool, strict: bool = False) -> None:
     """Migrate project-local .claude/ elements to Codex or DSH."""
     try:
-        _run_migrate(target=target, dry_run=dry_run)
+        _run_migrate(target=target, dry_run=dry_run, strict=strict)
     except AiDotfilesError as exc:
         ui.error(str(exc))
         raise SystemExit(exc.exit_code) from exc
 
 
-def _run_migrate(*, target: str, dry_run: bool) -> None:
+def _run_migrate(*, target: str, dry_run: bool, strict: bool = False) -> None:
+    if strict and target != "dsh":
+        raise ConfigError("--strict requires DSH migration; use --to dsh.")
     root = paths.find_project_root()
     if root is None or not paths.project_manifest_path(root).is_file():
         raise ConfigError("ai-dotfiles.json not found. Run 'ai-dotfiles init' first.")
@@ -64,7 +72,9 @@ def _run_migrate(*, target: str, dry_run: bool) -> None:
                     else "link"
                 ),
                 dry_run=dry_run,
-            )
+                strict=strict,
+            ),
+            strict=strict,
         )
         return
     report = codex_migrate.migrate_to_codex(
@@ -73,7 +83,7 @@ def _run_migrate(*, target: str, dry_run: bool) -> None:
     _print_report(report)
 
 
-def _print_dsh_report(report: DshMigrateReport) -> None:
+def _print_dsh_report(report: DshMigrateReport, *, strict: bool = False) -> None:
     ui.info(
         "Dry run — local elements -> DSH:"
         if report.dry_run
@@ -86,14 +96,16 @@ def _print_dsh_report(report: DshMigrateReport) -> None:
             f"  [{action.classification}] {action.strategy.ljust(22)} "
             f"local {action.element} ({action.source})"
         )
-    for diagnostic in report.diagnostics:
-        ui.warn(
-            f"  [{'BLOCKER' if diagnostic.blocking else 'LIMITATION'}] "
-            f"{diagnostic.origin} {diagnostic.element} {diagnostic.field}: "
-            f"{diagnostic.reason} [{diagnostic.code}]"
-        )
+    print_dsh_diagnostics(report.diagnostics, strict=strict, indent="  ")
     if report.dry_run:
-        if report.plan.blocked:
+        if report.plan.partial and not strict:
+            ui.warn(
+                "Activation: PARTIAL. Supported contributions can be applied; "
+                "skipped entries stay inactive."
+            )
+            ui.info("Skipped hooks and restrictions are not enforced by DSH.")
+            ui.info("Dry run: nothing written. Re-run without --dry-run to apply.")
+        elif report.plan.blocked:
             ui.warn("Activation: BLOCKED. Resolve blockers before applying.")
             ui.info("Dry run: nothing written.")
         else:

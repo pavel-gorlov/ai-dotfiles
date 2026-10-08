@@ -37,12 +37,13 @@ from typing import Any
 
 import tomli_w
 
-from ai_dotfiles.core.errors import ElementError
+from ai_dotfiles.core.errors import SourceError
 from ai_dotfiles.core.frontmatter import parse_frontmatter
 
 __all__ = [
     "AGENT_GENERATOR_VERSION",
     "dropped_model",
+    "read_codex_source",
     "render_agent_toml",
     "render_rule_skill_md",
     "render_skill_md",
@@ -68,6 +69,14 @@ _FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 _SENTENCE_END_RE = re.compile(r"[.!?](?=\s|$)")
 
 _MANAGED_BY = "# managed-by: ai-dotfiles"
+
+
+def read_codex_source(md_path: Path) -> str:
+    """Read one source before writing, classifying only source read failures."""
+    try:
+        return md_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise SourceError(f"Cannot read Codex source {md_path}: {exc}") from exc
 
 
 def source_sha256(text: str) -> str:
@@ -141,18 +150,18 @@ def render_agent_toml(md_path: Path) -> str:
     as the model catalog moves.
 
     Raises:
-        ElementError: if the agent frontmatter lacks ``name`` or
-            ``description``.
+        SourceError: if the source is unreadable or its frontmatter lacks
+            ``name`` or ``description``.
     """
-    source_text = md_path.read_text(encoding="utf-8")
+    source_text = read_codex_source(md_path)
     frontmatter = parse_frontmatter(source_text)
 
     name = frontmatter.get("name")
     description = frontmatter.get("description")
     if not isinstance(name, str) or not name:
-        raise ElementError(f"agent {md_path} has no 'name' in frontmatter")
+        raise SourceError(f"agent {md_path} has no 'name' in frontmatter")
     if not isinstance(description, str) or not description:
-        raise ElementError(f"agent {md_path} has no 'description' in frontmatter")
+        raise SourceError(f"agent {md_path} has no 'description' in frontmatter")
 
     table: dict[str, Any] = {
         "name": name,
@@ -171,7 +180,7 @@ def dropped_model(md_path: Path) -> str | None:
     dropped so a caller with a user-facing report (``migrate``) can say
     so instead of changing the artefact silently.
     """
-    frontmatter = parse_frontmatter(md_path.read_text(encoding="utf-8"))
+    frontmatter = parse_frontmatter(read_codex_source(md_path))
     model = frontmatter.get("model")
     return model if isinstance(model, str) and model else None
 
@@ -190,18 +199,19 @@ def render_skill_md(md_path: Path) -> str:
     line 1.
 
     Raises:
-        ElementError: if the skill has no frontmatter ``description``.
+        SourceError: if the source is unreadable or has no frontmatter
+            ``description``.
     """
-    source_text = md_path.read_text(encoding="utf-8")
+    source_text = read_codex_source(md_path)
     match = _FRONTMATTER_RE.match(source_text)
     if match is None:
-        raise ElementError(f"skill {md_path} has no frontmatter block")
+        raise SourceError(f"skill {md_path} has no frontmatter block")
 
     frontmatter_block = match.group(1)
     frontmatter = parse_frontmatter(source_text)
     description = frontmatter.get("description")
     if not isinstance(description, str) or not description:
-        raise ElementError(f"skill {md_path} has no 'description' in frontmatter")
+        raise SourceError(f"skill {md_path} has no 'description' in frontmatter")
 
     trimmed = _trim_description_line(frontmatter_block, description)
     body = source_text[match.end() :]
@@ -217,7 +227,7 @@ def _rule_skill_description(rule_md: Path, body: str) -> str:
     frontmatter ``description``, then the first non-heading sentence of
     the rule body, and finally a generic fallback naming the rule.
     """
-    explicit = parse_frontmatter(rule_md.read_text(encoding="utf-8")).get("description")
+    explicit = parse_frontmatter(read_codex_source(rule_md)).get("description")
     if isinstance(explicit, str) and explicit.strip():
         return _first_sentence(explicit)
 
@@ -242,7 +252,7 @@ def render_rule_skill_md(rule_md: Path) -> str:
     drift metadata goes to the ``.ai-dotfiles-meta`` sidecar, keyed off
     the rule's own content.
     """
-    source_text = rule_md.read_text(encoding="utf-8")
+    source_text = read_codex_source(rule_md)
     body = split_body(source_text)
     description = _rule_skill_description(rule_md, body)
     escaped = description.replace("\\", "\\\\").replace('"', '\\"')

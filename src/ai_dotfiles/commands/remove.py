@@ -340,11 +340,17 @@ def _maybe_sync_gitignore(
         "dependency will become missing."
     ),
 )
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Refuse DSH adaptation errors in the remaining installed elements.",
+)
 def remove(
     packages: tuple[str, ...],
     is_global: bool,
     no_gitignore: bool,
     force: bool,
+    strict: bool = False,
 ) -> None:
     """Remove PACKAGES from the manifest and unlink their elements."""
     try:
@@ -389,6 +395,7 @@ def remove(
             catalog,
             targets,
             mode="copy" if link_mode == "copy" else "link",
+            strict=strict,
         )
         for element in elements:
             if element.raw in removed_set:
@@ -422,6 +429,7 @@ def remove(
                 catalog,
                 targets,
                 mode="copy" if link_mode == "copy" else "link",
+                strict=strict,
             )
         )
         if codex_layout is not None:

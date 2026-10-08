@@ -169,6 +169,16 @@ touched.
 
 `install --prune` also removes managed Codex artefacts no longer in the manifest.
 
+Catalog skill/agent source errors are isolated per Codex artefact during
+`install`, `add` and `reconcile`, in project and global scope. Healthy siblings
+continue; failed sources are reported as `SKIPPED ERROR` and the result as
+`PARTIAL`. A failed refresh preserves a previously owned, still-requested Codex
+artefact, including during `--prune`. Repair the original source and rerun the
+command. `--strict` refuses these source errors before target writes;
+`reconcile --check --strict` provides a read-only CI gate. Foreign destinations
+and write failures remain fatal. Validation follows each target's supported
+format; the Claude target does not use DSH's syntax validator.
+
 `install -g`, `add -g`, `remove -g`, `status -g` and `reconcile -g` honour
 `global.json` targets: Codex uses `$CODEX_HOME`, DSH uses `$DSH_HOME` (default
 `~/.dsh`). Global native DSH skills live in `$DSH_HOME/skills`; owned composition
@@ -191,10 +201,12 @@ ai-dotfiles dsh launch --profile headless "run the tests"
 ai-dotfiles dsh launch --profile web --port 8080 --no-open
 ```
 
-Leading `--profile NAME` (or shorthand) and repeatable `--patch PATH` precede
-verbatim native app argv. Layers are bundles → profile → home → managed global
-→ managed project → explicit CLI patches. Native patches replace **whole
-configs**, and CLI overrides take precedence over native UI-persisted settings.
+Put managed `--strict` before `--profile NAME`, shorthand or native flags when
+partial activation must be refused. Leading `--profile NAME` (or shorthand) and
+repeatable `--patch PATH` precede verbatim native app argv. Layers are bundles →
+profile → home → managed global → managed project → explicit CLI patches.
+Native patches replace **whole configs**, and CLI overrides take precedence
+over native UI-persisted settings.
 Project managed names win over global; user collisions refuse activation.
 
 The same native host audits all required managed rows/tools in the selected tree
@@ -408,17 +420,17 @@ Run `ai-dotfiles <command> --help` for full options.
 | `init`                           | Create `ai-dotfiles.json` in the current project |
 | `init -g`                        | Create global storage at `~/.ai-dotfiles/` and link `~/.claude/` |
 | `init -g --from <git-url>`       | Clone an existing storage repo into `~/.ai-dotfiles/` |
-| `add [-g] PACKAGES...`            | Add packages and refresh selected project/global targets |
-| `remove [-g] [--force] PACKAGES...` | Remove packages and retire their owned target outputs |
-| `install [--prune] [--strict-deps]` | Refresh selected project targets; prune proven owned stale outputs |
-| `install -g [--prune] [--strict-deps]` | Refresh selected global targets |
+| `add [-g] [--strict] PACKAGES...` | Add packages and refresh selected project/global targets |
+| `remove [-g] [--force] [--strict] PACKAGES...` | Remove packages and retire their owned target outputs |
+| `install [--prune] [--strict-deps] [--strict]` | Refresh selected project targets; prune proven owned stale outputs |
+| `install -g [--prune] [--strict-deps] [--strict]` | Refresh selected global targets |
 | `list`                           | List installed packages (project) |
 | `list -g`                        | List installed packages (global) |
 | `list --available`               | List everything available in the catalog |
 | `status [-g]`                    | Show target health/drift, settings and project-local classifications |
-| `migrate [--to codex\|dsh] [--dry-run]` | Carry project-local `.claude/` elements; default Codex, no global mode |
-| `reconcile [-g] [--check]`        | Refresh Codex/DSH drift and owned retirement; `--check` writes nothing |
-| `dsh launch --profile NAME [--patch PATH ...] [APP_ARGS...]` | Audited launch of an existing official RC2 profile; NAME shorthand also accepted |
+| `migrate [--to codex\|dsh] [--dry-run] [--strict]` | Carry project-local `.claude/` elements; default Codex, `--strict` requires DSH, no global mode |
+| `reconcile [-g] [--check] [--strict]` | Refresh Codex/DSH drift and owned retirement; `--check` writes nothing |
+| `dsh launch [--strict] --profile NAME [--patch PATH ...] [APP_ARGS...]` | Audited launch of an existing official RC2 profile; NAME shorthand also accepted |
 | `update`                         | Refresh CLI-managed files inside storage (today: the built-in `ai-dotfiles` skill) |
 | `pull [--rebase]`                 | Update the catalog storage repo; run install afterwards |
 | `completion install [--shell bash\|zsh] [--print]` | Install tab completion into `~/.bashrc` / `~/.zshrc` (auto-detects shell from `$SHELL`) |
@@ -714,6 +726,12 @@ are enforced via `commitizen`.
   grant nothing. Child tool filters are not a security boundary. Unproven local
   aggregate env/scalar origin remains `LOCAL_ORIGINAL_UNPROVEN`. See the complete
   [DSH compatibility matrix](docs/dsh-target.md#compatibility-matrix).
+- DSH source/adaptation errors are isolated by default: healthy contributions
+  install and launch, while rejected entries are listed as `SKIPPED ERROR` and
+  activation is `PARTIAL`. Skipped hooks and permission restrictions are not
+  enforced. Use `--strict` to refuse partial activation, or
+  `reconcile --check --strict` for CI. Foreign ownership, source-custody and
+  native runtime/audit failures remain fatal; no extra permissions are granted.
 
 ## License
 

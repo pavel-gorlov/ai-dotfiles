@@ -116,7 +116,7 @@ def test_full_native_bundle_both_scopes(tmp_path: Path, scope: str, mode: str) -
     assert "empty" in record["source_inventory"]
     assert record["mode"] == mode
     assert record["provenance"][0]["generator"] == 1
-    assert record["generators"] == {"install": 2, "render": 1}
+    assert record["generators"] == {"install": 3, "render": 1}
     assert layout.bridge_path.read_text() == bridge_module_text()
     assert audit_path(layout).read_text() == audit_module_text()
     assert not layout.config_path.exists()
@@ -177,7 +177,7 @@ def test_support_tree_drift_and_generator_drift(tmp_path: Path, mode: str) -> No
     apply_dsh_install(fresh)
     assert (
         read_dsh_inventory(layout).records["skills/bundle"]["generators"]["install"]
-        == 2
+        == 3
     )
 
 
@@ -454,7 +454,7 @@ def test_ready_retry_of_deferred_metadata_and_manual_restriction(
     assert not layout.config_path.exists()
 
 
-def test_blocked_permissions_preserved_without_partial_activation(
+def test_blocked_permissions_preserved_with_explicit_effective_subset(
     tmp_path: Path,
 ) -> None:
     layout = _layout(tmp_path, "project")
@@ -466,8 +466,11 @@ def test_blocked_permissions_preserved_without_partial_activation(
     assert plan.permissions.deny == ("bash",)
     apply_dsh_install(plan)
     assert any(d.code == "PERMISSION_UNMAPPED" for d in plan.diagnostics)
-    with pytest.raises(ConfigError, match="blocked DSH permissions"):
-        plan.native_rows()
+    assert plan.native_rows()[0]["config"]["permissions"]["deny"] == ["bash"]
+    before = _tree_bytes(layout.dsh_dir)
+    with pytest.raises(ConfigError, match="Cannot activate DSH install"):
+        apply_dsh_install(plan, strict=True)
+    assert _tree_bytes(layout.dsh_dir) == before
     assert not layout.patch_path.exists()
 
 
@@ -700,7 +703,7 @@ def test_empty_plan_retains_retired_output_inventory_for_lifecycle(
 
 
 @pytest.mark.parametrize("status", ["MANUAL", "DEFERRED"])
-def test_previously_ready_native_skill_exposed_for_retirement(
+def test_previously_ready_rejected_native_skill_is_retired_before_discovery(
     tmp_path: Path, status: str
 ) -> None:
     layout = _layout(tmp_path, "project")
@@ -723,9 +726,9 @@ def test_previously_ready_native_skill_exposed_for_retirement(
     )
     assert plan.skills[0].status == status
     result = apply_dsh_install(plan)
-    assert (layout.skills_dir / "bundle").is_symlink()
+    assert not (layout.skills_dir / "bundle").exists()
     assert "skills/bundle" not in plan.desired_output_keys
-    assert result.retired_output_keys == ("skills/bundle",)
+    assert result.retired_output_keys == ()
     assert len(plan.current_source_ids) == 1
     assert {value["status"] for value in result.inventory.source_records.values()} == {
         status

@@ -1101,6 +1101,12 @@ def test_required_native_failure_never_releases_ready_or_a_turn(
         )
     patch_path.write_text(json.dumps(patches))
     before = _bytes(profile.parent.parent)
+    strict = failure in {
+        "strict-auto",
+        "cross-scope-auto",
+        "native-unknown-mode",
+        "native-deny-gap",
+    }
     result = _run_command(
         [
             os.sys.executable,
@@ -1108,6 +1114,7 @@ def test_required_native_failure_never_releases_ready_or_a_turn(
             "ai_dotfiles",
             "dsh",
             "launch",
+            *(["--strict"] if strict else []),
             "proof",
             "acceptance",
             "--json",
