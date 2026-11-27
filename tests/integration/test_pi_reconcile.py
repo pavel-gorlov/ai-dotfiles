@@ -332,9 +332,14 @@ def test_pi_only_remove_rollback_preserves_original_link_registry_and_manifest(
     pi_project: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     project, catalog = pi_project
-    source = make_skill(catalog / "skills" / "fixture")
-    manifest = write_project(project, ["pi"], ["skill:fixture"])
+    source = make_skill(catalog / "suite" / "skills" / "fixture")
+    manifest = write_project(project, ["pi"], ["@suite"])
     invoke("install")
+    shim = catalog.parent / "bin" / "suite-tool"
+    shim.parent.mkdir(exist_ok=True)
+    shim.write_text("#!/bin/sh\n# managed-by: ai-dotfiles\n# domain: suite\n")
+    venv = catalog.parent / "venvs" / "suite"
+    venv.mkdir(parents=True)
     registry = project / OWNERSHIP
     before = (manifest.read_bytes(), registry.read_bytes())
     replace = os.replace
@@ -348,13 +353,17 @@ def test_pi_only_remove_rollback_preserves_original_link_registry_and_manifest(
         replace(source, destination)
 
     monkeypatch.setattr(pi_install.os, "replace", fail_manifest)
-    error = invoke("remove", "skill:fixture", expected=1).output
+    error = invoke("remove", "@suite", expected=1).output
     assert "injected manifest publication fault" in error
     assert (manifest.read_bytes(), registry.read_bytes()) == before
     assert os.readlink(project / SKILLS / "fixture") == str(source)
+    assert shim.is_file()
+    assert venv.is_dir()
     invoke("reconcile", "--check", "--strict")
-    invoke("remove", "skill:fixture")
+    invoke("remove", "@suite")
     assert not registry.exists()
+    assert not shim.exists()
+    assert not venv.exists()
 
 
 @pytest.mark.skipif(os.name != "posix", reason="project directory flock is POSIX")
