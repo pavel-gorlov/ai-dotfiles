@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import stat
 import tempfile
 from collections.abc import Iterable, Iterator, Sequence
@@ -824,79 +825,137 @@ def _stage(path: Path, content: FileContent, mode: int) -> None:
 
 def _stage_change(
     directory: Path, index: int, change: PiFileChange
-) -> tuple[Path, Path, _Snapshot]:
+) -> tuple[Path, _Snapshot | None]:
     after = directory / f"{index}.new"
-    before = directory / f"{index}.old"
+    if change.after is None:
+        return after, None
     mode = change.before.stamp.mode if change.before.stamp is not None else 0o600
     _stage(after, change.after, mode)
-    _stage(before, change.before.content, mode)
-    return after, before, _snapshot(after, read_file=isinstance(change.after, bytes))
+    return after, _snapshot(after, read_file=isinstance(change.after, bytes))
+
+
+@dataclass
+class _Publication:
+    path: Path
+    held: Path | None = None
+    written: _Snapshot | None = None
+
+
+def _publish_new(source: Path, destination: Path) -> None:
+    """Publish exactly one leaf, failing when the name is already occupied."""
+    if os.name == "nt":
+        source.rename(destination)
+    else:
+        os.link(source, destination, follow_symlinks=False)
+
+
+def _matches_captured(path: Path, expected: _Snapshot) -> bool:
+    actual = _snapshot(path, read_file=isinstance(expected.content, bytes))
+    before, current = expected.stamp, actual.stamp
+    # Moving or linking a leaf can change ctime without changing its data.
+    return (
+        before is not None
+        and current is not None
+        and actual.content == expected.content
+        and before.identity() == current.identity()
+        and before.modified == current.modified
+        and before.size == current.size
+    )
+
+
+def _undo_publication(
+    entry: _Publication, destination: Path, reverted: Path, recover: set[Path]
+) -> None:
+    if entry.written is not None:
+        # Take custody first so a last-moment update is preserved during rollback.
+        os.replace(destination, reverted)
+        recover.add(reverted)
+        if not _matches_captured(reverted, entry.written):
+            _publish_new(reverted, destination)
+            recover.discard(reverted)
+            raise ConfigError("changed since publication")
+        recover.discard(reverted)
+    if entry.held is not None:
+        _publish_new(entry.held, destination)
+        recover.discard(entry.held)
 
 
 def _apply_changes(plan: PiPlan, changes: list[PiFileChange]) -> None:
     parents = plan.parents.copy()
     created: list[Path] = []
     # The transaction directory is outside the Pi discovery trees.
-    with tempfile.TemporaryDirectory(prefix=".ai-dotfiles-pi-", dir=plan.root) as temp:
-        directory = Path(temp)
+    directory = Path(tempfile.mkdtemp(prefix=".ai-dotfiles-pi-", dir=plan.root))
+    recover: set[Path] = set()
+    keep_recovery = False
+    applied: list[_Publication] = []
+    originals: list[tuple[Path, PiFileChange]] = []
+    try:
+        (directory / ".gitignore").write_bytes(b"*\n")
         staged = [
             _stage_change(directory, index, change)
             for index, change in enumerate(changes)
         ]
-        applied: list[tuple[Path, Path, _Snapshot]] = []
-        try:
-            for change, (after, before, written) in zip(changes, staged, strict=True):
-                _assert_parents(plan.root, change.path, parents)
-                _assert_leaf(plan.root, change.path, change.before)
-                if change.after is None:
-                    (plan.root / change.path).unlink()
-                else:
-                    for parent in reversed(change.path.parents):
-                        if parents[parent] is None:
-                            (plan.root / parent).mkdir()
-                            parents[parent] = _lstat(plan.root / parent)
-                            created.append(parent)
-                    _assert_parents(plan.root, change.path, parents)
-                    _assert_leaf(plan.root, change.path, change.before)
-                    os.replace(after, plan.root / change.path)
-                applied.append((change.path, before, written))
-        except (AiDotfilesError, OSError) as exc:
-            failed: list[str] = []
-            for path, before, written in reversed(applied):
-                try:
-                    _assert_parents(plan.root, path, parents)
-                    current = _snapshot(
-                        plan.root / path, read_file=isinstance(written.content, bytes)
+        for index, (change, (after, written)) in enumerate(
+            zip(changes, staged, strict=True)
+        ):
+            _assert_parents(plan.root, change.path, parents)
+            if written is not None:
+                for parent in reversed(change.path.parents):
+                    if parents[parent] is None:
+                        (plan.root / parent).mkdir()
+                        parents[parent] = _lstat(plan.root / parent)
+                        created.append(parent)
+            _assert_parents(plan.root, change.path, parents)
+            _assert_leaf(plan.root, change.path, change.before)
+            destination = plan.root / change.path
+            entry = _Publication(change.path)
+            if change.before.stamp is not None:
+                held = directory / f"{index}.old"
+                os.replace(destination, held)
+                recover.add(held)
+                entry.held = held
+                applied.append(entry)
+                if not _matches_captured(held, change.before):
+                    raise ConfigError(
+                        f"Pi destination changed at publication: {change.path}"
                     )
-                    # Rename may change ctime. Identity, mode, mtime, and content
-                    # identify this publication without losing a concurrent edit.
-                    if (
-                        current.content != written.content
-                        or current.stamp is None
-                        and written.stamp is not None
-                        or current.stamp is not None
-                        and (
-                            written.stamp is None
-                            or current.stamp.identity() != written.stamp.identity()
-                            or current.stamp.modified != written.stamp.modified
-                        )
-                    ):
-                        raise ConfigError("changed since publication")
-                    if _lstat(before) is not None:
-                        os.replace(before, plan.root / path)
-                    else:
-                        (plan.root / path).unlink()
-                except (AiDotfilesError, OSError) as rollback_error:
-                    failed.append(f"{path}: {rollback_error}")
+                originals.append((held, change))
+            if written is not None:
+                _publish_new(after, destination)
+                entry.written = written
+                if entry.held is None:
+                    applied.append(entry)
 
-            for path in reversed(created):
-                try:
-                    _assert_parents(plan.root, path / "child", parents)
-                    (plan.root / path).rmdir()
-                except (AiDotfilesError, OSError) as rollback_error:
-                    failed.append(f"{path}: {rollback_error}")
-            suffix = f"; rollback incomplete ({'; '.join(failed)})" if failed else ""
-            raise LinkError(f"{exc}{suffix}") from exc
+        for held, change in originals:
+            if not _matches_captured(held, change.before):
+                raise ConfigError(
+                    f"Pi destination changed during publication: {change.path}"
+                )
+    except (AiDotfilesError, OSError) as exc:
+        failed: list[str] = []
+        for index, entry in enumerate(reversed(applied)):
+            try:
+                _assert_parents(plan.root, entry.path, parents)
+                _undo_publication(
+                    entry, plan.root / entry.path, directory / f"{index}.undo", recover
+                )
+            except (AiDotfilesError, OSError) as rollback_error:
+                failed.append(f"{entry.path}: {rollback_error}")
+
+        for path in reversed(created):
+            try:
+                _assert_parents(plan.root, path / "child", parents)
+                (plan.root / path).rmdir()
+            except (AiDotfilesError, OSError) as rollback_error:
+                failed.append(f"{path}: {rollback_error}")
+        suffix = f"; rollback incomplete ({'; '.join(failed)})" if failed else ""
+        if recover:
+            keep_recovery = True
+            suffix += f"; files retained at {directory}"
+        raise LinkError(f"{exc}{suffix}") from exc
+    finally:
+        if not keep_recovery:
+            shutil.rmtree(directory)
 
 
 @contextmanager
