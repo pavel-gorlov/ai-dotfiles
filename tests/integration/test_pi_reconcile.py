@@ -188,11 +188,11 @@ def test_pi_only_add_rolls_back_published_paths_and_manifest(
     before = manifest.read_bytes()
     publish = pi_install._publish_new
 
-    def fail_once(source: Path, destination: Path) -> None:
+    def fail_once(source: Path, destination: Path, **fds: int | None) -> None:
         if destination == project / fail_path and not failed:
             failed.append(destination)
             raise OSError("injected Pi publication fault")
-        publish(source, destination)
+        publish(source, destination, **fds)
 
     failed: list[Path] = []
     monkeypatch.setattr(pi_install, "_publish_new", fail_once)
@@ -233,23 +233,25 @@ def test_mixed_late_pi_failure_keeps_legacy_packages_and_install_recovers(
     publish = pi_install._publish_new
     failed: list[Path] = []
 
-    def fail_once(source: Path, destination: Path) -> None:
+    def fail_once(source: Path, destination: Path, **fds: int | None) -> None:
         if not failed and destination in {registry, project / SKILLS / "new"}:
             failed.append(destination)
             raise OSError("injected mixed Pi fault")
-        publish(source, destination)
+        publish(source, destination, **fds)
 
     monkeypatch.setattr(pi_install, "_publish_new", fail_once)
     if verb == "remove":
-        move = os.replace
+        move = pi_install._move_leaf
 
-        def fail_registry_retirement(source: Path, destination: Path) -> None:
+        def fail_registry_retirement(
+            source: Path, destination: Path, **fds: int | None
+        ) -> None:
             if not failed and source == registry:
                 failed.append(source)
                 raise OSError("injected mixed Pi fault")
-            move(source, destination)
+            move(source, destination, **fds)
 
-        monkeypatch.setattr(pi_install.os, "replace", fail_registry_retirement)
+        monkeypatch.setattr(pi_install, "_move_leaf", fail_registry_retirement)
 
     error = invoke(*args, expected=1).output
     assert "injected mixed Pi fault" in error
@@ -344,12 +346,12 @@ def test_pi_only_remove_rollback_preserves_original_link_registry_and_manifest(
     publish = pi_install._publish_new
     failed = False
 
-    def fail_manifest(source: Path, destination: Path) -> None:
+    def fail_manifest(source: Path, destination: Path, **fds: int | None) -> None:
         nonlocal failed
         if destination == manifest and not failed:
             failed = True
             raise OSError("injected manifest publication fault")
-        publish(source, destination)
+        publish(source, destination, **fds)
 
     monkeypatch.setattr(pi_install, "_publish_new", fail_manifest)
     error = invoke("remove", "@suite", expected=1).output
@@ -387,11 +389,11 @@ def test_pi_concurrent_plans_cannot_overwrite_the_winning_commit(
     before_publish, release, second_started = Event(), Event(), Event()
     publish = pi_install._publish_new
 
-    def pause_first(source: Path, destination: Path) -> None:
+    def pause_first(source: Path, destination: Path, **fds: int | None) -> None:
         if destination == project / SKILLS / "first":
             before_publish.set()
             assert release.wait(5)
-        publish(source, destination)
+        publish(source, destination, **fds)
 
     def apply_second() -> None:
         second_started.set()
@@ -501,10 +503,12 @@ def test_pi_never_clobbers_a_new_leaf_after_its_last_check(
     destination.parent.mkdir(parents=True)
     publish = pi_install._publish_new
 
-    def create_private_then_publish(source: Path, target: Path) -> None:
+    def create_private_then_publish(
+        source: Path, target: Path, **fds: int | None
+    ) -> None:
         if target == destination:
             target.write_bytes(b"user saved a resource")
-        publish(source, target)
+        publish(source, target, **fds)
 
     monkeypatch.setattr(pi_install, "_publish_new", create_private_then_publish)
     invoke("add", "skill:fixture", expected=1)
@@ -513,3 +517,34 @@ def test_pi_never_clobbers_a_new_leaf_after_its_last_check(
     assert manifest.read_bytes() == original
     assert not (project / OWNERSHIP).exists()
     assert not list(project.glob(".ai-dotfiles-pi-*"))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="tests a POSIX directory rename")
+def test_pi_publish_is_bound_to_the_verified_parent(
+    pi_project: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    project, catalog = pi_project
+    make_skill(catalog / "skills" / "fixture")
+    manifest = write_project(project, ["pi"], [])
+    original = manifest.read_bytes()
+    skills = project / SKILLS
+    skills.mkdir(parents=True)
+    moved = skills.with_name("moved-skills")
+    outside = tmp_path / "private"
+    outside.mkdir()
+    sentinel = outside / "fixture"
+    sentinel.write_bytes(b"private outside resource")
+    publish = pi_install._publish_new
+
+    def substitute_parent(path: Path, destination: Path, **fds: int | None) -> None:
+        if destination == skills / "fixture":
+            skills.rename(moved)
+            skills.symlink_to(outside, target_is_directory=True)
+        publish(path, destination, **fds)
+
+    monkeypatch.setattr(pi_install, "_publish_new", substitute_parent)
+    assert "directory changed" in invoke("add", "skill:fixture", expected=1).output
+    assert sentinel.read_bytes() == b"private outside resource"
+    assert not list(moved.iterdir())
+    assert manifest.read_bytes() == original
+    assert not (project / OWNERSHIP).exists()

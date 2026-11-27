@@ -6,11 +6,13 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import shutil
 import stat
+import sys
 import tempfile
 from collections.abc import Iterable, Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -134,9 +136,13 @@ class PiPlan:
     report: PiReport
 
 
-def _lstat(path: Path) -> _FileStamp | None:
+def _at(path: Path, parent: int | None) -> Path:
+    return path if parent is None else Path(path.name)
+
+
+def _lstat(path: Path, *, parent: int | None = None) -> _FileStamp | None:
     try:
-        return _FileStamp.from_stat(path.lstat())
+        return _FileStamp.from_stat(os.lstat(_at(path, parent), dir_fd=parent))
     except FileNotFoundError:
         return None
 
@@ -160,10 +166,10 @@ def _source_dir(catalog: Path, path: Path, *, optional: bool = False) -> bool:
     return True
 
 
-def _read_file(path: Path, stamp: _FileStamp) -> bytes:
+def _read_file(path: Path, stamp: _FileStamp, *, parent: int | None = None) -> bytes:
     # Refuse a substituted symlink or special file before reading any content.
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-    with os.fdopen(os.open(path, flags), "rb") as stream:
+    with os.fdopen(os.open(_at(path, parent), flags, dir_fd=parent), "rb") as stream:
         if _FileStamp.from_stat(os.fstat(stream.fileno())) != stamp:
             raise ConfigError(f"Pi file changed during preflight: {path}")
         content = stream.read()
@@ -172,15 +178,17 @@ def _read_file(path: Path, stamp: _FileStamp) -> bytes:
     return content
 
 
-def _snapshot(path: Path, *, read_file: bool = False) -> _Snapshot:
-    stamp = _lstat(path)
+def _snapshot(
+    path: Path, *, read_file: bool = False, parent: int | None = None
+) -> _Snapshot:
+    stamp = _lstat(path, parent=parent)
     content: FileContent = None
     if stamp is not None:
         if stat.S_ISLNK(stamp.mode):
-            content = os.readlink(path)
+            content = os.readlink(_at(path, parent), dir_fd=parent)
         elif read_file and stat.S_ISREG(stamp.mode):
-            content = _read_file(path, stamp)
-        if _lstat(path) != stamp:
+            content = _read_file(path, stamp, parent=parent)
+        if _lstat(path, parent=parent) != stamp:
             raise ConfigError(f"Pi path changed during preflight: {path}")
     return _Snapshot(stamp, content)
 
@@ -852,49 +860,93 @@ def _assert_parents(
             )
 
 
-def _assert_leaf(root: Path, path: Path, expected: _Snapshot) -> None:
-    actual = _snapshot(root / path, read_file=isinstance(expected.content, bytes))
+def _assert_leaf(
+    root: Path, path: Path, expected: _Snapshot, *, parent: int | None = None
+) -> None:
+    actual = _snapshot(
+        root / path, read_file=isinstance(expected.content, bytes), parent=parent
+    )
     if actual != expected:
         raise ConfigError(f"Pi destination changed after preflight: {path}")
 
 
-def _stage(path: Path, content: FileContent, mode: int) -> None:
+def _stage(path: Path, content: bytes | str, mode: int, parent: int | None) -> None:
     if isinstance(content, str):
-        path.symlink_to(content, target_is_directory=True)
-    elif isinstance(content, bytes):
+        os.symlink(content, _at(path, parent), target_is_directory=True, dir_fd=parent)
+    elif parent is None:
         path.write_bytes(content)
         path.chmod(stat.S_IMODE(mode))
+    else:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        fd = os.open(_at(path, parent), flags, mode, dir_fd=parent)
+        with os.fdopen(fd, "wb") as stream:
+            os.fchmod(fd, stat.S_IMODE(mode))
+            stream.write(content)
 
 
 def _stage_change(
-    directory: Path, index: int, change: PiFileChange
+    directory: Path, parent: int | None, index: int, change: PiFileChange
 ) -> tuple[Path, _Snapshot | None]:
     after = directory / f"{index}.new"
     if change.after is None:
         return after, None
     mode = change.before.stamp.mode if change.before.stamp is not None else 0o600
-    _stage(after, change.after, mode)
-    return after, _snapshot(after, read_file=isinstance(change.after, bytes))
+    _stage(after, change.after, mode, parent)
+    return after, _snapshot(
+        after, read_file=isinstance(change.after, bytes), parent=parent
+    )
 
 
 @dataclass
 class _Publication:
     path: Path
+    parent: int | None
     held: Path | None = None
     written: _Snapshot | None = None
     published: bool = False
 
 
-def _publish_new(source: Path, destination: Path) -> None:
+def _move_leaf(
+    source: Path,
+    destination: Path,
+    *,
+    source_fd: int | None = None,
+    destination_fd: int | None = None,
+) -> None:
+    os.replace(
+        _at(source, source_fd),
+        _at(destination, destination_fd),
+        src_dir_fd=source_fd,
+        dst_dir_fd=destination_fd,
+    )
+
+
+def _publish_new(
+    source: Path,
+    destination: Path,
+    *,
+    source_fd: int | None = None,
+    destination_fd: int | None = None,
+) -> None:
     """Publish exactly one leaf, failing when the name is already occupied."""
     if os.name == "nt":
         source.rename(destination)
     else:
-        os.link(source, destination, follow_symlinks=False)
+        os.link(
+            _at(source, source_fd),
+            _at(destination, destination_fd),
+            src_dir_fd=source_fd,
+            dst_dir_fd=destination_fd,
+            follow_symlinks=False,
+        )
 
 
-def _matches_captured(path: Path, expected: _Snapshot) -> bool:
-    actual = _snapshot(path, read_file=isinstance(expected.content, bytes))
+def _matches_captured(
+    path: Path, expected: _Snapshot, parent: int | None = None
+) -> bool:
+    actual = _snapshot(
+        path, read_file=isinstance(expected.content, bytes), parent=parent
+    )
     before, current = expected.stamp, actual.stamp
     # Moving or linking a leaf can change ctime without changing its data.
     return (
@@ -908,90 +960,214 @@ def _matches_captured(path: Path, expected: _Snapshot) -> bool:
 
 
 def _undo_publication(
-    entry: _Publication, destination: Path, reverted: Path, recover: set[Path]
+    entry: _Publication,
+    destination: Path,
+    reverted: Path,
+    stage_fd: int | None,
+    recover: set[Path],
 ) -> None:
     if entry.written is not None and (
-        entry.published or _matches_captured(destination, entry.written)
+        entry.published or _matches_captured(destination, entry.written, entry.parent)
     ):
         # Record custody before the syscall in case it is interrupted.
         recover.add(reverted)
-        os.replace(destination, reverted)
-        if not _matches_captured(reverted, entry.written):
-            _publish_new(reverted, destination)
+        _move_leaf(
+            destination, reverted, source_fd=entry.parent, destination_fd=stage_fd
+        )
+        if not _matches_captured(reverted, entry.written, stage_fd):
+            _publish_new(
+                reverted, destination, source_fd=stage_fd, destination_fd=entry.parent
+            )
             recover.discard(reverted)
             raise ConfigError("changed since publication")
         recover.discard(reverted)
     if entry.held is not None:
-        if _lstat(entry.held) is not None:
-            _publish_new(entry.held, destination)
+        if _lstat(entry.held, parent=stage_fd) is not None:
+            _publish_new(
+                entry.held, destination, source_fd=stage_fd, destination_fd=entry.parent
+            )
         recover.discard(entry.held)
 
 
-def _apply_changes(plan: PiPlan, changes: list[PiFileChange]) -> None:
+def _dir_flags() -> int:
+    return os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+
+def _verify_directory(path: Path, stamp: _FileStamp | None, fd: int | None) -> None:
+    current = _FileStamp.from_stat(os.fstat(fd)) if fd is not None else _lstat(path)
+    if stamp is None or current is None or stamp.identity() != current.identity():
+        raise ConfigError(f"Pi destination directory changed after preflight: {path}")
+
+
+@contextmanager
+def _pin_windows_directory(path: Path) -> Iterator[None]:
+    # A Windows directory handle opened without FILE_SHARE_DELETE prevents rename
+    # while absolute path operations use the pinned, non-reparse directory.
+    import ctypes
+    from ctypes import wintypes
+
+    if sys.platform != "win32":
+        raise ConfigError("Windows directory pinning requires Windows")
+    api = ctypes.WinDLL("kernel32", use_last_error=True)
+    open_dir = api.CreateFileW
+    open_dir.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    open_dir.restype = wintypes.HANDLE
+    api.CloseHandle.argtypes = [wintypes.HANDLE]
+    open_existing = 3
+    directory_no_follow = (
+        0x02000000 | 0x00200000
+    )  # Backup semantics and open reparse point.
+    handle = open_dir(str(path), 1, 3, None, open_existing, directory_no_follow, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError()
+    try:
+        if path.is_symlink() or path.is_junction():
+            raise ConfigError(f"Pi requires a real directory at {path}")
+        yield
+    finally:
+        api.CloseHandle(handle)
+
+
+def _destination_parent(
+    root: Path,
+    path: Path,
+    parents: dict[Path, _FileStamp | None],
+    opened: dict[Path, int | None],
+    handles: ExitStack,
+    created: list[Path] | None,
+) -> int | None:
+    for relative in reversed(path.parents):
+        if relative in opened:
+            continue
+        directory = root / relative
+        parent = opened[relative.parent]
+        stamp = parents[relative]
+        if stamp is None and created is not None:
+            os.mkdir(_at(directory, parent), dir_fd=parent)
+            created.append(relative)
+            stamp = _lstat(directory, parent=parent)
+            _real_dir(directory, stamp)
+            parents[relative] = stamp
+        if parent is None:
+            handles.enter_context(_pin_windows_directory(directory))
+            fd = None
+        else:
+            fd = os.open(directory.name, _dir_flags(), dir_fd=parent)
+            handles.callback(os.close, fd)
+        _verify_directory(directory, stamp, fd)
+        opened[relative] = fd
+    return opened[path.parent]
+
+
+def _transaction_directory(
+    root: Path, project_fd: int | None
+) -> tuple[Path, int | None]:
+    if project_fd is None:
+        return Path(tempfile.mkdtemp(prefix=".ai-dotfiles-pi-", dir=root)), None
+    name = f".ai-dotfiles-pi-{secrets.token_hex(12)}"
+    os.mkdir(name, 0o700, dir_fd=project_fd)
+    return root / name, os.open(name, _dir_flags(), dir_fd=project_fd)
+
+
+def _apply_changes(
+    plan: PiPlan, changes: list[PiFileChange], project_fd: int | None
+) -> None:
     parents = plan.parents.copy()
+    _verify_directory(plan.root, parents[Path(".")], project_fd)
+    opened = {Path("."): project_fd}
     created: list[Path] = []
     # The transaction directory is outside the Pi discovery trees.
-    directory = Path(tempfile.mkdtemp(prefix=".ai-dotfiles-pi-", dir=plan.root))
+    directory, stage_fd = _transaction_directory(plan.root, project_fd)
     recover: set[Path] = set()
     cleanup = False
     applied: list[_Publication] = []
     originals: list[tuple[Path, PiFileChange]] = []
+    handles = ExitStack()
     try:
-        (directory / ".gitignore").write_bytes(b"*\n")
+        _stage(directory / ".gitignore", b"*\n", 0o600, stage_fd)
         staged = [
-            _stage_change(directory, index, change)
+            _stage_change(directory, stage_fd, index, change)
             for index, change in enumerate(changes)
         ]
         for index, (change, (after, written)) in enumerate(
             zip(changes, staged, strict=True)
         ):
+            parent = _destination_parent(
+                plan.root,
+                change.path,
+                parents,
+                opened,
+                handles,
+                created if written is not None else None,
+            )
             _assert_parents(plan.root, change.path, parents)
-            if written is not None:
-                for parent in reversed(change.path.parents):
-                    if parents[parent] is None:
-                        (plan.root / parent).mkdir()
-                        parents[parent] = _lstat(plan.root / parent)
-                        created.append(parent)
-            _assert_parents(plan.root, change.path, parents)
-            _assert_leaf(plan.root, change.path, change.before)
+            _assert_leaf(plan.root, change.path, change.before, parent=parent)
             destination = plan.root / change.path
-            entry = _Publication(change.path, written=written)
+            entry = _Publication(change.path, parent, written=written)
             applied.append(entry)
             if change.before.stamp is not None:
                 held = directory / f"{index}.old"
                 entry.held = held
                 recover.add(held)
-                os.replace(destination, held)
-                if not _matches_captured(held, change.before):
+                _move_leaf(destination, held, source_fd=parent, destination_fd=stage_fd)
+                if not _matches_captured(held, change.before, stage_fd):
                     raise ConfigError(
                         f"Pi destination changed at publication: {change.path}"
                     )
                 originals.append((held, change))
             if written is not None:
-                _publish_new(after, destination)
+                _publish_new(
+                    after, destination, source_fd=stage_fd, destination_fd=parent
+                )
                 entry.published = True
+            _assert_parents(plan.root, change.path, parents)
 
         for held, change in originals:
-            if not _matches_captured(held, change.before):
+            if not _matches_captured(held, change.before, stage_fd):
                 raise ConfigError(
                     f"Pi destination changed during publication: {change.path}"
                 )
+        # A parent may change after the last write to that particular directory.
+        for parent_path in opened:
+            _assert_parents(plan.root, parent_path / "child", parents)
         cleanup = True
     except (AiDotfilesError, OSError, KeyboardInterrupt) as exc:
         failed: list[str] = []
         for index, entry in enumerate(reversed(applied)):
             try:
-                _assert_parents(plan.root, entry.path, parents)
                 _undo_publication(
-                    entry, plan.root / entry.path, directory / f"{index}.undo", recover
+                    entry,
+                    plan.root / entry.path,
+                    directory / f"{index}.undo",
+                    stage_fd,
+                    recover,
                 )
             except (AiDotfilesError, OSError) as rollback_error:
                 failed.append(f"{entry.path}: {rollback_error}")
 
+        # On Windows release child handles before removing our empty directories.
+        if project_fd is None:
+            handles.close()
         for path in reversed(created):
             try:
-                _assert_parents(plan.root, path / "child", parents)
-                (plan.root / path).rmdir()
+                parent = opened[path.parent]
+                captured = _lstat(plan.root / path, parent=parent)
+                expected = parents[path]
+                if (
+                    captured is None
+                    or expected is None
+                    or captured.identity() != expected.identity()
+                ):
+                    raise ConfigError("directory changed since creation")
+                os.rmdir(_at(plan.root / path, parent), dir_fd=parent)
             except (AiDotfilesError, OSError) as rollback_error:
                 failed.append(f"{path}: {rollback_error}")
         suffix = f"; rollback incomplete ({'; '.join(failed)})" if failed else ""
@@ -1007,30 +1183,37 @@ def _apply_changes(plan: PiPlan, changes: list[PiFileChange]) -> None:
         )
         raise LinkError(f"{message}{suffix}") from exc
     finally:
+        handles.close()
+        if stage_fd is not None:
+            os.close(stage_fd)
         # An unexpected exception or an interrupted rollback leaves custody intact.
         if cleanup:
-            shutil.rmtree(directory)
+            shutil.rmtree(_at(directory, project_fd), dir_fd=project_fd)
 
 
 @contextmanager
-def _project_write_lock(root: Path) -> Iterator[None]:
-    """Serialize Pi commits on POSIX without adding a project lock file."""
-    if os.name != "posix":
-        yield
+def _project_write_lock(root: Path) -> Iterator[int | None]:
+    """Serialize POSIX commits and pin the project root for native operations."""
+    if os.name == "nt":
+        with _pin_windows_directory(root):
+            yield None
         return
 
     import fcntl
 
-    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    fd = os.open(root, _dir_flags())
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
-        yield
+        yield fd
     finally:
         os.close(fd)
 
 
 def _commit_plan(
-    plan: PiPlan, manifest_path: Path, manifest_change: Sequence[str] | None
+    plan: PiPlan,
+    manifest_path: Path,
+    manifest_change: Sequence[str] | None,
+    project_fd: int | None,
 ) -> list[PiFileChange]:
     changes = list(plan.changes)
     if manifest_change is not None:
@@ -1068,7 +1251,7 @@ def _commit_plan(
         if _collect_mcp(plan.packages, plan.catalog) != plan.mcp:
             raise ConfigError("Pi MCP sources changed after preflight")
     if changes:
-        _apply_changes(plan, changes)
+        _apply_changes(plan, changes, project_fd)
     return changes
 
 
@@ -1080,8 +1263,8 @@ def apply_pi_project(
     """Publish the plan, committing a Pi-only package change as the last file."""
     manifest_path = project_manifest_path(plan.root).relative_to(plan.root)
     try:
-        with _project_write_lock(plan.root):
-            changes = _commit_plan(plan, manifest_path, manifest_change)
+        with _project_write_lock(plan.root) as project_fd:
+            changes = _commit_plan(plan, manifest_path, manifest_change, project_fd)
     except (AiDotfilesError, OSError) as exc:
         recovery = (
             " Run 'ai-dotfiles install' to complete Pi installation."
