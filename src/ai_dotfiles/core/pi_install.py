@@ -22,12 +22,18 @@ from ai_dotfiles.core.elements import (
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError, LinkError, SourceError
 from ai_dotfiles.core.frontmatter import parse_frontmatter
 from ai_dotfiles.core.paths import project_manifest_path
+from ai_dotfiles.core.pi_hooks import (
+    PI_HOOK_GENERATOR_VERSION,
+    PiHookPlan,
+    collect_pi_hooks,
+)
 from ai_dotfiles.core.targets import Target
 
 PI_SKILL_GENERATOR_VERSION = 1
 _OWNERSHIP_VERSION = 1
 _PI = Path(".pi")
 _SKILLS = _PI / "skills"
+_HOOKS = _PI / "extensions" / "ai-dotfiles-hooks.js"
 _OWNERSHIP = _PI / ".ai-dotfiles-ownership.json"
 _LEGACY_TARGETS = {Target.CLAUDE.value, Target.CODEX.value, Target.DSH.value}
 type FileContent = bytes | str | None  # regular file, symlink, or absent
@@ -37,6 +43,13 @@ type FileContent = bytes | str | None  # regular file, symlink, or absent
 class _Skill:
     source: str  # relative to the catalog
     link: str  # exact symlink text
+    fingerprint: str
+    generator: int
+
+
+@dataclass(frozen=True)
+class _HookOwnership:
+    sha256: str
     fingerprint: str
     generator: int
 
@@ -92,6 +105,7 @@ class PiReport:
 class PiPlan:
     root: Path
     catalog: Path
+    storage_root: Path
     packages: tuple[str, ...]
     enabled: bool
     has_legacy_target: bool
@@ -100,6 +114,7 @@ class PiPlan:
     parents: dict[Path, _FileStamp | None]
     leaves: dict[Path, _Snapshot]
     skills: dict[Path, _Skill]
+    hooks: PiHookPlan | None
     changes: tuple[PiFileChange, ...]
     report: PiReport
 
@@ -349,16 +364,18 @@ def _unique_json(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
-def _load_ownership(snapshot: _Snapshot) -> dict[Path, _Skill]:
+def _load_ownership(
+    snapshot: _Snapshot,
+) -> tuple[dict[Path, _Skill], _HookOwnership | None]:
     if snapshot.stamp is None:
-        return {}
+        return {}, None
     try:
         if not isinstance(snapshot.content, bytes):
             raise ValueError("expected a regular file")
         raw = json.loads(snapshot.content, object_pairs_hook=_unique_json)
         if (
             not isinstance(raw, dict)
-            or raw.keys() != {"version", "skills"}
+            or raw.keys() not in ({"version", "skills"}, {"version", "skills", "hooks"})
             or type(raw["version"]) is not int
             or raw["version"] != _OWNERSHIP_VERSION
             or not isinstance(raw["skills"], dict)
@@ -403,13 +420,99 @@ def _load_ownership(snapshot: _Snapshot) -> dict[Path, _Skill]:
             ):
                 raise ValueError(f"invalid catalog link for {label!r}")
             result[path] = _Skill(source, link, fingerprint, generator)
-        return result
+        hooks = None
+        if "hooks" in raw:
+            row = raw["hooks"]
+            if not isinstance(row, dict) or row.keys() != {
+                "sha256",
+                "fingerprint",
+                "generator",
+            }:
+                raise ValueError("invalid hooks entry")
+            checksum, fingerprint, generator = (
+                row["sha256"],
+                row["fingerprint"],
+                row["generator"],
+            )
+            if (
+                not isinstance(checksum, str)
+                or re.fullmatch("[a-f0-9]{64}", checksum) is None
+                or not isinstance(fingerprint, str)
+                or re.fullmatch("[a-f0-9]{64}", fingerprint) is None
+                or type(generator) is not int
+                or generator <= 0
+            ):
+                raise ValueError("invalid hooks entry")
+            hooks = _HookOwnership(checksum, fingerprint, generator)
+        return result, hooks
     except ValueError as exc:
         raise ConfigError(f"Invalid Pi ownership registry {_OWNERSHIP}: {exc}") from exc
 
 
 def _json_bytes(data: object, *, sort_keys: bool = False) -> bytes:
     return (json.dumps(data, indent=2, sort_keys=sort_keys) + "\n").encode("utf-8")
+
+
+def _collect_hooks(
+    storage_root: Path, elements: Iterable[Element]
+) -> PiHookPlan | None:
+    return collect_pi_hooks(
+        storage_root,
+        (element.name for element in elements if element.type is ElementType.DOMAIN),
+    )
+
+
+def _plan_hooks(
+    root: Path,
+    hooks: PiHookPlan | None,
+    recorded: _HookOwnership | None,
+    parents: dict[Path, _FileStamp | None],
+    leaves: dict[Path, _Snapshot],
+    changes: list[PiFileChange],
+    drift: list[str],
+) -> _HookOwnership | None:
+    if hooks is None and recorded is None:
+        return None
+
+    parent = _HOOKS.parent
+    stamp = _lstat(root / parent)
+    if stamp is not None:
+        _real_dir(root / parent, stamp)
+    parents[parent] = stamp
+
+    current = _snapshot(root / _HOOKS, read_file=True)
+    leaves[_HOOKS] = current
+    checksum = (
+        hashlib.sha256(current.content).hexdigest()
+        if isinstance(current.content, bytes)
+        else None
+    )
+    if current.stamp is not None and (recorded is None or checksum != recorded.sha256):
+        raise ConfigError(f"Pi destination is foreign or was replaced: {_HOOKS}")
+
+    if hooks is None:
+        drift.append(f"{_HOOKS} RETIRED (no longer selected)")
+        if current.stamp is not None:
+            changes.append(PiFileChange(_HOOKS, current, None))
+        return None
+
+    wanted = _HookOwnership(
+        hashlib.sha256(hooks.content).hexdigest(),
+        hooks.fingerprint,
+        PI_HOOK_GENERATOR_VERSION,
+    )
+    if current.stamp is None:
+        drift.append(f"{_HOOKS} MISSING")
+    elif recorded is not None:
+        if recorded.generator != wanted.generator:
+            drift.append(f"{_HOOKS} STALE (generator changed)")
+        elif recorded.fingerprint != wanted.fingerprint:
+            drift.append(f"{_HOOKS} STALE (source changed)")
+        elif checksum != wanted.sha256:
+            drift.append(f"{_HOOKS} STALE (generated content changed)")
+    if current.content != hooks.content:
+        changes.append(PiFileChange(_HOOKS, current, hooks.content))
+    return wanted
 
 
 def _plan_pi_project(
@@ -435,7 +538,7 @@ def _plan_pi_project(
         parents[path] = stamp
 
     registry = _snapshot(root / _OWNERSHIP, read_file=True)
-    recorded = _load_ownership(registry)
+    recorded, recorded_hooks = _load_ownership(registry)
     manifest_path = project_manifest_path(root)
     initial_manifest = _snapshot(manifest_path, read_file=True)
     if not isinstance(initial_manifest.content, bytes):
@@ -453,11 +556,12 @@ def _plan_pi_project(
         data["packages"] = list(packages)
         updated_manifest = _json_bytes(data)
 
+    storage_root = catalog.parent.absolute()
     if enabled:
         catalog = catalog.resolve()
-    skills, skipped = _collect_skills(
-        parse_elements(list(packages)) if enabled else [], catalog
-    )
+    elements = parse_elements(list(packages)) if enabled else []
+    skills, skipped = _collect_skills(elements, catalog)
+    hooks = _collect_hooks(storage_root, elements)
     changes: list[PiFileChange] = []
     leaves = {_OWNERSHIP: registry}
     drift: list[str] = []
@@ -485,27 +589,37 @@ def _plan_pi_project(
             elif previous.fingerprint != wanted.fingerprint:
                 drift.append(f"{path} STALE (source changed)")
 
-    if skills != recorded or (not skills and registry.stamp is not None):
+    hook_ownership = _plan_hooks(
+        root, hooks, recorded_hooks, parents, leaves, changes, drift
+    )
+    has_resources = bool(skills) or hook_ownership is not None
+    if (
+        skills != recorded
+        or hook_ownership != recorded_hooks
+        or (not has_resources and registry.stamp is not None)
+    ):
+        updated_ownership: dict[str, object] = {
+            "version": _OWNERSHIP_VERSION,
+            "skills": {
+                path.as_posix(): asdict(value) for path, value in skills.items()
+            },
+        }
+        if hook_ownership is not None:
+            updated_ownership["hooks"] = asdict(hook_ownership)
         updated_registry = (
-            _json_bytes(
-                {
-                    "version": _OWNERSHIP_VERSION,
-                    "skills": {
-                        path.as_posix(): asdict(value) for path, value in skills.items()
-                    },
-                },
-                sort_keys=True,
-            )
-            if skills
-            else None
+            _json_bytes(updated_ownership, sort_keys=True) if has_resources else None
         )
         changes.append(PiFileChange(_OWNERSHIP, registry, updated_registry))
         if not drift:
             drift.append(f"{_OWNERSHIP} STALE (no resources remain)")
 
+    resources = set(skills)
+    if hooks is not None:
+        resources.add(_HOOKS)
     return PiPlan(
         root,
         catalog,
+        storage_root,
         tuple(packages),
         enabled,
         bool(_LEGACY_TARGETS.intersection(targets)),
@@ -514,8 +628,9 @@ def _plan_pi_project(
         parents,
         leaves,
         skills,
+        hooks,
         tuple(changes),
-        PiReport(tuple(sorted(skills)), tuple(drift), skipped),
+        PiReport(tuple(sorted(resources)), tuple(drift), skipped),
     )
 
 
@@ -687,9 +802,12 @@ def _commit_plan(
         _assert_parents(plan.root, path, plan.parents)
         _assert_leaf(plan.root, path, expected)
     if plan.enabled and changes:
-        skills, _ = _collect_skills(parse_elements(list(plan.packages)), plan.catalog)
+        elements = parse_elements(list(plan.packages))
+        skills, _ = _collect_skills(elements, plan.catalog)
         if skills != plan.skills:
             raise ConfigError("Pi skill sources changed after preflight")
+        if _collect_hooks(plan.storage_root, elements) != plan.hooks:
+            raise ConfigError("Pi hook sources changed after preflight")
     if changes:
         _apply_changes(plan, changes)
     return changes
