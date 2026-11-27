@@ -322,7 +322,7 @@ def _skill_skips(element: Element, catalog: Path) -> Iterator[str]:
 
 def _collect_skills(
     elements: Iterable[Element], catalog: Path
-) -> tuple[dict[Path, _Skill], tuple[str, ...]]:
+) -> tuple[dict[Path, _Skill], dict[str, Path], tuple[str, ...]]:
     skills: dict[Path, _Skill] = {}
     names: dict[str, Path] = {}
     seen_sources: set[Path] = set()
@@ -350,7 +350,66 @@ def _collect_skills(
                 source, str(bundle), fingerprint, PI_SKILL_GENERATOR_VERSION
             )
         skipped.extend(_skill_skips(element, catalog))
-    return skills, tuple(dict.fromkeys(skipped))
+    return skills, names, tuple(dict.fromkeys(skipped))
+
+
+def _check_unmanaged_skill_names(
+    root: Path, names: dict[str, Path], owned: Iterable[Path]
+) -> None:
+    if not names:
+        return
+    skills_root = root / _SKILLS
+    managed = {root / path for path in owned}
+
+    def read_skill(path: Path) -> bool:
+        try:
+            source = path.resolve(strict=True)
+        except (FileNotFoundError, NotADirectoryError, RuntimeError):
+            return False
+        stamp = _lstat(source)
+        if stamp is None or not stat.S_ISREG(stamp.mode):
+            return False
+        if path == skills_root / "SKILL.md":
+            raise ConfigError(f"Pi skill root shadows managed bundles: {path}")
+        data = parse_frontmatter(
+            _read_file(source, stamp)
+            .decode("utf-8-sig", errors="replace")
+            .replace("\r\n", "\n")
+            .replace("\r", "\n")
+        )
+        description = data.get("description")
+        if isinstance(description, str) and description.strip():
+            name = data.get("name")
+            name = name if isinstance(name, str) and name else path.parent.name
+            if name in names:
+                raise ConfigError(
+                    f"Pi skill name collision {name!r}: {path} conflicts with "
+                    f"{names[name]}"
+                )
+        return True
+
+    def visit(directory: Path, ancestors: frozenset[Path]) -> None:
+        try:
+            actual = directory.resolve(strict=True)
+        except (FileNotFoundError, NotADirectoryError, RuntimeError):
+            return
+        if actual in ancestors or not actual.is_dir():
+            return
+        if read_skill(directory / "SKILL.md"):
+            return
+        for entry in sorted(directory.iterdir()):
+            if (
+                entry.name.startswith(".")
+                or entry.name == "node_modules"
+                or entry in managed
+            ):
+                continue
+            if entry.is_dir():
+                visit(entry, ancestors | {actual})
+            elif directory == skills_root and entry.suffix == ".md":
+                read_skill(entry)
+
+    visit(skills_root, frozenset())
 
 
 def iter_pi_skill_pairs(
@@ -358,7 +417,7 @@ def iter_pi_skill_pairs(
 ) -> Iterator[tuple[Path, Path]]:
     """Resolve the complete bundle paths discoverable by native Pi."""
     try:
-        skills, _ = _collect_skills([element], catalog.resolve())
+        skills, _, _ = _collect_skills([element], catalog.resolve())
     except OSError as exc:
         raise SourceError(f"Cannot read Pi catalog {catalog}: {exc}") from exc
     for path, skill in skills.items():
@@ -597,7 +656,7 @@ def _plan_pi_project(
     if enabled:
         catalog = catalog.resolve()
     elements = parse_elements(list(packages)) if enabled else []
-    skills, skipped = _collect_skills(elements, catalog)
+    skills, names, skipped = _collect_skills(elements, catalog)
     hooks = _collect_hooks(storage_root, elements)
     mcp = _collect_mcp(packages, catalog) if enabled else None
     changes: list[PiFileChange] = []
@@ -627,6 +686,7 @@ def _plan_pi_project(
             elif previous.fingerprint != wanted.fingerprint:
                 drift.append(f"{path} STALE (source changed)")
 
+    _check_unmanaged_skill_names(root, names, recorded.keys())
     hook_ownership = _plan_hooks(
         root, hooks, recorded_hooks, parents, leaves, changes, drift
     )
@@ -854,9 +914,10 @@ def _commit_plan(
         _assert_leaf(plan.root, path, expected)
     if plan.enabled and changes:
         elements = parse_elements(list(plan.packages))
-        skills, _ = _collect_skills(elements, plan.catalog)
+        skills, names, _ = _collect_skills(elements, plan.catalog)
         if skills != plan.skills:
             raise ConfigError("Pi skill sources changed after preflight")
+        _check_unmanaged_skill_names(plan.root, names, plan.leaves.keys())
         if _collect_hooks(plan.storage_root, elements) != plan.hooks:
             raise ConfigError("Pi hook sources changed after preflight")
         if _collect_mcp(plan.packages, plan.catalog) != plan.mcp:
