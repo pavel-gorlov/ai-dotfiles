@@ -441,3 +441,45 @@ def test_mixed_pi_accepts_native_line_endings_from_legacy_manifest_writer(
     invoke("remove", "skill:fixture")
     assert json.loads(manifest.read_bytes())["packages"] == []
     assert not (project / SKILLS / "fixture").is_symlink()
+
+
+@pytest.mark.parametrize("layout", ["directory", "nested", "direct-markdown"])
+def test_pi_refuses_a_user_skill_with_the_same_native_name(
+    pi_project: tuple[Path, Path], layout: str
+) -> None:
+    project, catalog = pi_project
+    make_skill(catalog / "skills" / "fixture", name="shared-command")
+    manifest = write_project(project, ["pi"], [])
+    skills = project / SKILLS
+    if layout == "direct-markdown":
+        skills.mkdir(parents=True)
+        foreign = skills / "personal.md"
+        foreign.write_text("---\nname: shared-command\ndescription: User skill.\n---\n")
+    else:
+        bundle = "personal" if layout == "directory" else "private/personal"
+        foreign = make_skill(skills / bundle, name="shared-command") / "SKILL.md"
+    original = (manifest.read_bytes(), foreign.read_bytes())
+
+    output = invoke("add", "skill:fixture", expected=1).output
+
+    assert "Pi skill name collision 'shared-command'" in output
+    assert str(foreign) in output
+    assert (manifest.read_bytes(), foreign.read_bytes()) == original
+    assert not (skills / "fixture").exists()
+    assert not (project / OWNERSHIP).exists()
+
+
+def test_pi_reconcile_refuses_a_new_user_skill_collision(
+    pi_project: tuple[Path, Path],
+) -> None:
+    project, catalog = pi_project
+    make_skill(catalog / "skills" / "fixture")
+    write_project(project, ["pi"], ["skill:fixture"])
+    invoke("install")
+    registry = project / OWNERSHIP
+    before = registry.read_bytes()
+    make_skill(project / SKILLS / "private", name="fixture")
+
+    assert "name collision" in invoke("reconcile", expected=1).output
+    assert registry.read_bytes() == before
+    assert (project / SKILLS / "fixture").is_symlink()
