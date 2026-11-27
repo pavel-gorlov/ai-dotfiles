@@ -280,3 +280,38 @@ def test_pi_gitignore_covers_generated_paths_and_preserves_user_files(
     assert json.loads(mcp.read_bytes()) == {
         "mcpServers": {"personal": {"command": "user-command"}}
     }
+
+
+def test_pi_domain_member_changes_refresh_the_selected_project(
+    pi_project: tuple[Path, Path],
+) -> None:
+    project, catalog = pi_project
+    manifest = write_project(project, ["pi"], [])
+    domain = catalog / "suite"
+    domain.mkdir(parents=True)
+    invoke("add", "@suite")
+    before = manifest.read_bytes()
+
+    invoke("domain", "add", "suite", "skill", "fixture")
+    source = domain / "skills" / "fixture"
+    installed = project / SKILLS / "fixture"
+    assert installed.resolve(strict=True) == source
+    assert f"/{SKILLS / 'fixture'}" in (project / ".gitignore").read_text().splitlines()
+    assert manifest.read_bytes() == before
+
+    foreign = project / SKILLS / "fixture"
+    foreign.unlink()
+    foreign.write_bytes(b"private")
+    error = invoke("domain", "remove", "suite", "skill", "fixture", expected=1)
+    assert "foreign" in error.output
+    assert (source / "SKILL.md").is_file()
+    assert foreign.read_bytes() == b"private"
+
+    foreign.unlink()
+    invoke("reconcile")
+    invoke("domain", "remove", "suite", "skill", "fixture")
+    assert not source.exists()
+    assert not installed.is_symlink()
+    assert not (project / OWNERSHIP).exists()
+    assert manifest.read_bytes() == before
+    invoke("reconcile", "--check", "--strict")
