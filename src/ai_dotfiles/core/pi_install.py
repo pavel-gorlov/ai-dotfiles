@@ -27,6 +27,15 @@ from ai_dotfiles.core.pi_hooks import (
     PiHookPlan,
     collect_pi_hooks,
 )
+from ai_dotfiles.core.pi_mcp import (
+    PI_MCP_PATH,
+    PiMcpOwnership,
+    PiMcpPlan,
+    collect_pi_mcp,
+    load_mcp_ownership,
+    plan_mcp_update,
+    unique_json,
+)
 from ai_dotfiles.core.targets import Target
 
 PI_SKILL_GENERATOR_VERSION = 1
@@ -115,6 +124,7 @@ class PiPlan:
     leaves: dict[Path, _Snapshot]
     skills: dict[Path, _Skill]
     hooks: PiHookPlan | None
+    mcp: PiMcpPlan | None
     changes: tuple[PiFileChange, ...]
     report: PiReport
 
@@ -355,27 +365,19 @@ def iter_pi_skill_pairs(
         yield Path(skill.link), project_root / path
 
 
-def _unique_json(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"duplicate property {key!r}")
-        result[key] = value
-    return result
-
-
 def _load_ownership(
     snapshot: _Snapshot,
-) -> tuple[dict[Path, _Skill], _HookOwnership | None]:
+) -> tuple[dict[Path, _Skill], _HookOwnership | None, PiMcpOwnership | None]:
     if snapshot.stamp is None:
-        return {}, None
+        return {}, None, None
     try:
         if not isinstance(snapshot.content, bytes):
             raise ValueError("expected a regular file")
-        raw = json.loads(snapshot.content, object_pairs_hook=_unique_json)
+        raw = json.loads(snapshot.content, object_pairs_hook=unique_json)
         if (
             not isinstance(raw, dict)
-            or raw.keys() not in ({"version", "skills"}, {"version", "skills", "hooks"})
+            or not {"version", "skills"} <= raw.keys()
+            or not raw.keys() <= {"version", "skills", "hooks", "mcp"}
             or type(raw["version"]) is not int
             or raw["version"] != _OWNERSHIP_VERSION
             or not isinstance(raw["skills"], dict)
@@ -444,7 +446,8 @@ def _load_ownership(
             ):
                 raise ValueError("invalid hooks entry")
             hooks = _HookOwnership(checksum, fingerprint, generator)
-        return result, hooks
+        mcp = load_mcp_ownership(raw["mcp"]) if "mcp" in raw else None
+        return result, hooks, mcp
     except ValueError as exc:
         raise ConfigError(f"Invalid Pi ownership registry {_OWNERSHIP}: {exc}") from exc
 
@@ -515,6 +518,40 @@ def _plan_hooks(
     return wanted
 
 
+def _collect_mcp(packages: Sequence[str], catalog: Path) -> PiMcpPlan | None:
+    def read_source(path: Path) -> bytes:
+        _source_dir(catalog, path.parent)
+        current = _snapshot(path, read_file=True)
+        if not isinstance(current.content, bytes):
+            raise SourceError(f"Pi requires a regular MCP source file at {path}")
+        return current.content
+
+    return collect_pi_mcp(list(packages), catalog, read_source)
+
+
+def _plan_mcp(
+    root: Path,
+    mcp: PiMcpPlan | None,
+    recorded: PiMcpOwnership | None,
+    leaves: dict[Path, _Snapshot],
+    changes: list[PiFileChange],
+    drift: list[str],
+) -> PiMcpOwnership | None:
+    if (mcp is None or not mcp.servers) and recorded is None:
+        return None
+
+    current = _snapshot(root / PI_MCP_PATH, read_file=True)
+    if current.stamp is not None and not isinstance(current.content, bytes):
+        raise ConfigError(f"Pi requires a regular MCP config file at {PI_MCP_PATH}")
+    leaves[PI_MCP_PATH] = current
+    content = current.content if isinstance(current.content, bytes) else None
+    updated, ownership, mcp_drift = plan_mcp_update(content, mcp, recorded)
+    drift.extend(mcp_drift)
+    if updated != content:
+        changes.append(PiFileChange(PI_MCP_PATH, current, updated))
+    return ownership
+
+
 def _plan_pi_project(
     root: Path,
     packages: Sequence[str],
@@ -538,7 +575,7 @@ def _plan_pi_project(
         parents[path] = stamp
 
     registry = _snapshot(root / _OWNERSHIP, read_file=True)
-    recorded, recorded_hooks = _load_ownership(registry)
+    recorded, recorded_hooks, recorded_mcp = _load_ownership(registry)
     manifest_path = project_manifest_path(root)
     initial_manifest = _snapshot(manifest_path, read_file=True)
     if not isinstance(initial_manifest.content, bytes):
@@ -562,6 +599,7 @@ def _plan_pi_project(
     elements = parse_elements(list(packages)) if enabled else []
     skills, skipped = _collect_skills(elements, catalog)
     hooks = _collect_hooks(storage_root, elements)
+    mcp = _collect_mcp(packages, catalog) if enabled else None
     changes: list[PiFileChange] = []
     leaves = {_OWNERSHIP: registry}
     drift: list[str] = []
@@ -592,10 +630,14 @@ def _plan_pi_project(
     hook_ownership = _plan_hooks(
         root, hooks, recorded_hooks, parents, leaves, changes, drift
     )
-    has_resources = bool(skills) or hook_ownership is not None
+    mcp_ownership = _plan_mcp(root, mcp, recorded_mcp, leaves, changes, drift)
+    has_resources = (
+        bool(skills) or hook_ownership is not None or mcp_ownership is not None
+    )
     if (
         skills != recorded
         or hook_ownership != recorded_hooks
+        or mcp_ownership != recorded_mcp
         or (not has_resources and registry.stamp is not None)
     ):
         updated_ownership: dict[str, object] = {
@@ -606,6 +648,8 @@ def _plan_pi_project(
         }
         if hook_ownership is not None:
             updated_ownership["hooks"] = asdict(hook_ownership)
+        if mcp_ownership is not None:
+            updated_ownership["mcp"] = asdict(mcp_ownership)
         updated_registry = (
             _json_bytes(updated_ownership, sort_keys=True) if has_resources else None
         )
@@ -616,6 +660,8 @@ def _plan_pi_project(
     resources = set(skills)
     if hooks is not None:
         resources.add(_HOOKS)
+    if mcp_ownership is not None:
+        resources.add(PI_MCP_PATH)
     return PiPlan(
         root,
         catalog,
@@ -629,6 +675,7 @@ def _plan_pi_project(
         leaves,
         skills,
         hooks,
+        mcp,
         tuple(changes),
         PiReport(tuple(sorted(resources)), tuple(drift), skipped),
     )
@@ -808,6 +855,8 @@ def _commit_plan(
             raise ConfigError("Pi skill sources changed after preflight")
         if _collect_hooks(plan.storage_root, elements) != plan.hooks:
             raise ConfigError("Pi hook sources changed after preflight")
+        if _collect_mcp(plan.packages, plan.catalog) != plan.mcp:
+            raise ConfigError("Pi MCP sources changed after preflight")
     if changes:
         _apply_changes(plan, changes)
     return changes
