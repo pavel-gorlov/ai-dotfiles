@@ -841,7 +841,11 @@ def _commit_plan(
     _assert_parents(plan.root, manifest_path, plan.parents)
     if manifest_change is None and plan.updated_manifest is not None:
         current = _snapshot(plan.root / manifest_path, read_file=True)
-        if current.content != plan.updated_manifest:
+        # The legacy text-mode writer emits native line endings.
+        if (
+            not isinstance(current.content, bytes)
+            or current.content.replace(b"\r\n", b"\n") != plan.updated_manifest
+        ):
             raise ConfigError(f"Pi manifest changed after preflight: {manifest_path}")
     else:
         _assert_leaf(plan.root, manifest_path, plan.initial_manifest)
