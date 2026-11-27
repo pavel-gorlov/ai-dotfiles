@@ -20,6 +20,8 @@ from pathlib import Path
 from threading import Thread
 
 import pytest
+from packaging.tags import sys_tags
+from packaging.utils import parse_wheel_filename
 
 from ai_dotfiles.core.dsh_install import apply_dsh_install
 from ai_dotfiles.core.dsh_launch import prepare_dsh_launch
@@ -827,10 +829,14 @@ def test_archives_ship_all_helpers_and_isolated_installed_wheel_runs_real_child(
     python = str(venv / "bin/python")
     dependencies: list[str] = []
     cache = Path(os.environ.get("POETRY_CACHE_DIR", str(tmp_path / "empty-cache")))
-    for name in ("click", "tomli_w"):
-        candidates = list(
-            cache.glob(f"artifacts/**/{name}-{metadata.version(name)}-*.whl")
-        )
+    supported_tags = set(sys_tags())
+    for name in ("click", "tomli_w", "pyyaml", "ada_url", "cffi", "pycparser"):
+        pattern = f"artifacts/**/{name}-{metadata.version(name)}-*.whl"
+        candidates = [
+            candidate
+            for candidate in cache.glob(pattern, case_sensitive=False)
+            if supported_tags & parse_wheel_filename(candidate.name)[3]
+        ]
         if not candidates:
             downloaded = _run_command(
                 [
@@ -852,7 +858,7 @@ def test_archives_ship_all_helpers_and_isolated_installed_wheel_runs_real_child(
                 logs=logs,
             )
             assert downloaded.returncode == 0, downloaded.stderr
-            candidates = list(archives.glob(f"{name}-*.whl"))
+            candidates = list(archives.glob(f"{name}-*.whl", case_sensitive=False))
         assert candidates, f"Required isolated installation lacks {name} wheel"
         dependencies.append(str(candidates[0]))
     installed = _run_command(
