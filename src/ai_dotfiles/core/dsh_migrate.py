@@ -115,6 +115,12 @@ from ai_dotfiles.core.local_discovery import (
     is_catalog_managed_path,
     iter_local_elements,
 )
+from ai_dotfiles.core.pi_install import (
+    PiPlan,
+    PiReport,
+    apply_pi_project,
+    plan_pi_project,
+)
 from ai_dotfiles.core.settings_merge import strip_owned
 from ai_dotfiles.core.shared_instructions import project_instruction_plan
 from ai_dotfiles.core.targets import Target
@@ -1327,7 +1333,6 @@ def catalog_managed_paths(project_root: Path, claude_dir: Path) -> list[str]:
         collect_dsh_managed_paths,
         collect_managed_paths,
     )
-
     from ai_dotfiles.core.pi_install import iter_pi_local_paths
 
     return sorted(
@@ -1395,6 +1400,7 @@ class DomainCatalogMutation:
     unlinked: tuple[tuple[str, Path], ...] = ()
     warnings: tuple[str, ...] = ()
     reports: tuple[DshReconcileReport, ...] = ()
+    pi_reports: tuple[PiReport, ...] = ()
 
 
 def _domain_catalog_scopes(name: str, catalog: Path) -> tuple[DomainCatalogScope, ...]:
@@ -1504,10 +1510,20 @@ def _refresh_domain_targets(
     old_rules: Mapping[DomainCatalogScope, Sequence[CodexRulePlan]],
 ) -> DomainCatalogMutation:
     # No target writes until every scope proves its complete desired retirement.
+    pi_plans: list[tuple[DomainCatalogScope, PiPlan]] = []
     for scope in scopes:
         plan_dsh_catalog_lifecycle(
             scope.project_root, scope.packages, catalog, scope.targets, mode=scope.mode
         )
+        if scope.project_root is not None and "pi" in scope.targets:
+            pi_plan = plan_pi_project(
+                scope.project_root,
+                manifest.get_packages(scope.manifest_path),
+                catalog,
+                scope.targets,
+            )
+            if pi_plan is not None:
+                pi_plans.append((scope, pi_plan))
     linked: list[tuple[str, Path]] = []
     unlinked: list[tuple[str, Path]] = []
     warnings: list[str] = []
@@ -1612,6 +1628,20 @@ def _refresh_domain_targets(
         )
         codex_hooks.write_codex_hooks(layout.codex_dir, contributions)
         codex_rules.write_codex_rules(layout.codex_dir, contributions)
+    from ai_dotfiles.core.gitignore import sync_gitignore
+
+    pi_reports = []
+    for scope, planned in pi_plans:
+        pi_reports.append(apply_pi_project(planned))
+        if manifest.get_flag(scope.manifest_path, "manage_gitignore", True) and (
+            manifest.get_flag(paths.global_manifest_path(), "manage_gitignore", True)
+        ):
+            try:
+                sync_gitignore(
+                    planned.root, catalog_managed_paths(planned.root, scope.claude_dir)
+                )
+            except (AiDotfilesError, OSError) as exc:
+                warnings.append(f"Cannot refresh managed .gitignore paths: {exc}")
     if scopes:
         from ai_dotfiles.core.runtime import provision_domain_runtime
 
@@ -1628,7 +1658,11 @@ def _refresh_domain_targets(
         except AiDotfilesError as exc:
             warnings.append(f"@{domain.name}: runtime provisioning failed — {exc}")
     return DomainCatalogMutation(
-        tuple(linked), tuple(unlinked), tuple(warnings), tuple(reports)
+        tuple(linked),
+        tuple(unlinked),
+        tuple(warnings),
+        tuple(reports),
+        tuple(pi_reports),
     )
 
 

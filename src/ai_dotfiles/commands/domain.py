@@ -19,7 +19,7 @@ from pathlib import Path
 import click
 
 from ai_dotfiles import ui
-from ai_dotfiles.commands.install import _report_dsh_result
+from ai_dotfiles.commands.install import _report_dsh_result, _report_pi_result
 from ai_dotfiles.core import manifest
 from ai_dotfiles.core.completions import (
     complete_domain_elements,
@@ -199,6 +199,8 @@ def add_element(name: str, element_type: str, element_name: str) -> None:
             ui.success(f"Linked {sub} into {label}/.claude/")
         for report in result.reports:
             _report_dsh_result(report)
+        for pi_report in result.pi_reports:
+            _report_pi_result(pi_report)
         for warning in result.warnings:
             ui.warn(warning)
     except AiDotfilesError as exc:
@@ -227,6 +229,8 @@ def remove_element(name: str, element_type: str, element_name: str) -> None:
             ui.info(f"Unlinked {sub} from {label}/.claude/")
         for report in result.reports:
             _report_dsh_result(report)
+        for pi_report in result.pi_reports:
+            _report_pi_result(pi_report)
         for warning in result.warnings:
             ui.warn(warning)
         ui.success(f"Removed {element_type} {element_name} from domain @{name}")
