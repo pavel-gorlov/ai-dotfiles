@@ -1,15 +1,14 @@
 # ai-dotfiles
 
-Package manager for Claude Code, OpenAI Codex CLI and DeepSeek Harness configuration. Like `npm`
-for your AI coding setup.
+Package manager for Claude Code, OpenAI Codex CLI, DeepSeek Harness and Pi
+configuration. Like `npm` for your AI coding setup.
 
 Keep a small `ai-dotfiles.json` in each project, `install` on a new machine, and the
 full `.claude/` tree (skills, agents, rules, hooks, settings) is restored from a
 single catalog stored under `~/.ai-dotfiles/`.
 
-One catalog, three targets: select `"claude"`, `"codex"` and/or `"dsh"` in the
-project or global manifest without duplicating the source. Each target translates
-its supported surfaces and reports compatibility gaps — see [Multi-target support](#multi-target-support).
+Use one catalog for `"claude"`, `"codex"` and `"dsh"` in either manifest.
+Projects can also select `"pi"`. See [Multi-target support](#multi-target-support).
 
 ## Install
 
@@ -83,6 +82,8 @@ cd ~/projects/my-api
 ai-dotfiles install
 ```
 
+For a new Pi project, use the [Pi quick start](#pi-project-installation).
+
 ## How It Works
 
 - **Manifest** — `ai-dotfiles.json` lists the packages a project uses.
@@ -109,12 +110,14 @@ ai-dotfiles install
   to Codex's lifecycle-hook harness and emitted to `.codex/hooks.json`.
   Global Codex outputs use `$CODEX_HOME` (default `~/.codex`). Adding `"dsh"`
   produces native skills and owned configuration for managed DeepSeek Harness
-  launch — see the [DSH guide](docs/dsh-target.md).
+  launch. Adding `"pi"` installs native project resources for Pi. See the
+  [DSH guide](docs/dsh-target.md) and [Pi project installation](#pi-project-installation).
 - **Local elements & migration** — a project's own hand-authored `.claude/`
   skills/agents/rules (not from the catalog) are carried to Codex by
   `ai-dotfiles migrate` (default Codex) or `migrate --to dsh`.
-  `ai-dotfiles reconcile [-g] [--check]` refreshes Codex/DSH drift and owned
-  retirement. Migration remains project-only. See [Migrating local elements](#migrating-local-elements-to-codex).
+  `ai-dotfiles reconcile [-g] [--check]` refreshes Codex and DSH resources
+  in either scope and Pi resources in project scope. Migration remains
+  project-only. See [Migrating local elements](#migrating-local-elements-to-codex).
 - **Drift detection** — every generated Codex file carries a
   `# managed-by: ai-dotfiles` + `# source-sha256: <hex>` header. The hash is
   of the catalog source file. `ai-dotfiles status` compares it to the current
@@ -140,20 +143,21 @@ ai-dotfiles install
 ## Multi-target support
 
 Set `targets` in `ai-dotfiles.json` or `global.json` to render the catalog for
-the selected CLIs (absent → `["claude"]`):
+the selected CLIs (absent → `["claude"]`). The example below uses the targets
+available in both scopes. Add `"pi"` only in `ai-dotfiles.json`.
 
 ```json
 {
-  "packages": ["@gitflow", "skill:commit", "agent:reviewer"],
+  "packages": ["@gitflow"],
   "targets": ["claude", "codex", "dsh"]
 }
 ```
 
-Then `ai-dotfiles install` produces:
+`ai-dotfiles install` uses these formats for the resources in selected packages:
 
 | Catalog element | Claude Code | Codex CLI | DSH |
 |-----------------|-------------|-----------|-----|
-| `skill:commit` | `.claude/skills/commit/` → symlink/copy | `.agents/skills/commit/` — generated `SKILL.md` + copied support | `.dsh/skills/commit/` — whole native bundle, link/copy |
+| `commit` skill from `@gitflow` | `.claude/skills/commit/` → symlink/copy | `.agents/skills/commit/` — generated `SKILL.md` + copied support | `.dsh/skills/commit/` — whole native bundle, link/copy |
 | `agent:reviewer` | `.claude/agents/reviewer.md` → symlink/copy | `.codex/agents/reviewer.toml` | Named stock child tool `ai_dotfiles_agent_reviewer` |
 | Rules | `.claude/rules/<name>.md` | [Codex rule classes](#codex-rule-support) | Shared always-on blocks or DSH-only literal sections; path gaps reported |
 | Command hooks | `.claude/settings.json` | `.codex/hooks.json` (twin events; `if` dropped) | Combined owned `hooks.json`, seven native events |
@@ -220,6 +224,89 @@ switching is not hard isolation.
 Read the [DSH guide](docs/dsh-target.md) for paths, native fragment examples,
 permissions, all hook/MCP/rule limits, source ownership and reconciliation.
 
+### Pi project installation
+
+With `@gitflow` in your catalog and Pi installed separately, run these
+commands from the root of a new project. The native integration was tested
+with Pi 1.6.1.
+
+```bash
+ai-dotfiles init --target pi
+ai-dotfiles add @gitflow
+ai-dotfiles install
+ai-dotfiles status
+ai-dotfiles reconcile --check --strict
+```
+
+`init --target pi` creates a manifest with `"targets": ["pi"]`. In an existing
+project, add `"pi"` to the project manifest's `targets` before running
+`install`. Include `"claude"` explicitly if the project relied on the default
+and you want both targets. `@gitflow` provides the `commit` skill.
+
+| Project path | What ai-dotfiles installs |
+|--------------|--------------------------|
+| `.pi/skills/<name>/` | A symlink to the complete catalog skill bundle, including its references and scripts, regardless of `link_mode` |
+| `.pi/extensions/ai-dotfiles-hooks.js` | A bridge for the supported `@gitflow` and `@taskmanager` hooks |
+| `.pi/mcp.json` | Owned MCP server entries from installed domains for stdio or Streamable HTTP |
+
+`.pi/.ai-dotfiles-ownership.json` records which resources the CLI can refresh
+or retire. Replacing an owned symlink or generated extension, editing a
+managed MCP entry, or colliding with a user-owned name causes a conflict.
+For managed changes, edit the catalog source and run `ai-dotfiles reconcile`.
+To disable the target, remove `"pi"` from `targets` and run the same command.
+
+Catalog agents and rules appear as `[SKIPPED] Pi`. The adapter covers catalog
+skills, the supported hooks and MCP entries. Claude permissions, other
+settings, arbitrary hooks and local Claude migration are outside its scope.
+The bridge runs on model tool events in a trusted Pi session. For example,
+the Taskmanager collision check can block a model Bash call and the Gitflow
+PR review hook can add context after successful PR creation.
+
+Start `pi` from the project root and review the native trust prompt. Use
+`/trust` inside Pi to save trust for this project. `pi --approve` trusts project
+resources for one run; `pi --no-approve` skips them for one run. The provider IDs
+`openai-codex`, `deepseek`, `zai` and `kimi-coding` were checked in an isolated
+Pi profile. Configure and authenticate the model you intend to use in Pi.
+[Pi project trust](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/security.md#understand-project-trust)
+
+If `tm` or `pr-loop` is missing inside Pi, add the storage `bin/` directory
+(default `~/.ai-dotfiles/bin`) to the launching shell's `PATH` and restart Pi.
+If `uv` chose an interpreter older than a domain supports, set `UV_PYTHON` to a
+supported interpreter and rerun `ai-dotfiles install` after removing that
+domain's failed virtual environment from the storage `venvs/` directory.
+
+#### Verify Playwright and Storybook MCP
+
+For Playwright, pin `@playwright/mcp` in the project's dev dependencies
+(tested with `0.0.86`), install the project dependencies with pnpm, and ensure
+the Chromium browser selected by Playwright MCP can launch. For Storybook,
+install and register a compatible `@storybook/addon-mcp` in the project, then
+start Storybook on port 6006 so `http://localhost:6006/mcp` is available.
+[Playwright MCP 0.0.86 release](https://github.com/microsoft/playwright-mcp/releases/tag/v0.0.86),
+[Storybook MCP setup](https://storybook.js.org/docs/11/ai/reference/mcp-server/)
+
+```bash
+ai-dotfiles add @playwright-e2e @storybook
+ai-dotfiles install
+ai-dotfiles status
+ai-dotfiles reconcile --check --strict
+pi mcp list --json
+```
+
+`status` and `reconcile --check --strict` inspect installed files and drift.
+`pi mcp list --json` uses the saved trust decision and connects to every
+enabled server. Check that both `playwright` and `storybook` appear with
+`state: connected` and review `errors`. A zero exit code can also include
+disabled servers or omit project servers if trust is pending.
+
+In the trusted session, use Pi's default `codemode` exposure to call a tool
+from each server. For example, have Pi navigate to a local page with
+`mcp__playwright__browser_navigate` and check the page title and snapshot.
+Find an available Storybook tool via `/mcp` or `searchTools()` in `codemode`
+and check its result. The integration checks returned a Playwright snapshot
+and Storybook instructions from `mcp__storybook__get_storybook_story_instructions`
+using Storybook and its MCP addon at version `10.6.9`.
+
 ## Copy mode for the Claude target (`link_mode`)
 
 By default the Claude target writes `.claude/skills/`, `.claude/agents/` and
@@ -234,7 +321,7 @@ Set `link_mode` in `ai-dotfiles.json` to opt into copying real files instead:
 
 ```json
 {
-  "packages": ["@gitflow", "skill:commit"],
+  "packages": ["@gitflow"],
   "link_mode": "copy"
 }
 ```
@@ -417,7 +504,7 @@ Run `ai-dotfiles <command> --help` for full options.
 
 | Command | Description |
 |---------|-------------|
-| `init`                           | Create `ai-dotfiles.json` in the current project |
+| `init [--target pi]`             | Create `ai-dotfiles.json` in the current project |
 | `init -g`                        | Create global storage at `~/.ai-dotfiles/` and link `~/.claude/` |
 | `init -g --from <git-url>`       | Clone an existing storage repo into `~/.ai-dotfiles/` |
 | `add [-g] [--strict] PACKAGES...` | Add packages and refresh selected project/global targets |
@@ -429,7 +516,7 @@ Run `ai-dotfiles <command> --help` for full options.
 | `list --available`               | List everything available in the catalog |
 | `status [-g]`                    | Show target health/drift, settings and project-local classifications |
 | `migrate [--to codex\|dsh] [--dry-run] [--strict]` | Carry project-local `.claude/` elements; default Codex, `--strict` requires DSH, no global mode |
-| `reconcile [-g] [--check] [--strict]` | Refresh Codex/DSH drift and owned retirement; `--check` writes nothing |
+| `reconcile [-g] [--check] [--strict]` | Refresh Codex/DSH and project Pi resources, including retirement. `--check` writes nothing |
 | `dsh launch [--strict] --profile NAME [--patch PATH ...] [APP_ARGS...]` | Audited launch of an existing official RC2 profile; NAME shorthand also accepted |
 | `update`                         | Refresh CLI-managed files inside storage (today: the built-in `ai-dotfiles` skill) |
 | `pull [--rebase]`                 | Update the catalog storage repo; run install afterwards |
@@ -639,6 +726,7 @@ with the install URL. Vendors without a `search` capability (e.g.
 | Codex user root  | `$CODEX_HOME` (default `~/.codex`) |
 | DSH user root    | `$DSH_HOME` (default `~/.dsh`) |
 | DSH project root | `<manifest-root>/.dsh/` |
+| Pi project root  | `<manifest-root>/.pi/` |
 
 Set `AI_DOTFILES_HOME` to relocate the storage root (useful for testing or
 isolating multiple configurations).
