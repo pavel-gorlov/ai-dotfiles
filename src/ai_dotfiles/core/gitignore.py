@@ -84,13 +84,16 @@ def collect_dsh_managed_paths(project_root: Path) -> list[str]:
         if record["mode"] != "link" or not path.is_symlink():
             continue
         verify_dsh_owned_output(layout, key, inventory=inventory)
-        relative = path.relative_to(project_root).as_posix()
-        # Gitignore syntax is a pattern even for an anchored path.
-        escaped = "".join(
-            "\\" + char if char in "\\*?[] !#" else char for char in relative
-        )
-        results.append("/" + escaped)
+        results.append(anchored_path_pattern(path.relative_to(project_root)))
     return sorted(results)
+
+
+def anchored_path_pattern(path: Path) -> str:
+    """Build a Gitignore pattern for one literal project-relative path."""
+    escaped = "".join(
+        "\\" + char if char in "\\*?[] !#" else char for char in path.as_posix()
+    )
+    return "/" + escaped
 
 
 def parse_blocks(text: str) -> tuple[list[str], list[str], list[str]]:

@@ -32,6 +32,7 @@ from ai_dotfiles.core.pi_mcp import (
     PiMcpOwnership,
     PiMcpPlan,
     collect_pi_mcp,
+    is_generated_mcp_file,
     load_mcp_ownership,
     plan_mcp_update,
     unique_json,
@@ -509,6 +510,37 @@ def _load_ownership(
         return result, hooks, mcp
     except ValueError as exc:
         raise ConfigError(f"Invalid Pi ownership registry {_OWNERSHIP}: {exc}") from exc
+
+
+def iter_pi_local_paths(root: Path) -> Iterator[Path]:
+    """Yield attested local Pi artefacts, keeping user and shared files visible."""
+    pi_dir = _lstat(root / _PI)
+    if pi_dir is None or not stat.S_ISDIR(pi_dir.mode):
+        return
+    registry = _snapshot(root / _OWNERSHIP, read_file=True)
+    if registry.stamp is None:
+        return
+    skills, hooks, mcp = _load_ownership(registry)
+    yield _OWNERSHIP
+    skills_dir = _lstat(root / _SKILLS)
+    if skills_dir is not None and stat.S_ISDIR(skills_dir.mode):
+        for path, skill in skills.items():
+            if _snapshot(root / path).content == skill.link:
+                yield path
+
+    extensions = _lstat(root / _HOOKS.parent)
+    if hooks is not None and extensions is not None and stat.S_ISDIR(extensions.mode):
+        content = _snapshot(root / _HOOKS, read_file=True).content
+        if (
+            isinstance(content, bytes)
+            and hashlib.sha256(content).hexdigest() == hooks.sha256
+        ):
+            yield _HOOKS
+
+    if mcp is not None and mcp.created:
+        content = _snapshot(root / PI_MCP_PATH, read_file=True).content
+        if isinstance(content, bytes) and is_generated_mcp_file(content, mcp):
+            yield PI_MCP_PATH
 
 
 def _json_bytes(data: object, *, sort_keys: bool = False) -> bytes:

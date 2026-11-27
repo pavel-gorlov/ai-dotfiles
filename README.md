@@ -254,6 +254,9 @@ or retire. Replacing an owned symlink or generated extension, editing a
 managed MCP entry, or colliding with a user-owned name causes a conflict.
 For managed changes, edit the catalog source and run `ai-dotfiles reconcile`.
 To disable the target, remove `"pi"` from `targets` and run the same command.
+The managed `.gitignore` block covers owned Pi links, generated hooks, the
+ownership file and fully generated MCP configuration. It keeps user-authored
+skills and shared MCP files visible to Git.
 
 Catalog agents and rules appear as `[SKIPPED] Pi`. The adapter covers catalog
 skills, the supported hooks and MCP entries. Claude permissions, other

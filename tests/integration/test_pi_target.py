@@ -242,3 +242,41 @@ def test_pi_rejects_unsafe_bundles(
     assert "Pi" in error.output
     assert manifest.read_bytes() == before
     assert not (project / ".pi").exists()
+
+
+def test_pi_gitignore_covers_generated_paths_and_preserves_user_files(
+    pi_project: tuple[Path, Path],
+) -> None:
+    project, catalog = pi_project
+    gitignore = project / ".gitignore"
+    gitignore.write_text("/notes.txt\n", encoding="utf-8")
+    make_skill(catalog / "suite" / "skills" / "fixture")
+    (catalog / "suite" / "mcp.fragment.json").write_text(
+        '{"mcpServers":{"fixture":{"command":"serve"}}}', encoding="utf-8"
+    )
+    write_project(project, ["pi"], [])
+    user_skill = make_skill(project / SKILLS / "personal")
+
+    invoke("add", "@suite", "--no-gitignore")
+    assert gitignore.read_text() == "/notes.txt\n"
+    invoke("install")
+    patterns = set(gitignore.read_text().splitlines())
+    assert {
+        "/notes.txt",
+        "/.pi/skills/fixture",
+        f"/{OWNERSHIP}",
+        "/.pi/mcp.json",
+    } <= patterns
+    assert f"/{user_skill.relative_to(project)}" not in patterns
+
+    mcp = project / ".pi" / "mcp.json"
+    config = json.loads(mcp.read_bytes())
+    config["mcpServers"]["personal"] = {"command": "user-command"}
+    mcp.write_text(json.dumps(config), encoding="utf-8")
+    invoke("reconcile")
+    assert "/.pi/mcp.json" not in gitignore.read_text().splitlines()
+    invoke("remove", "@suite")
+    assert gitignore.read_text() == "/notes.txt\n"
+    assert json.loads(mcp.read_bytes()) == {
+        "mcpServers": {"personal": {"command": "user-command"}}
+    }

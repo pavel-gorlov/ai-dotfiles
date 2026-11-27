@@ -1323,9 +1323,12 @@ def remove_codex_catalog_blocks(
 def catalog_managed_paths(project_root: Path, claude_dir: Path) -> list[str]:
     """Combine exact managed links without ignoring user instruction documents."""
     from ai_dotfiles.core.gitignore import (
+        anchored_path_pattern,
         collect_dsh_managed_paths,
         collect_managed_paths,
     )
+
+    from ai_dotfiles.core.pi_install import iter_pi_local_paths
 
     return sorted(
         set(collect_managed_paths(claude_dir, paths.storage_root()))
@@ -1334,6 +1337,7 @@ def catalog_managed_paths(project_root: Path, claude_dir: Path) -> list[str]:
             if _has_dsh_catalog_custody(project_layout(project_root))
             else set()
         )
+        | {anchored_path_pattern(path) for path in iter_pi_local_paths(project_root)}
     )
 
 

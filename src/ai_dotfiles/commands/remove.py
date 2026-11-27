@@ -456,19 +456,19 @@ def remove(
                         element, codex_layout, catalog, all_packages, targets
                     )
             _rebuild_codex_config(manifest_path, codex_layout.codex_dir, catalog)
-        _maybe_sync_gitignore(
-            project_root=project_root,
-            claude_dir=claude_dir,
-            manifest_path=manifest_path,
-            no_gitignore=no_gitignore,
-        )
-
         if pi_plan is not None:
             _report_pi_result(
                 apply_pi_project(
                     pi_plan, manifest_change=all_packages if defer_manifest else None
                 )
             )
+
+        _maybe_sync_gitignore(
+            project_root=project_root,
+            claude_dir=claude_dir,
+            manifest_path=manifest_path,
+            no_gitignore=no_gitignore,
+        )
 
         # A failed Pi publication can leave the previous selection installed.
         if had_domain:

@@ -384,13 +384,6 @@ def add(
             write_codex_hooks(all_packages, codex_layout.codex_dir, catalog)
             write_codex_rules(all_packages, codex_layout.codex_dir, catalog)
 
-        _maybe_sync_gitignore(
-            project_root=project_root,
-            claude_dir=claude_dir,
-            manifest_path=manifest_path,
-            no_gitignore=no_gitignore,
-        )
-
         if pi_plan is not None:
             _report_pi_result(
                 apply_pi_project(
@@ -398,6 +391,13 @@ def add(
                     manifest_change=updated_packages if defer_manifest else None,
                 )
             )
+
+        _maybe_sync_gitignore(
+            project_root=project_root,
+            claude_dir=claude_dir,
+            manifest_path=manifest_path,
+            no_gitignore=no_gitignore,
+        )
 
     except AiDotfilesError as exc:
         ui.error(str(exc))
