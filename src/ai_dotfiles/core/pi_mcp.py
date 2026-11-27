@@ -322,7 +322,7 @@ def collect_pi_mcp(
     packages: list[str], catalog: Path, read_source: Callable[[Path], bytes]
 ) -> PiMcpPlan | None:
     """Translate selected raw fragments and record a publication-time fingerprint."""
-    fragments = collect_mcp_fragments(packages, catalog)
+    fragments = collect_mcp_fragments(packages, catalog, follow_symlinks=False)
     if not fragments:
         return None
     servers: dict[str, _Server] = {}

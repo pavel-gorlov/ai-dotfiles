@@ -71,14 +71,17 @@ def strip_mcp_meta(fragment: dict[str, Any]) -> dict[str, Any]:
     return dict(fragment)
 
 
-def collect_mcp_fragments(packages: list[str], catalog: Path) -> list[tuple[str, Path]]:
+def collect_mcp_fragments(
+    packages: list[str], catalog: Path, *, follow_symlinks: bool = True
+) -> list[tuple[str, Path]]:
     """Collect ``(domain_name, fragment_path)`` pairs from domain packages.
 
     Domains are topologically sorted (deps first) so layered domains'
     MCP fragments merge with the base layer applied first. Only
     ``@domain`` specifiers contribute; standalones are skipped. Missing
     fragment files are silently skipped — a domain without MCP servers
-    is valid.
+    is valid. Targets that validate source entries without following symlinks
+    may request dangling entries as well.
     """
     from ai_dotfiles.core.dependencies import topological_sort
 
@@ -97,7 +100,7 @@ def collect_mcp_fragments(packages: list[str], catalog: Path) -> list[tuple[str,
     fragments: list[tuple[str, Path]] = []
     for element in ordered:
         fragment_path = catalog / element.name / "mcp.fragment.json"
-        if fragment_path.exists():
+        if fragment_path.exists(follow_symlinks=follow_symlinks):
             fragments.append((element.name, fragment_path))
     return fragments
 

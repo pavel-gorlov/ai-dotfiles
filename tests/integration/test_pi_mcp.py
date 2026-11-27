@@ -145,6 +145,23 @@ def test_mcp_translates_both_transports_and_preserves_existing_config(
     invoke("reconcile", "--check", "--strict")
 
 
+def test_mcp_dangling_fragment_keeps_previously_installed_servers(
+    mcp_project: tuple[Path, Path],
+) -> None:
+    project, catalog = mcp_project
+    source = fragment(catalog, "suite", {"fixture": {"command": "serve"}})
+    invoke("add", "@suite")
+    files = [project / MCP, project / OWNERSHIP]
+    before = [path.read_bytes() for path in files]
+
+    source.unlink()
+    source.symlink_to("missing.json")
+    output = invoke("reconcile", expected=1)
+
+    assert str(source) in output
+    assert [path.read_bytes() for path in files] == before
+
+
 @pytest.mark.parametrize("retain_file", [False, True])
 def test_mcp_reconciles_source_generator_and_missing_drift(
     mcp_project: tuple[Path, Path], retain_file: bool
