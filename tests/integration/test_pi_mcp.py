@@ -403,12 +403,12 @@ def test_mcp_publication_rollback_and_retry(
     publish = pi_install._publish_new
     failed = False
 
-    def fail_once(source: Path, destination: Path) -> None:
+    def fail_once(source: Path, destination: Path, **fds: int | None) -> None:
         nonlocal failed
         if destination == project / MANIFEST and not failed:
             failed = True
             raise OSError("injected manifest publication failure")
-        publish(source, destination)
+        publish(source, destination, **fds)
 
     monkeypatch.setattr(pi_install, "_publish_new", fail_once)
     assert "injected manifest publication failure" in invoke(verb, "@suite", expected=1)
@@ -832,19 +832,19 @@ def test_mcp_restores_an_editor_update_detected_at_publication(
     user_config = json.loads(file.read_bytes())
     user_config["mcpServers"]["personal"] = {"command": "user-command"}
     write_json(source, {"mcpServers": {"fixture": {"command": "new"}}})
-    move = os.replace
+    move = pi_install._move_leaf
     injected = False
 
-    def editor_replaces_first(path: Path, destination: Path) -> None:
+    def editor_replaces_first(path: Path, destination: Path, **fds: int | None) -> None:
         nonlocal injected
         if path == file and not injected:
             changes = file.with_suffix(".editor")
             write_json(changes, user_config)
-            move(changes, file)
+            os.replace(changes, file)
             injected = True
-        move(path, destination)
+        move(path, destination, **fds)
 
-    monkeypatch.setattr(pi_install.os, "replace", editor_replaces_first)
+    monkeypatch.setattr(pi_install, "_move_leaf", editor_replaces_first)
     assert "changed at publication" in invoke("reconcile", expected=1)
     assert json.loads(file.read_bytes()) == user_config
     assert registry.read_bytes() == before
@@ -869,12 +869,14 @@ def test_mcp_keeps_the_displaced_file_when_a_new_edit_blocks_restore(
     publish = pi_install._publish_new
     injected = False
 
-    def editor_publishes_first(source: Path, destination: Path) -> None:
+    def editor_publishes_first(
+        source: Path, destination: Path, **fds: int | None
+    ) -> None:
         nonlocal injected
         if destination == file and not injected:
             write_json(file, user_config)
             injected = True
-        publish(source, destination)
+        publish(source, destination, **fds)
 
     monkeypatch.setattr(pi_install, "_publish_new", editor_publishes_first)
     error = invoke("reconcile", expected=1)
@@ -898,29 +900,68 @@ def test_mcp_keyboard_interrupt_restores_original_files(
     tracked = [file, project / OWNERSHIP, project / MANIFEST]
     original = [path.read_bytes() for path in tracked]
     write_json(source, {"mcpServers": {"fixture": {"command": "new"}}})
-    move, publish = os.replace, pi_install._publish_new
+    move, publish = pi_install._move_leaf, pi_install._publish_new
     interrupted = False
 
-    def capture_then_interrupt(path: Path, destination: Path) -> None:
+    def capture_then_interrupt(
+        path: Path, destination: Path, **fds: int | None
+    ) -> None:
         nonlocal interrupted
-        move(path, destination)
+        move(path, destination, **fds)
         if path == file and not interrupted:
             interrupted = True
             raise KeyboardInterrupt
 
-    def publish_then_interrupt(path: Path, destination: Path) -> None:
+    def publish_then_interrupt(
+        path: Path, destination: Path, **fds: int | None
+    ) -> None:
         nonlocal interrupted
-        publish(path, destination)
+        publish(path, destination, **fds)
         if destination == file and not interrupted:
             interrupted = True
             raise KeyboardInterrupt
 
     if at == "after-capture":
-        monkeypatch.setattr(pi_install.os, "replace", capture_then_interrupt)
+        monkeypatch.setattr(pi_install, "_move_leaf", capture_then_interrupt)
     else:
         monkeypatch.setattr(pi_install, "_publish_new", publish_then_interrupt)
 
     assert "Aborted" in invoke("reconcile", expected=1)
     assert interrupted
     assert [path.read_bytes() for path in tracked] == original
+    assert not list(project.glob(".ai-dotfiles-pi-*"))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="tests a POSIX directory rename")
+def test_mcp_replacement_and_rollback_keep_the_verified_parent(
+    mcp_project: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    project, catalog = mcp_project
+    fragment_file = fragment(catalog, "suite", {"fixture": {"command": "old"}})
+    invoke("add", "@suite")
+    file = project / MCP
+    before = file.read_bytes()
+    ownership = (project / OWNERSHIP).read_bytes()
+    moved = project / "moved-pi"
+    outside = tmp_path / "private"
+    outside.mkdir()
+    sentinel = outside / file.name
+    sentinel.write_bytes(b"unrelated outside resource")
+    write_json(fragment_file, {"mcpServers": {"fixture": {"command": "new"}}})
+    move = pi_install._move_leaf
+    substituted = False
+
+    def substitute_parent(path: Path, destination: Path, **fds: int | None) -> None:
+        nonlocal substituted
+        if path == file and not substituted:
+            file.parent.rename(moved)
+            file.parent.symlink_to(outside, target_is_directory=True)
+            substituted = True
+        move(path, destination, **fds)
+
+    monkeypatch.setattr(pi_install, "_move_leaf", substitute_parent)
+    assert "directory changed" in invoke("reconcile", expected=1)
+    assert sentinel.read_bytes() == b"unrelated outside resource"
+    assert (moved / file.name).read_bytes() == before
+    assert (moved / OWNERSHIP.name).read_bytes() == ownership
     assert not list(project.glob(".ai-dotfiles-pi-*"))
