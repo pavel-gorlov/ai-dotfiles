@@ -315,3 +315,39 @@ def test_pi_domain_member_changes_refresh_the_selected_project(
     assert not (project / OWNERSHIP).exists()
     assert manifest.read_bytes() == before
     invoke("reconcile", "--check", "--strict")
+
+
+@pytest.mark.parametrize(
+    "description",
+    ["", "description: " "\n", "description: 1e2\n", "description: [text]\n"],
+)
+def test_pi_refuses_a_skill_the_native_loader_would_drop(
+    pi_project: tuple[Path, Path], description: str
+) -> None:
+    project, catalog = pi_project
+    source = make_skill(catalog / "skills" / "fixture") / "SKILL.md"
+    source.write_text(f"---\nname: fixture\n{description}---\n", encoding="utf-8")
+    manifest = write_project(project, ["pi"], [])
+    original = manifest.read_bytes()
+
+    assert (
+        "requires a non-empty description"
+        in invoke("add", "skill:fixture", expected=1).output
+    )
+    assert manifest.read_bytes() == original
+    assert not (project / OWNERSHIP).exists()
+
+
+def test_pi_reads_names_and_block_descriptions_as_yaml_1_2(
+    pi_project: tuple[Path, Path],
+) -> None:
+    project, catalog = pi_project
+    source = make_skill(catalog / "skills" / "fixture") / "SKILL.md"
+    source.write_text(
+        "---\nname: yes # a YAML 1.2 string\ndescription: >-\n  folded text\n---\n",
+        encoding="utf-8",
+    )
+    write_project(project, ["pi"], [])
+    invoke("add", "skill:fixture")
+    invoke("reconcile", "--check", "--strict")
+    assert (project / SKILLS / "fixture").is_symlink()
