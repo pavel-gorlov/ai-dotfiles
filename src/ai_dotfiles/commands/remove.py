@@ -456,11 +456,6 @@ def remove(
                         element, codex_layout, catalog, all_packages, targets
                     )
             _rebuild_codex_config(manifest_path, codex_layout.codex_dir, catalog)
-        # Domain runtimes (venv + bin shims) are target-agnostic — they
-        # are provisioned for any target, so tear them down regardless.
-        if had_domain:
-            _maybe_tear_down_runtimes(elements, removed_set, catalog)
-
         _maybe_sync_gitignore(
             project_root=project_root,
             claude_dir=claude_dir,
@@ -474,6 +469,10 @@ def remove(
                     pi_plan, manifest_change=all_packages if defer_manifest else None
                 )
             )
+
+        # A failed Pi publication can leave the previous selection installed.
+        if had_domain:
+            _maybe_tear_down_runtimes(elements, removed_set, catalog)
 
     except AiDotfilesError as exc:
         ui.error(str(exc))
