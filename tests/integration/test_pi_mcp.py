@@ -298,6 +298,16 @@ def test_mcp_detects_collisions_before_fragment_merging(
         ({"command": "tool", "env": {"KEY": "${TOKEN:-default}"}}, "env.KEY"),
         ({"type": "http", "url": "https://${SERVER}/mcp"}, "url"),
         ({"type": "http", "url": "https://example.test:noport/mcp"}, "url"),
+        ({"url": "http://mcp|host/mcp"}, "url"),
+        ({"url": "http://mcp%7Chost/mcp"}, "url"),
+        ({"url": "http://256.0.0.1/mcp"}, "url"),
+        (
+            {
+                "url": "http://example.test/mcp",
+                "oauth": {"callbackUrl": r"http://example.test\@localhost/callback"},
+            },
+            "oauth.callbackUrl",
+        ),
         ({"url": "http://example.test/mcp", "auth": {"provider": "pi"}}, "auth"),
         ({"url": "http://example.test/mcp", "oauth": True}, "oauth"),
         (

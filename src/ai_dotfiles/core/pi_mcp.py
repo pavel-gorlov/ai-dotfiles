@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import SplitResult, urlsplit
 
+from ada_url import URL
+
 from ai_dotfiles.core.errors import ConfigError, SourceError
 from ai_dotfiles.core.mcp_merge import collect_mcp_fragments
 
@@ -187,8 +189,12 @@ class _Source:
             if (
                 parsed.scheme in {"http", "https"}
                 and parsed.hostname
+                and "\\" not in parsed.netloc
                 and not any(character.isspace() for character in parsed.netloc)
             ):
+                # Pi validates with the WHATWG URL parser. Keep the raw view for
+                # OAuth checks on an explicitly supplied port and callback path.
+                URL(text)
                 return parsed
         except ValueError:
             pass
