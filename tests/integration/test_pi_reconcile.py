@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from ai_dotfiles.core import manifest as project_manifest
 from ai_dotfiles.core import pi_install
 from ai_dotfiles.core.errors import LinkError
 from tests.integration.test_pi_target import (
@@ -408,3 +409,26 @@ def test_pi_concurrent_plans_cannot_overwrite_the_winning_commit(
     assert json.loads(manifest.read_bytes())["packages"] == ["skill:first"]
     assert sorted(path.name for path in (project / SKILLS).iterdir()) == ["first"]
     invoke("reconcile", "--check", "--strict")
+
+
+def test_mixed_pi_accepts_native_line_endings_from_legacy_manifest_writer(
+    pi_project: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, catalog = pi_project
+    make_skill(catalog / "skills" / "fixture")
+    manifest = write_project(project, ["claude", "pi"], [])
+    write_manifest = project_manifest.write_manifest
+
+    def write_crlf(path: Path, data: dict[str, object]) -> None:
+        write_manifest(path, data)
+        normalized = path.read_bytes().replace(b"\r\n", b"\n")
+        path.write_bytes(normalized.replace(b"\n", b"\r\n"))
+
+    monkeypatch.setattr(project_manifest, "write_manifest", write_crlf)
+
+    invoke("add", "skill:fixture")
+    assert b"\r\n" in manifest.read_bytes()
+    assert (project / SKILLS / "fixture").is_symlink()
+    invoke("remove", "skill:fixture")
+    assert json.loads(manifest.read_bytes())["packages"] == []
+    assert not (project / SKILLS / "fixture").is_symlink()
