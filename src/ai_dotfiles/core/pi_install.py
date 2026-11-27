@@ -13,6 +13,9 @@ from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
+
+import yaml  # type: ignore[import-untyped]
 
 from ai_dotfiles.core.elements import (
     Element,
@@ -21,7 +24,6 @@ from ai_dotfiles.core.elements import (
     resolve_source_path,
 )
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError, LinkError, SourceError
-from ai_dotfiles.core.frontmatter import parse_frontmatter
 from ai_dotfiles.core.paths import project_manifest_path
 from ai_dotfiles.core.pi_hooks import (
     PI_HOOK_GENERATOR_VERSION,
@@ -182,6 +184,46 @@ def _snapshot(path: Path, *, read_file: bool = False) -> _Snapshot:
     return _Snapshot(stamp, content)
 
 
+# Read YAML nodes without constructing application objects. Pi uses YAML 1.2
+# Core scalar types, so ordinary strings such as "yes" must remain strings.
+_PI_YAML: Any = type("_PiYamlLoader", (yaml.BaseLoader,), {})
+_PI_YAML.add_implicit_resolver(
+    "tag:yaml.org,2002:null",  # Only the distinction from a string matters.
+    re.compile(
+        r"^(?:~|[Nn]ull|NULL|[Tt]rue|TRUE|[Ff]alse|FALSE|"
+        r"0o[0-7]+|0x[0-9a-fA-F]+|"
+        r"[-+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?|"
+        r"[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN)|)$"
+    ),
+    None,
+)
+
+
+def _pi_frontmatter(content: bytes) -> dict[str, str]:
+    text = content.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+    end = text.find("\n---", 3) if text.startswith("---") else -1
+    if end < 0:
+        return {}
+    document = yaml.compose(text[4:end], Loader=_PI_YAML)
+    if not isinstance(document, yaml.MappingNode):
+        return {}
+    fields: dict[str, str] = {}
+    seen: set[str] = set()
+    for key, value in document.value:
+        if not isinstance(key, yaml.ScalarNode) or key.tag != "tag:yaml.org,2002:str":
+            continue
+        if key.value in seen:
+            raise ValueError(f"Duplicate Pi frontmatter field {key.value!r}")
+        seen.add(key.value)
+        if (
+            key.value in {"name", "description"}
+            and isinstance(value, yaml.ScalarNode)
+            and value.tag == "tag:yaml.org,2002:str"
+        ):
+            fields[key.value] = value.value
+    return fields
+
+
 def _bundle_metadata(bundle: Path) -> tuple[str, str]:
     """Hash the full tree and validate simple in-bundle symlinks."""
     digest = hashlib.sha256()
@@ -276,13 +318,16 @@ def _bundle_metadata(bundle: Path) -> tuple[str, str]:
         raise SourceError(f"Missing Pi skill source: {bundle / skill_file}")
     try:
         content = _read_file(bundle / resolved_skill, files[resolved_skill])
-        text = content.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
-    except UnicodeDecodeError as exc:
+        fields = _pi_frontmatter(content)
+    except (ValueError, yaml.YAMLError) as exc:
         raise SourceError(
-            f"Cannot decode Pi skill source {bundle / skill_file}: {exc}"
+            f"Invalid Pi frontmatter in {bundle / skill_file}: {exc}"
         ) from exc
-    name = parse_frontmatter(text).get("name")
-    return (name if isinstance(name, str) and name else bundle.name, digest.hexdigest())
+    if not fields.get("description", "").strip():
+        raise SourceError(
+            f"Pi skill requires a non-empty description: {bundle / skill_file}"
+        )
+    return fields.get("name") or bundle.name, digest.hexdigest()
 
 
 def _bundle_sources(element: Element, catalog: Path) -> Iterator[Path]:
@@ -373,16 +418,12 @@ def _check_unmanaged_skill_names(
             return False
         if path == skills_root / "SKILL.md":
             raise ConfigError(f"Pi skill root shadows managed bundles: {path}")
-        data = parse_frontmatter(
-            _read_file(source, stamp)
-            .decode("utf-8-sig", errors="replace")
-            .replace("\r\n", "\n")
-            .replace("\r", "\n")
-        )
-        description = data.get("description")
-        if isinstance(description, str) and description.strip():
-            name = data.get("name")
-            name = name if isinstance(name, str) and name else path.parent.name
+        try:
+            fields = _pi_frontmatter(_read_file(source, stamp))
+        except (ValueError, yaml.YAMLError):
+            return True  # A present SKILL.md stops Pi's directory descent.
+        if fields.get("description", "").strip():
+            name = fields.get("name") or path.parent.name
             if name in names:
                 raise ConfigError(
                     f"Pi skill name collision {name!r}: {path} conflicts with "

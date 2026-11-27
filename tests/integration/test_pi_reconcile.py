@@ -453,10 +453,16 @@ def test_pi_refuses_a_user_skill_with_the_same_native_name(
     if layout == "direct-markdown":
         skills.mkdir(parents=True)
         foreign = skills / "personal.md"
-        foreign.write_text("---\nname: shared-command\ndescription: User skill.\n---\n")
+        foreign.write_text(
+            "---\nname: shared-command # personal variant\n"
+            "description: User skill.\n---\n"
+        )
     else:
         bundle = "personal" if layout == "directory" else "private/personal"
-        foreign = make_skill(skills / bundle, name="shared-command") / "SKILL.md"
+        foreign = (
+            make_skill(skills / bundle, name="shared-command # personal variant")
+            / "SKILL.md"
+        )
     original = (manifest.read_bytes(), foreign.read_bytes())
 
     output = invoke("add", "skill:fixture", expected=1).output
