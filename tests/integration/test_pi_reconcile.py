@@ -1,0 +1,410 @@
+"""Pi preflight, drift, and failure recovery through the project CLI."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+import pytest
+
+from ai_dotfiles.core import pi_install
+from ai_dotfiles.core.errors import LinkError
+from tests.integration.test_pi_target import (
+    OWNERSHIP,
+    SKILLS,
+    invoke,
+    make_skill,
+    write_project,
+)
+from tests.integration.test_pi_target import pi_project as _pi_project
+
+pi_project = _pi_project
+
+
+def test_pi_check_is_read_only_and_reports_source_generator_and_missing_drift(
+    pi_project: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, catalog = pi_project
+    one = make_skill(catalog / "skills" / "one")
+    make_skill(catalog / "skills" / "two")
+    make_skill(catalog / "skills" / "three")
+    manifest = write_project(project, ["pi"], ["skill:one", "skill:two", "skill:three"])
+    invoke("install")
+    registry = project / OWNERSHIP
+    ownership = json.loads(registry.read_bytes())
+    ownership["skills"][str(SKILLS / "two")]["generator"] = 2
+    registry.write_text(json.dumps(ownership), encoding="utf-8")
+    (one / "reference.md").write_text("new data", encoding="utf-8")
+    link = project / SKILLS / "one"
+    (project / SKILLS / "three").unlink()
+    before = (manifest.read_bytes(), registry.read_bytes(), link.lstat().st_ino)
+    for args in [("status",), ("reconcile", "--check", "--strict")]:
+        output = invoke(*args, expected=1).output
+        assert f"{SKILLS / 'one'} STALE (source changed)" in output
+        assert f"{SKILLS / 'two'} STALE (generator changed)" in output
+        assert f"{SKILLS / 'three'} MISSING" in output
+        assert (
+            manifest.read_bytes(),
+            registry.read_bytes(),
+            link.lstat().st_ino,
+        ) == before
+        assert not (project / SKILLS / "three").is_symlink()
+
+    invoke("reconcile", "--strict")
+    assert link.lstat().st_ino == before[2]
+    invoke("status")
+    invoke("reconcile", "--check", "--strict")
+
+    old = pi_install.PI_SKILL_GENERATOR_VERSION
+    monkeypatch.setattr(pi_install, "PI_SKILL_GENERATOR_VERSION", old + 1)
+    assert "generator changed" in invoke("status", expected=1).output
+    invoke("install")
+    invoke("reconcile", "--check", "--strict")
+
+
+def test_pi_retires_exact_broken_owned_link_and_rows_for_a_deleted_domain_member(
+    pi_project: tuple[Path, Path],
+) -> None:
+    project, catalog = pi_project
+    source = make_skill(catalog / "suite" / "skills" / "one")
+    make_skill(catalog / "suite" / "skills" / "two")
+    write_project(project, ["pi"], ["@suite"])
+    invoke("install")
+    link = project / SKILLS / "one"
+    (source / "SKILL.md").unlink()
+    source.rmdir()
+    assert os.readlink(link) == str(source)
+    assert f"{SKILLS / 'one'} RETIRED" in invoke("status", expected=1).output
+    invoke("reconcile")
+    assert not link.is_symlink()
+    assert (project / SKILLS / "two").is_symlink()
+
+    write_project(project, ["future"], [])
+    assert (
+        f"{SKILLS / 'two'} RETIRED" in invoke("reconcile", "--check", expected=1).output
+    )
+    invoke("install")
+    assert not (project / OWNERSHIP).exists()
+    assert not (project / SKILLS / "two").is_symlink()
+    invoke("status")
+
+
+def test_pi_missing_standalone_is_diagnosed_until_the_record_is_removed(
+    pi_project: tuple[Path, Path],
+) -> None:
+    project, catalog = pi_project
+    source = make_skill(catalog / "skills" / "fixture")
+    write_project(project, ["pi"], ["skill:fixture"])
+    invoke("install")
+    (source / "SKILL.md").unlink()
+    source.rmdir()
+    assert str(source) in invoke("status", expected=1).output
+    assert (project / SKILLS / "fixture").is_symlink()
+    invoke("remove", "skill:fixture")
+    assert not (project / SKILLS / "fixture").is_symlink()
+    assert not (project / OWNERSHIP).exists()
+
+
+@pytest.mark.parametrize(
+    "conflict", ["real", "same-link", "pi-parent", "skills-parent"]
+)
+def test_pi_preflight_protects_foreign_paths_before_legacy_install_or_manifest(
+    pi_project: tuple[Path, Path], tmp_path: Path, conflict: str
+) -> None:
+    project, catalog = pi_project
+    skill = make_skill(catalog / "skills" / "fixture")
+    manifest = write_project(project, ["codex", "pi", "future"], [])
+    before = manifest.read_bytes()
+    foreign = tmp_path / "foreign"
+    foreign.mkdir()
+    sentinel = foreign / "keep"
+    sentinel.write_bytes(b"user data")
+    target = project / SKILLS / "fixture"
+    if conflict == "pi-parent":
+        (project / ".pi").symlink_to(foreign, target_is_directory=True)
+    elif conflict == "skills-parent":
+        (project / ".pi").mkdir()
+        (project / SKILLS).symlink_to(foreign, target_is_directory=True)
+    else:
+        target.parent.mkdir(parents=True)
+        if conflict == "real":
+            target.write_bytes(b"user skill")
+        else:
+            target.symlink_to(skill, target_is_directory=True)
+    invoke("add", "skill:fixture", expected=1)
+    assert manifest.read_bytes() == before
+    assert not (project / ".agents").exists()
+    assert not (project / OWNERSHIP).exists()
+    assert list(foreign.iterdir()) == [sentinel]
+    assert sentinel.read_bytes() == b"user data"
+    if conflict == "real":
+        assert target.read_bytes() == b"user skill"
+    if conflict == "same-link":
+        assert os.readlink(target) == str(skill)
+
+
+def test_pi_preflight_rejects_swapped_owned_links_and_invalid_registry_paths(
+    pi_project: tuple[Path, Path], tmp_path: Path
+) -> None:
+    project, catalog = pi_project
+    source = make_skill(catalog / "skills" / "one")
+    write_project(project, ["pi"], ["skill:one"])
+    invoke("install")
+    link = project / SKILLS / "one"
+    before = (project / "ai-dotfiles.json").read_bytes()
+    link.unlink()
+    link.symlink_to(source / ".." / "one", target_is_directory=True)
+    error = invoke("remove", "skill:one", expected=1).output
+    assert f"replaced: {SKILLS / 'one'}" in error
+    assert os.readlink(link) == str(source / ".." / "one")
+    assert (project / "ai-dotfiles.json").read_bytes() == before
+
+    registry = project / OWNERSHIP
+    data = json.loads(registry.read_bytes())
+    sentinel = tmp_path / "unrelated"
+    sentinel.write_bytes(b"untouched")
+    data["skills"][str(sentinel)] = data["skills"].pop(str(SKILLS / "one"))
+    registry.write_text(json.dumps(data), encoding="utf-8")
+    malformed = registry.read_bytes()
+    error = invoke("reconcile", "--check", "--strict", expected=1).output
+    assert "Invalid Pi ownership registry" in error
+    assert sentinel.read_bytes() == b"untouched"
+    assert registry.read_bytes() == malformed
+
+
+@pytest.mark.parametrize(
+    "fail_path", [SKILLS / "second", OWNERSHIP, Path("ai-dotfiles.json")]
+)
+def test_pi_only_add_rolls_back_published_paths_and_manifest(
+    pi_project: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, fail_path: Path
+) -> None:
+    project, catalog = pi_project
+    make_skill(catalog / "skills" / "first")
+    make_skill(catalog / "skills" / "second")
+    manifest = write_project(project, ["pi", "future-target"], [])
+    manifest.chmod(0o640)
+    before = manifest.read_bytes()
+    replace = os.replace
+
+    def fail_once(source: Path, destination: Path) -> None:
+        if destination == project / fail_path and not failed:
+            failed.append(destination)
+            raise OSError("injected Pi publication fault")
+        replace(source, destination)
+
+    failed: list[Path] = []
+    monkeypatch.setattr(pi_install.os, "replace", fail_once)
+    error = invoke("add", "skill:first", "skill:second", expected=1).output
+    assert "injected Pi publication fault" in error
+    assert "to complete Pi installation" not in error
+    assert failed == [project / fail_path]
+    assert manifest.read_bytes() == before
+    assert manifest.stat().st_mode & 0o777 == 0o640
+    assert not (project / ".pi").exists()
+    assert not list(project.glob(".ai-dotfiles-pi-*"))
+    invoke("add", "skill:first", "skill:second")
+    invoke("reconcile", "--check", "--strict")
+
+
+@pytest.mark.parametrize("verb", ["add", "remove", "install"])
+def test_mixed_late_pi_failure_keeps_legacy_packages_and_install_recovers(
+    pi_project: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, verb: str
+) -> None:
+    project, catalog = pi_project
+    original = make_skill(catalog / "skills" / "original")
+    make_skill(catalog / "skills" / "new", depends="depends: [skill:original]\n")
+    targets = ["codex", "future", "pi"]
+    manifest = write_project(project, targets, ["skill:original"])
+    invoke("install")
+    registry = project / OWNERSHIP
+    existing = registry.read_bytes()
+    existing_link = project / SKILLS / "original"
+    if verb == "install":
+        assert invoke("remove", "skill:original").exit_code == 0
+        manifest = write_project(project, targets, ["skill:new"])
+        args = ("install",)
+    elif verb == "add":
+        args = ("add", "skill:new")
+    else:
+        args = ("remove", "skill:original")
+
+    replace = os.replace
+    failed: list[Path] = []
+
+    def fail_once(source: Path, destination: Path) -> None:
+        if not failed and destination in {registry, project / SKILLS / "new"}:
+            failed.append(destination)
+            raise OSError("injected mixed Pi fault")
+        replace(source, destination)
+
+    monkeypatch.setattr(pi_install.os, "replace", fail_once)
+    if verb == "remove":
+        # With no desired resources the final registry operation is an unlink.
+        unlink = Path.unlink
+
+        def fail_owned_registry(path: Path, *args: object, **kwargs: object) -> None:
+            if not failed and path == registry:
+                failed.append(path)
+                raise OSError("injected mixed Pi fault")
+            unlink(path)
+
+        monkeypatch.setattr(Path, "unlink", fail_owned_registry)
+
+    error = invoke(*args, expected=1).output
+    assert "injected mixed Pi fault" in error
+    assert "Run 'ai-dotfiles install' to complete Pi installation." in error
+    parsed = json.loads(manifest.read_bytes())
+    assert parsed["targets"] == targets
+    assert (
+        parsed["packages"]
+        == {
+            "add": ["skill:original", "skill:new"],
+            "remove": [],
+            "install": ["skill:new", "skill:original"],
+        }[verb]
+    )
+    if verb in {"add", "remove"}:
+        assert registry.read_bytes() == existing
+        assert os.readlink(existing_link) == str(original)
+    else:
+        assert not registry.exists()
+        assert not existing_link.is_symlink()
+    assert not (project / SKILLS / "new").is_symlink()
+    assert (project / ".agents/skills/new/SKILL.md").exists() == (verb != "remove")
+    assert (project / ".agents/skills/original/SKILL.md").exists() == (verb != "remove")
+    invoke("install")
+    invoke("status")
+    invoke("reconcile", "--check", "--strict")
+
+
+def test_pi_add_install_and_remove_preflight_before_dependency_manifest_or_custody(
+    pi_project: tuple[Path, Path],
+) -> None:
+    project, catalog = pi_project
+    required = make_skill(catalog / "skills" / "required")
+    make_skill(catalog / "skills" / "primary", depends="depends: [skill:required]\n")
+    manifest = write_project(project, ["pi"], ["skill:primary"])
+    before = manifest.read_bytes()
+    assert (
+        "missing transitive dependencies"
+        in invoke("install", "--strict-deps", expected=1).output
+    )
+    target = project / SKILLS / "required"
+    target.parent.mkdir(parents=True)
+    target.symlink_to(required, target_is_directory=True)
+    assert "foreign" in invoke("install", expected=1).output
+    assert manifest.read_bytes() == before
+    target.unlink()
+
+    invoke("install")
+    before = manifest.read_bytes()
+    target.unlink()
+    target.write_bytes(b"user replacement")
+    assert "foreign" in invoke("remove", "skill:primary", expected=1).output
+    assert manifest.read_bytes() == before
+    assert target.read_bytes() == b"user replacement"
+
+
+def test_pi_rechecks_destination_snapshots_before_publication(
+    pi_project: tuple[Path, Path],
+) -> None:
+    project, catalog = pi_project
+    make_skill(catalog / "skills" / "fixture")
+    packages = ["skill:fixture"]
+    targets = ["pi"]
+    manifest = write_project(project, targets, packages)
+    before = manifest.read_bytes()
+    plan = pi_install.plan_pi_project(project, packages, catalog, targets)
+    assert plan is not None
+    (project / ".pi").mkdir()
+    foreign = project / ".pi" / "mcp.json"
+    foreign.write_bytes(b"user resource")
+    with pytest.raises(LinkError, match="directory changed after preflight"):
+        pi_install.apply_pi_project(plan)
+    assert foreign.read_bytes() == b"user resource"
+    assert manifest.read_bytes() == before
+    assert not (project / OWNERSHIP).exists()
+
+
+def test_pi_only_remove_rollback_preserves_original_link_registry_and_manifest(
+    pi_project: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, catalog = pi_project
+    source = make_skill(catalog / "skills" / "fixture")
+    manifest = write_project(project, ["pi"], ["skill:fixture"])
+    invoke("install")
+    registry = project / OWNERSHIP
+    before = (manifest.read_bytes(), registry.read_bytes())
+    replace = os.replace
+    failed = False
+
+    def fail_manifest(source: Path, destination: Path) -> None:
+        nonlocal failed
+        if destination == manifest and not failed:
+            failed = True
+            raise OSError("injected manifest publication fault")
+        replace(source, destination)
+
+    monkeypatch.setattr(pi_install.os, "replace", fail_manifest)
+    error = invoke("remove", "skill:fixture", expected=1).output
+    assert "injected manifest publication fault" in error
+    assert (manifest.read_bytes(), registry.read_bytes()) == before
+    assert os.readlink(project / SKILLS / "fixture") == str(source)
+    invoke("reconcile", "--check", "--strict")
+    invoke("remove", "skill:fixture")
+    assert not registry.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="project directory flock is POSIX")
+def test_pi_concurrent_plans_cannot_overwrite_the_winning_commit(
+    pi_project: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    from threading import Event
+
+    project, catalog = pi_project
+    make_skill(catalog / "skills" / "first")
+    make_skill(catalog / "skills" / "second")
+    manifest = write_project(project, ["pi"], [])
+    (project / SKILLS).mkdir(parents=True)
+    first = pi_install.plan_pi_project(
+        project, ["skill:first"], catalog, ["pi"], original_packages=[]
+    )
+    second = pi_install.plan_pi_project(
+        project, ["skill:second"], catalog, ["pi"], original_packages=[]
+    )
+    assert first is not None and second is not None
+    before_publish, release, second_started = Event(), Event(), Event()
+    replace = os.replace
+
+    def pause_first(source: Path, destination: Path) -> None:
+        if destination == project / SKILLS / "first":
+            before_publish.set()
+            assert release.wait(5)
+        replace(source, destination)
+
+    def apply_second() -> None:
+        second_started.set()
+        pi_install.apply_pi_project(second, manifest_change=["skill:second"])
+
+    monkeypatch.setattr(pi_install.os, "replace", pause_first)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        winning = executor.submit(
+            pi_install.apply_pi_project, first, manifest_change=["skill:first"]
+        )
+        try:
+            assert before_publish.wait(5)
+            losing = executor.submit(apply_second)
+            assert second_started.wait(5)
+            with pytest.raises(TimeoutError):
+                losing.result(timeout=0.1)
+        finally:
+            release.set()
+        winning.result(timeout=5)
+        with pytest.raises(LinkError, match="destination changed after preflight"):
+            losing.result(timeout=5)
+
+    assert json.loads(manifest.read_bytes())["packages"] == ["skill:first"]
+    assert sorted(path.name for path in (project / SKILLS).iterdir()) == ["first"]
+    invoke("reconcile", "--check", "--strict")

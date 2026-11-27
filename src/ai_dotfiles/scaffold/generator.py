@@ -142,7 +142,7 @@ def generate_storage_scaffold(root: Path) -> None:
     _write_template("gitignore", root / ".gitignore")
 
 
-def generate_project_manifest(root: Path) -> None:
+def generate_project_manifest(root: Path, targets: list[str] | None = None) -> None:
     """Create ``<root>/ai-dotfiles.json`` with an empty packages list.
 
     Does nothing if the manifest already exists.
@@ -151,7 +151,10 @@ def generate_project_manifest(root: Path) -> None:
     if manifest.exists():
         return
     manifest.parent.mkdir(parents=True, exist_ok=True)
-    manifest.write_text(json.dumps({"packages": []}, indent=2) + "\n", encoding="utf-8")
+    data: dict[str, list[str]] = {"packages": []}
+    if targets is not None:
+        data["targets"] = targets
+    manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
 def generate_element_from_template(

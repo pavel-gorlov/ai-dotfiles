@@ -8,7 +8,7 @@ from pathlib import Path
 import click
 
 from ai_dotfiles import ui
-from ai_dotfiles.commands.install import _report_dsh_result
+from ai_dotfiles.commands.install import _report_dsh_result, _report_pi_result
 from ai_dotfiles.core import (
     claude_copy,
     codex_config,
@@ -53,6 +53,7 @@ from ai_dotfiles.core.paths import (
     project_claude_dir,
     project_manifest_path,
 )
+from ai_dotfiles.core.pi_install import apply_pi_project, plan_pi_project
 from ai_dotfiles.core.runtime import tear_down_domain_runtime
 from ai_dotfiles.core.settings_merge import (
     assemble_settings,
@@ -378,17 +379,33 @@ def remove(
             _check_reverse_deps(manifest_path, catalog, elements)
 
         raw_items = [element.raw for element in elements]
-        removed = manifest.remove_packages(manifest_path, raw_items)
-        removed_set = set(removed)
+        existing_packages = manifest.get_packages(manifest_path)
+        all_packages = existing_packages.copy()
+        removed: list[str] = []
+        for item in raw_items:
+            if item in all_packages:
+                all_packages.remove(item)
+                removed.append(item)
 
         manifest_name = manifest_path.name
-
         if not removed:
             ui.warn(f"None of these packages were installed in {manifest_name}")
             return
 
+        pi_plan = plan_pi_project(
+            project_root,
+            all_packages,
+            catalog,
+            targets,
+            original_packages=existing_packages,
+        )
+        defer_manifest = pi_plan is not None and not pi_plan.has_legacy_target
+        if not defer_manifest:
+            removed = manifest.remove_packages(manifest_path, raw_items)
+            all_packages = manifest.get_packages(manifest_path)
+        removed_set = set(removed)
+
         ui.info(f"Removed from {manifest_name}:")
-        all_packages = manifest.get_packages(manifest_path)
         plan_dsh_catalog_lifecycle(
             project_root,
             all_packages,
@@ -450,6 +467,13 @@ def remove(
             manifest_path=manifest_path,
             no_gitignore=no_gitignore,
         )
+
+        if pi_plan is not None:
+            _report_pi_result(
+                apply_pi_project(
+                    pi_plan, manifest_change=all_packages if defer_manifest else None
+                )
+            )
 
     except AiDotfilesError as exc:
         ui.error(str(exc))

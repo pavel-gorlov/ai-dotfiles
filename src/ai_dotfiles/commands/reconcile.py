@@ -1,4 +1,4 @@
-"""``ai-dotfiles reconcile`` — regenerate stale/missing Codex and DSH artefacts.
+"""``ai-dotfiles reconcile`` — regenerate stale/missing Codex, DSH and Pi artefacts.
 
 The missing feedback loop after the first ``install``: catalog changes and
 edited local sources leave the Codex trees drifting until a full reinstall.
@@ -14,6 +14,7 @@ import click
 
 from ai_dotfiles import ui
 from ai_dotfiles.commands._dsh_report import print_dsh_diagnostics
+from ai_dotfiles.commands.install import _report_pi_result
 from ai_dotfiles.core import codex_reconcile, manifest, paths
 from ai_dotfiles.core.catalog_admission import preflight_codex_pairs
 from ai_dotfiles.core.codex_layout import global_layout, project_layout
@@ -25,6 +26,7 @@ from ai_dotfiles.core.dsh_reconcile import (
 )
 from ai_dotfiles.core.elements import parse_elements
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
+from ai_dotfiles.core.pi_install import apply_pi_project, plan_pi_project
 
 
 @click.command("reconcile")
@@ -48,7 +50,7 @@ from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
     help="Refuse source/adaptation errors, including during --check.",
 )
 def reconcile(check: bool, is_global: bool, strict: bool = False) -> None:
-    """Regenerate stale or missing Codex/DSH artefacts (--check to gate CI)."""
+    """Regenerate stale or missing Codex, DSH and Pi artefacts."""
     try:
         if is_global:
             _run_reconcile_global(check=check, strict=strict)
@@ -67,6 +69,7 @@ def _run_reconcile(*, check: bool, strict: bool = False) -> None:
     manifest_path = paths.project_manifest_path(root)
     packages = manifest.get_packages(manifest_path)
     targets = manifest.get_targets(manifest_path)
+    pi_plan = plan_pi_project(root, packages, paths.catalog_dir(), targets)
     if "codex" in targets:
         preflight_codex_pairs(
             parse_elements(packages),
@@ -100,6 +103,20 @@ def _run_reconcile(*, check: bool, strict: bool = False) -> None:
         strict=strict,
     )
     issues += _print_report(report)
+    if pi_plan is not None:
+        if check:
+            for skipped in pi_plan.report.skipped:
+                ui.warn(f"  [SKIPPED] Pi {skipped}")
+            if pi_plan.report.drift:
+                ui.info("Pi drift detected:")
+                for label in pi_plan.report.drift:
+                    ui.info(f"  - {label}")
+                ui.info("Run 'ai-dotfiles reconcile' to update Pi resources.")
+                issues += len(pi_plan.report.drift)
+            else:
+                ui.info("Pi artefacts up to date.")
+        else:
+            _report_pi_result(apply_pi_project(pi_plan))
     if issues:
         raise SystemExit(1)
 

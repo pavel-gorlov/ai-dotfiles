@@ -62,6 +62,7 @@ from ai_dotfiles.core.elements import Element, ElementType
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError, MissingDependencyError
 from ai_dotfiles.core.gitignore import sync_gitignore
 from ai_dotfiles.core.mcp_apply import rebuild_claude_config
+from ai_dotfiles.core.pi_install import PiReport, apply_pi_project, plan_pi_project
 from ai_dotfiles.core.runtime import (
     ProvisionResult,
     bin_dir_on_path,
@@ -207,9 +208,22 @@ def _install_project(
     claude_dir = paths.project_claude_dir(root)
     targets = manifest.get_targets(manifest_path)
     link_mode = manifest.get_link_mode(manifest_path)
+    original_packages = manifest.get_packages(manifest_path)
     packages = _expand_manifest_deps(
-        manifest_path, catalog, strict_deps=strict_deps, persist=not strict
+        manifest_path, catalog, strict_deps=strict_deps, persist=False
     )
+    pi_plan = plan_pi_project(
+        root,
+        packages,
+        catalog,
+        targets,
+        original_packages=original_packages,
+    )
+    defer_manifest = pi_plan is not None and not pi_plan.has_legacy_target
+    if pi_plan is None and not strict and original_packages != packages:
+        # Preserve the legacy non-strict dependency write before legacy preflight.
+        manifest.add_packages(manifest_path, packages)
+        packages = manifest.get_packages(manifest_path)
     parsed = elements.parse_elements(packages)
     codex_admission = (
         preflight_codex_pairs(parsed, project_layout(root), catalog, strict=strict)
@@ -224,7 +238,7 @@ def _install_project(
         mode="copy" if link_mode == "copy" else "link",
         strict=strict,
     )
-    if strict:
+    if (strict or pi_plan is not None) and not defer_manifest:
         manifest.add_packages(manifest_path, packages)
 
     linked_items: list[str] = []
@@ -285,6 +299,13 @@ def _install_project(
         manifest_path=manifest_path,
         no_gitignore=no_gitignore,
     )
+
+    if pi_plan is not None:
+        _report_pi_result(
+            apply_pi_project(
+                pi_plan, manifest_change=packages if defer_manifest else None
+            )
+        )
 
     if not packages:
         ui.info("Nothing to install.")
@@ -949,6 +970,21 @@ def _report_dsh_result(report: DshReconcileReport | None) -> None:
     print_dsh_diagnostics(report.diagnostics)
     for path in report.changed_paths:
         ui.success(str(path))
+
+
+def _report_pi_result(report: PiReport) -> None:
+    """Show the exact native paths and unsupported contributions."""
+    ui.info("Pi target:")
+    for skipped in report.skipped:
+        ui.warn(f"  [SKIPPED] Pi {skipped}")
+    changed = set(report.changed_paths)
+    resources = set(report.resources)
+    for path in report.resources:
+        state = "updated" if path in changed else "up to date"
+        ui.success(f"  {path} ({state})")
+    for path in report.changed_paths:
+        if path not in resources:
+            ui.info(f"  {path} (ownership or retirement updated)")
 
 
 def _report_codex_skips(report: CodexAdmissionReport) -> None:

@@ -26,14 +26,14 @@ from ai_dotfiles.scaffold.generator import (
 )
 
 
-def _run_init_project() -> None:
+def _run_init_project(target: str | None = None) -> None:
     """Initialize a project manifest in the current project root."""
     root = paths.find_project_root() or paths.current_dir()
     manifest = paths.project_manifest_path(root)
     if manifest.exists():
         ui.warn(f"ai-dotfiles.json already exists at {manifest}")
         return
-    generate_project_manifest(root)
+    generate_project_manifest(root, targets=[target] if target is not None else None)
     ui.success(f"Created ai-dotfiles.json in {root}")
 
 
@@ -95,8 +95,16 @@ def _run_init_global(from_url: str | None) -> None:
     default=None,
     help="Clone existing storage from a git URL (requires -g).",
 )
-def init(is_global: bool, from_url: str | None) -> None:
+@click.option(
+    "--target",
+    type=click.Choice(["pi"]),
+    help="Initialize a project manifest for the selected target.",
+)
+def init(is_global: bool, from_url: str | None, target: str | None = None) -> None:
     """Initialize a project manifest or global storage."""
+    if target is not None and is_global:
+        ui.error("--target pi requires project scope")
+        sys.exit(2)
     if from_url is not None and not is_global:
         ui.error("--from requires -g")
         sys.exit(2)
@@ -105,7 +113,7 @@ def init(is_global: bool, from_url: str | None) -> None:
         if is_global:
             _run_init_global(from_url)
         else:
-            _run_init_project()
+            _run_init_project(target)
     except AiDotfilesError as exc:
         ui.error(str(exc))
         sys.exit(exc.exit_code)
