@@ -186,16 +186,16 @@ def test_pi_only_add_rolls_back_published_paths_and_manifest(
     manifest = write_project(project, ["pi", "future-target"], [])
     manifest.chmod(0o640)
     before = manifest.read_bytes()
-    replace = os.replace
+    publish = pi_install._publish_new
 
     def fail_once(source: Path, destination: Path) -> None:
         if destination == project / fail_path and not failed:
             failed.append(destination)
             raise OSError("injected Pi publication fault")
-        replace(source, destination)
+        publish(source, destination)
 
     failed: list[Path] = []
-    monkeypatch.setattr(pi_install.os, "replace", fail_once)
+    monkeypatch.setattr(pi_install, "_publish_new", fail_once)
     error = invoke("add", "skill:first", "skill:second", expected=1).output
     assert "injected Pi publication fault" in error
     assert "to complete Pi installation" not in error
@@ -230,27 +230,26 @@ def test_mixed_late_pi_failure_keeps_legacy_packages_and_install_recovers(
     else:
         args = ("remove", "skill:original")
 
-    replace = os.replace
+    publish = pi_install._publish_new
     failed: list[Path] = []
 
     def fail_once(source: Path, destination: Path) -> None:
         if not failed and destination in {registry, project / SKILLS / "new"}:
             failed.append(destination)
             raise OSError("injected mixed Pi fault")
-        replace(source, destination)
+        publish(source, destination)
 
-    monkeypatch.setattr(pi_install.os, "replace", fail_once)
+    monkeypatch.setattr(pi_install, "_publish_new", fail_once)
     if verb == "remove":
-        # With no desired resources the final registry operation is an unlink.
-        unlink = Path.unlink
+        move = os.replace
 
-        def fail_owned_registry(path: Path, *args: object, **kwargs: object) -> None:
-            if not failed and path == registry:
-                failed.append(path)
+        def fail_registry_retirement(source: Path, destination: Path) -> None:
+            if not failed and source == registry:
+                failed.append(source)
                 raise OSError("injected mixed Pi fault")
-            unlink(path)
+            move(source, destination)
 
-        monkeypatch.setattr(Path, "unlink", fail_owned_registry)
+        monkeypatch.setattr(pi_install.os, "replace", fail_registry_retirement)
 
     error = invoke(*args, expected=1).output
     assert "injected mixed Pi fault" in error
@@ -342,7 +341,7 @@ def test_pi_only_remove_rollback_preserves_original_link_registry_and_manifest(
     venv.mkdir(parents=True)
     registry = project / OWNERSHIP
     before = (manifest.read_bytes(), registry.read_bytes())
-    replace = os.replace
+    publish = pi_install._publish_new
     failed = False
 
     def fail_manifest(source: Path, destination: Path) -> None:
@@ -350,9 +349,9 @@ def test_pi_only_remove_rollback_preserves_original_link_registry_and_manifest(
         if destination == manifest and not failed:
             failed = True
             raise OSError("injected manifest publication fault")
-        replace(source, destination)
+        publish(source, destination)
 
-    monkeypatch.setattr(pi_install.os, "replace", fail_manifest)
+    monkeypatch.setattr(pi_install, "_publish_new", fail_manifest)
     error = invoke("remove", "@suite", expected=1).output
     assert "injected manifest publication fault" in error
     assert (manifest.read_bytes(), registry.read_bytes()) == before
@@ -386,19 +385,19 @@ def test_pi_concurrent_plans_cannot_overwrite_the_winning_commit(
     )
     assert first is not None and second is not None
     before_publish, release, second_started = Event(), Event(), Event()
-    replace = os.replace
+    publish = pi_install._publish_new
 
     def pause_first(source: Path, destination: Path) -> None:
         if destination == project / SKILLS / "first":
             before_publish.set()
             assert release.wait(5)
-        replace(source, destination)
+        publish(source, destination)
 
     def apply_second() -> None:
         second_started.set()
         pi_install.apply_pi_project(second, manifest_change=["skill:second"])
 
-    monkeypatch.setattr(pi_install.os, "replace", pause_first)
+    monkeypatch.setattr(pi_install, "_publish_new", pause_first)
     with ThreadPoolExecutor(max_workers=2) as executor:
         winning = executor.submit(
             pi_install.apply_pi_project, first, manifest_change=["skill:first"]
@@ -483,3 +482,28 @@ def test_pi_reconcile_refuses_a_new_user_skill_collision(
     assert "name collision" in invoke("reconcile", expected=1).output
     assert registry.read_bytes() == before
     assert (project / SKILLS / "fixture").is_symlink()
+
+
+def test_pi_never_clobbers_a_new_leaf_after_its_last_check(
+    pi_project: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, catalog = pi_project
+    make_skill(catalog / "skills" / "fixture")
+    manifest = write_project(project, ["pi"], [])
+    original = manifest.read_bytes()
+    destination = project / SKILLS / "fixture"
+    destination.parent.mkdir(parents=True)
+    publish = pi_install._publish_new
+
+    def create_private_then_publish(source: Path, target: Path) -> None:
+        if target == destination:
+            target.write_bytes(b"user saved a resource")
+        publish(source, target)
+
+    monkeypatch.setattr(pi_install, "_publish_new", create_private_then_publish)
+    invoke("add", "skill:fixture", expected=1)
+
+    assert destination.read_bytes() == b"user saved a resource"
+    assert manifest.read_bytes() == original
+    assert not (project / OWNERSHIP).exists()
+    assert not list(project.glob(".ai-dotfiles-pi-*"))

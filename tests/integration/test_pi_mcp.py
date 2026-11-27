@@ -390,7 +390,7 @@ def test_mcp_publication_rollback_and_retry(
         invoke("add", "@suite")
     before = path.read_bytes(), (project / MANIFEST).read_bytes()
     before_ownership = registry.read_bytes() if registry.exists() else None
-    replace = os.replace
+    publish = pi_install._publish_new
     failed = False
 
     def fail_once(source: Path, destination: Path) -> None:
@@ -398,9 +398,9 @@ def test_mcp_publication_rollback_and_retry(
         if destination == project / MANIFEST and not failed:
             failed = True
             raise OSError("injected manifest publication failure")
-        replace(source, destination)
+        publish(source, destination)
 
-    monkeypatch.setattr(pi_install.os, "replace", fail_once)
+    monkeypatch.setattr(pi_install, "_publish_new", fail_once)
     assert "injected manifest publication failure" in invoke(verb, "@suite", expected=1)
     assert before == (path.read_bytes(), (project / MANIFEST).read_bytes())
     assert (registry.read_bytes() if registry.exists() else None) == before_ownership
@@ -808,3 +808,68 @@ def test_installed_mcp_in_pinned_pi(
         finally:
             server.shutdown()
             thread.join(timeout=5)
+
+
+def test_mcp_restores_an_editor_update_detected_at_publication(
+    mcp_project: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, catalog = mcp_project
+    source = fragment(catalog, "suite", {"fixture": {"command": "old"}})
+    invoke("add", "@suite")
+    file = project / MCP
+    registry = project / OWNERSHIP
+    before = registry.read_bytes()
+    user_config = json.loads(file.read_bytes())
+    user_config["mcpServers"]["personal"] = {"command": "user-command"}
+    write_json(source, {"mcpServers": {"fixture": {"command": "new"}}})
+    move = os.replace
+    injected = False
+
+    def editor_replaces_first(path: Path, destination: Path) -> None:
+        nonlocal injected
+        if path == file and not injected:
+            changes = file.with_suffix(".editor")
+            write_json(changes, user_config)
+            move(changes, file)
+            injected = True
+        move(path, destination)
+
+    monkeypatch.setattr(pi_install.os, "replace", editor_replaces_first)
+    assert "changed at publication" in invoke("reconcile", expected=1)
+    assert json.loads(file.read_bytes()) == user_config
+    assert registry.read_bytes() == before
+    assert not list(project.glob(".ai-dotfiles-pi-*"))
+    invoke("reconcile")
+    assert json.loads(file.read_bytes())["mcpServers"] == {
+        "fixture": {"type": "stdio", "command": "new"},
+        "personal": {"command": "user-command"},
+    }
+
+
+def test_mcp_keeps_the_displaced_file_when_a_new_edit_blocks_restore(
+    mcp_project: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, catalog = mcp_project
+    source = fragment(catalog, "suite", {"fixture": {"command": "old"}})
+    invoke("add", "@suite")
+    file = project / MCP
+    original = file.read_bytes()
+    write_json(source, {"mcpServers": {"fixture": {"command": "new"}}})
+    user_config = {"mcpServers": {"private": {"command": "user-command"}}}
+    publish = pi_install._publish_new
+    injected = False
+
+    def editor_publishes_first(source: Path, destination: Path) -> None:
+        nonlocal injected
+        if destination == file and not injected:
+            write_json(file, user_config)
+            injected = True
+        publish(source, destination)
+
+    monkeypatch.setattr(pi_install, "_publish_new", editor_publishes_first)
+    error = invoke("reconcile", expected=1)
+    [recovery] = project.glob(".ai-dotfiles-pi-*")
+    assert f"files retained at {recovery}" in error
+    assert (recovery / ".gitignore").read_bytes() == b"*\n"
+    assert json.loads(file.read_bytes()) == user_config
+    assert any(path.read_bytes() == original for path in recovery.glob("*.old"))
