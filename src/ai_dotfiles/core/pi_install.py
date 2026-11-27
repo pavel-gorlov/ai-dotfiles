@@ -882,6 +882,7 @@ class _Publication:
     path: Path
     held: Path | None = None
     written: _Snapshot | None = None
+    published: bool = False
 
 
 def _publish_new(source: Path, destination: Path) -> None:
@@ -909,17 +910,20 @@ def _matches_captured(path: Path, expected: _Snapshot) -> bool:
 def _undo_publication(
     entry: _Publication, destination: Path, reverted: Path, recover: set[Path]
 ) -> None:
-    if entry.written is not None:
-        # Take custody first so a last-moment update is preserved during rollback.
-        os.replace(destination, reverted)
+    if entry.written is not None and (
+        entry.published or _matches_captured(destination, entry.written)
+    ):
+        # Record custody before the syscall in case it is interrupted.
         recover.add(reverted)
+        os.replace(destination, reverted)
         if not _matches_captured(reverted, entry.written):
             _publish_new(reverted, destination)
             recover.discard(reverted)
             raise ConfigError("changed since publication")
         recover.discard(reverted)
     if entry.held is not None:
-        _publish_new(entry.held, destination)
+        if _lstat(entry.held) is not None:
+            _publish_new(entry.held, destination)
         recover.discard(entry.held)
 
 
@@ -929,7 +933,7 @@ def _apply_changes(plan: PiPlan, changes: list[PiFileChange]) -> None:
     # The transaction directory is outside the Pi discovery trees.
     directory = Path(tempfile.mkdtemp(prefix=".ai-dotfiles-pi-", dir=plan.root))
     recover: set[Path] = set()
-    keep_recovery = False
+    cleanup = False
     applied: list[_Publication] = []
     originals: list[tuple[Path, PiFileChange]] = []
     try:
@@ -951,13 +955,13 @@ def _apply_changes(plan: PiPlan, changes: list[PiFileChange]) -> None:
             _assert_parents(plan.root, change.path, parents)
             _assert_leaf(plan.root, change.path, change.before)
             destination = plan.root / change.path
-            entry = _Publication(change.path)
+            entry = _Publication(change.path, written=written)
+            applied.append(entry)
             if change.before.stamp is not None:
                 held = directory / f"{index}.old"
-                os.replace(destination, held)
-                recover.add(held)
                 entry.held = held
-                applied.append(entry)
+                recover.add(held)
+                os.replace(destination, held)
                 if not _matches_captured(held, change.before):
                     raise ConfigError(
                         f"Pi destination changed at publication: {change.path}"
@@ -965,16 +969,15 @@ def _apply_changes(plan: PiPlan, changes: list[PiFileChange]) -> None:
                 originals.append((held, change))
             if written is not None:
                 _publish_new(after, destination)
-                entry.written = written
-                if entry.held is None:
-                    applied.append(entry)
+                entry.published = True
 
         for held, change in originals:
             if not _matches_captured(held, change.before):
                 raise ConfigError(
                     f"Pi destination changed during publication: {change.path}"
                 )
-    except (AiDotfilesError, OSError) as exc:
+        cleanup = True
+    except (AiDotfilesError, OSError, KeyboardInterrupt) as exc:
         failed: list[str] = []
         for index, entry in enumerate(reversed(applied)):
             try:
@@ -993,11 +996,19 @@ def _apply_changes(plan: PiPlan, changes: list[PiFileChange]) -> None:
                 failed.append(f"{path}: {rollback_error}")
         suffix = f"; rollback incomplete ({'; '.join(failed)})" if failed else ""
         if recover:
-            keep_recovery = True
             suffix += f"; files retained at {directory}"
-        raise LinkError(f"{exc}{suffix}") from exc
+        cleanup = not recover
+        if isinstance(exc, KeyboardInterrupt) and not suffix:
+            raise
+        message = (
+            "Pi transaction interrupted"
+            if isinstance(exc, KeyboardInterrupt)
+            else str(exc)
+        )
+        raise LinkError(f"{message}{suffix}") from exc
     finally:
-        if not keep_recovery:
+        # An unexpected exception or an interrupted rollback leaves custody intact.
+        if cleanup:
             shutil.rmtree(directory)
 
 

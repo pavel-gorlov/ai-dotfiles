@@ -883,3 +883,44 @@ def test_mcp_keeps_the_displaced_file_when_a_new_edit_blocks_restore(
     assert (recovery / ".gitignore").read_bytes() == b"*\n"
     assert json.loads(file.read_bytes()) == user_config
     assert any(path.read_bytes() == original for path in recovery.glob("*.old"))
+
+
+@pytest.mark.parametrize("at", ["after-capture", "after-publish"])
+def test_mcp_keyboard_interrupt_restores_original_files(
+    mcp_project: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, at: str
+) -> None:
+    project, catalog = mcp_project
+    source = fragment(catalog, "suite", {"fixture": {"command": "old"}})
+    file = project / MCP
+    file.parent.mkdir()
+    write_json(file, {"mcpServers": {"user": {"command": "private"}}})
+    invoke("add", "@suite")
+    tracked = [file, project / OWNERSHIP, project / MANIFEST]
+    original = [path.read_bytes() for path in tracked]
+    write_json(source, {"mcpServers": {"fixture": {"command": "new"}}})
+    move, publish = os.replace, pi_install._publish_new
+    interrupted = False
+
+    def capture_then_interrupt(path: Path, destination: Path) -> None:
+        nonlocal interrupted
+        move(path, destination)
+        if path == file and not interrupted:
+            interrupted = True
+            raise KeyboardInterrupt
+
+    def publish_then_interrupt(path: Path, destination: Path) -> None:
+        nonlocal interrupted
+        publish(path, destination)
+        if destination == file and not interrupted:
+            interrupted = True
+            raise KeyboardInterrupt
+
+    if at == "after-capture":
+        monkeypatch.setattr(pi_install.os, "replace", capture_then_interrupt)
+    else:
+        monkeypatch.setattr(pi_install, "_publish_new", publish_then_interrupt)
+
+    assert "Aborted" in invoke("reconcile", expected=1)
+    assert interrupted
+    assert [path.read_bytes() for path in tracked] == original
+    assert not list(project.glob(".ai-dotfiles-pi-*"))
