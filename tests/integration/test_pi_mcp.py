@@ -127,7 +127,8 @@ def test_mcp_translates_both_transports_and_preserves_existing_config(
     assert registry["mcp"]["created"] is False
     assert set(registry["mcp"]["entries"]) == {"Playwright-local", "storybook_HTTP"}
     assert b"must-not-be-installed" not in generated
-    assert f"{MCP} OK" in invoke("status")
+    status = invoke("status")
+    assert f"{MCP} OK\n" in status
     inode = path.stat().st_ino
     invoke("install", "--prune")
     invoke("reconcile", "--check", "--strict")

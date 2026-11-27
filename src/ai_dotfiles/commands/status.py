@@ -651,7 +651,7 @@ def _run_status(is_global: bool) -> None:
         if not pi_plan.report.drift:
             if pi_plan.report.resources:
                 for path in pi_plan.report.resources:
-                    ui.info(f"    {_OK} {path} OK (symlink)")
+                    ui.info(f"    {_OK} {path} OK")
             else:
                 ui.info(f"    {_OK} no native Pi resources selected")
         total_issues += len(pi_plan.report.drift)
