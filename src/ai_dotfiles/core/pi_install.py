@@ -24,6 +24,7 @@ from ai_dotfiles.core.elements import (
     resolve_source_path,
 )
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError, LinkError, SourceError
+from ai_dotfiles.core.gitignore import anchored_path_pattern
 from ai_dotfiles.core.paths import project_manifest_path
 from ai_dotfiles.core.pi_hooks import (
     PI_HOOK_GENERATOR_VERSION,
@@ -380,6 +381,7 @@ def _collect_skills(
                 continue
             source = bundle.relative_to(catalog).as_posix()
             destination = _SKILLS / bundle.name
+            anchored_path_pattern(destination)  # Verify one literal line.
             name, fingerprint = _bundle_metadata(bundle)
             seen_sources.add(bundle)
             if destination in skills:
