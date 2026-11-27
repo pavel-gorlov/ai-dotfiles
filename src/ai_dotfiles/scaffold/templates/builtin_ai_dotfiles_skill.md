@@ -1,12 +1,12 @@
 ---
 name: ai-dotfiles
-description: Manage Claude Code, Codex and DeepSeek Harness configuration via ai-dotfiles — install/add/remove skills, agents, rules and domains; migrate local content, reconcile drift and launch managed DSH; scaffold or vendor catalog elements.
-when_to_use: Trigger when the user mentions "ai-dotfiles", "~/.ai-dotfiles/", "AI_DOTFILES_HOME", "ai-dotfiles.json", "global.json", "CODEX_HOME" or "DSH_HOME"; manages skills, agents, rules or domains for Claude Code, Codex or DSH; migrates project-local content; launches managed DSH; scaffolds elements; vendors external content (GitHub, paks, npx skills CLI, buildwithclaude, tonsofskills, mattpocock, printingpress); checks target health, provenance or drift; reconciles manifests with the filesystem.
+description: Manage Claude Code, Codex, DeepSeek Harness and project-scoped Pi configuration via ai-dotfiles — install, add or remove catalog packages, reconcile drift, migrate local content to Codex or DSH, and launch managed DSH.
+when_to_use: Trigger when the user mentions "ai-dotfiles", "~/.ai-dotfiles/", "AI_DOTFILES_HOME", "ai-dotfiles.json", "global.json", "CODEX_HOME" or "DSH_HOME"; manages skills, agents, rules or domains for Claude Code, Codex, DSH or Pi; installs a Pi project ("настрой Pi в проекте", "установи скиллы для Pi"); migrates project-local content; launches managed DSH; scaffolds elements; vendors external content (GitHub, paks, npx skills CLI, buildwithclaude, tonsofskills, mattpocock, printingpress); checks target health, provenance or drift; reconciles manifests with the filesystem.
 ---
 
 # ai-dotfiles
 
-Use this skill to manage Claude Code, Codex and DSH configuration, scaffold
+Use this skill to manage Claude Code, Codex, DSH and project Pi configuration, scaffold
 skills/agents/rules, work with domains, or vendor external catalog sources via
 the `ai-dotfiles` CLI. Absent manifest targets still mean Claude only.
 
@@ -18,7 +18,7 @@ originals rather than generated files, shared managed blocks or native profiles.
 
 ### Setup
 
-- `ai-dotfiles init` — create `ai-dotfiles.json` in the current project.
+- `ai-dotfiles init [--target pi]` — create `ai-dotfiles.json` in the current project. `--target pi` sets `targets` to `["pi"]` for a new manifest. To enable Pi in an existing project, add it to the manifest's `targets` and run `install`. Include `"claude"` explicitly to keep an implicit Claude target alongside Pi.
 - `ai-dotfiles init -g` — scaffold global storage at `~/.ai-dotfiles/` (override via `AI_DOTFILES_HOME`). Pre-existing files in `~/.claude/` (`CLAUDE.md`, `settings.json`, hooks, output-styles) are **adopted** — they replace the scaffold templates inside `global/` and are then symlinked back, so your previous config stays authoritative and no backup dir is created.
 - `ai-dotfiles init -g --from <git-url>` — clone an existing storage repository. Conflicting local files under `~/.claude/` are moved to `~/.dotfiles-backup/` (the cloned content wins).
 - `ai-dotfiles update` — refresh CLI-managed files inside an existing storage. Today: rewrites the built-in `ai-dotfiles` skill (`catalog/skills/ai-dotfiles/SKILL.md`) from the installed CLI's template. User-authored skills/agents/rules/manifests and `global/` content are never touched. Run after upgrading the CLI.
@@ -52,17 +52,18 @@ After installing completion, arguments themselves tab-complete too:
 
 With global `dsh`, `status -g` also reports `$DSH_HOME` owned outputs,
 source/generator/resource/contribution drift and precise native limitations.
+`pi` is project-only. Its `status` checks native project resources on disk.
 `install`, `add`, `remove` accept `--no-gitignore`; `remove [-g] --force`
 retains its dependency override, not an ownership or native-readiness bypass.
 
 ### Migration and reconciliation
 
 Migration is project-only; `--to` accepts `codex|dsh` and defaults to Codex.
-Reconciliation supports both scopes and both generated targets:
+Reconciliation supports Codex and DSH in both scopes and Pi in project scope.
 
 - `ai-dotfiles migrate [--to codex] [--dry-run]` — migrate **LOCAL** (hand-authored, non-catalog) `.claude/` skills/agents/rules to Codex. A skill is a relative symlink `.agents/skills/<name>` → `../../.claude/skills/<name>` when its raw `SKILL.md` is within Codex's 1024-char `description` cap and the name is valid hyphen-case (auto-fresh, no drift); otherwise it is rendered with the first-sentence trim. Agents render to `.codex/agents/<name>.toml`; rules dispatch like catalog rules (synthetic `rule-<name>` skill or `AGENTS.md` block). `CLAUDE.md` stays the canonical instruction file — migrate points Codex at it via `project_doc_fallback_filenames` in `.codex/config.toml` (no rendered copy, no symlink). User-authored `.mcp.json` servers (not domain-owned) are copied to `[mcp_servers]`. Provenance is recorded in `.codex/.ai-dotfiles-local.json` so `install --prune` keeps migrated artefacts. `--dry-run` plans and classifies (MECHANICAL / REFACTOR) and lists Claude-only surfaces, writing nothing.
 - `ai-dotfiles migrate --to dsh [--dry-run] [--strict]` — classify local skills/agents/rules, compatible on-demand commands, raw settings/hooks and user MCP as MECHANICAL / REFACTOR / MANUAL. Preserves whole skills and originals, excludes catalog links/copies, and records `.dsh/ai-dotfiles/local.json`. Unsupported contributions are reported and skipped by default; `--strict` refuses them. Source-custody and uncertain original-ownership failures remain fatal. No `-g` migration.
-- `ai-dotfiles reconcile [--check] [--strict]` — refresh Codex/DSH catalog and local-origin drift, including owned retired sources. `--check` writes nothing and exits nonzero on drift; add `--strict` to make isolated source/adaptation errors fatal too. Codex uses its existing source/generator/block/config checks; DSH also checks resources, contributions and source custody.
+- `ai-dotfiles reconcile [--check] [--strict]` — refresh Codex/DSH catalog and local-origin resources and Pi catalog resources, including owned retirement. `--check` writes nothing and exits nonzero on drift. `--strict` makes isolated source/adaptation errors fatal for Codex and DSH. Pi refuses invalid sources and ownership conflicts, and reports agents and rules as skips even with `--strict`.
 - `ai-dotfiles reconcile -g [--check] [--strict]` — refresh enabled global Codex/DSH outputs in `$CODEX_HOME`/`$DSH_HOME`; Codex includes its instructions bridge and skill symlink/render cap transition. DSH scans explicit owned roots/blocks, not the entire home.
 
 > `migrate` works whether or not `codex` is in `targets` (it is a project-local action); `reconcile` refreshes catalog artefacts only when `codex` is in `targets`, and always refreshes migrate-origin local artefacts.
@@ -175,7 +176,7 @@ Specifiers are the strings that appear in `packages` arrays:
 The `targets` array in `ai-dotfiles.json` declares which agent CLIs the project renders its catalog elements to:
 
 ```json
-{ "packages": ["@gitflow", "skill:commit", "agent:reviewer"], "targets": ["claude", "codex", "dsh"] }
+{ "packages": ["@gitflow"], "targets": ["claude", "codex", "dsh"] }
 ```
 
 | Value | Meaning |
@@ -183,6 +184,7 @@ The `targets` array in `ai-dotfiles.json` declares which agent CLIs the project 
 | `"claude"` | Claude Code — the default; installs into `<project>/.claude/` as before |
 | `"codex"` | OpenAI Codex CLI — installs into `<project>/.agents/skills/` and `<project>/.codex/agents/` |
 | `"dsh"` | DeepSeek Harness — native `.dsh/skills/`, owned `.dsh/ai-dotfiles/` composition and shared/literal instructions |
+| `"pi"` | Pi — project only. Native `.pi/skills/`, `.pi/extensions/` and `.pi/mcp.json` |
 
 Absent `targets` field → `["claude"]`. Every existing manifest keeps working unchanged.
 
@@ -194,6 +196,63 @@ Repair the original and rerun the command. `--strict` refuses source errors
 before target writes; `reconcile --check --strict` is the read-only CI gate.
 Foreign destinations and write failures remain fatal. Each target validates its
 own supported format; Claude does not use DSH's syntax validator.
+
+### Pi project target
+
+With Pi installed and `@gitflow` available in storage, run this from a new
+project root. The integration was tested with Pi 1.6.1.
+
+```bash
+ai-dotfiles init --target pi
+ai-dotfiles add @gitflow
+ai-dotfiles install
+ai-dotfiles status
+ai-dotfiles reconcile --check --strict
+```
+
+`@gitflow` includes the `commit` skill. The project target symlinks whole
+bundles into `.pi/skills/<name>/` with their scripts and references. It generates
+`.pi/extensions/ai-dotfiles-hooks.js` for the supported `@gitflow` and
+`@taskmanager` hooks and adds stdio or Streamable HTTP server entries from
+installed domains to `.pi/mcp.json`.
+
+`.pi/.ai-dotfiles-ownership.json` tracks managed links, the bridge and server
+entries. The CLI refuses collisions and replaced managed resources. Edit
+catalog sources, then reinstall or reconcile. Use `ai-dotfiles remove @gitflow`
+to retire that package's owned outputs. To disable Pi for a project, remove
+`"pi"` from `targets` and run `ai-dotfiles reconcile`. Unrelated user-owned
+resources are preserved.
+
+Agents and rules are reported as `[SKIPPED] Pi`. Claude settings, permission
+policies and arbitrary hooks are outside the adapter's scope. The bridge
+runs the selected catalog scripts on model tool events in a trusted session.
+It can remind the model to hand off a Gitflow mutation to Codex or DSH, block
+a Taskmanager collision, add PR review context or mirror eligible task edits.
+For managed `tm` and `pr-loop`, make
+the storage `bin/` directory available on the `PATH` Pi inherits. If `uv`
+chose an old interpreter, set `UV_PYTHON` to a supported interpreter, remove only
+the affected domain's failed environment from storage `venvs/`, then rerun
+`ai-dotfiles install`.
+
+Run `pi` in the project root and grant project trust in Pi after reviewing the
+resources. `/trust` saves the decision, `pi --approve` approves this run only,
+and `pi --no-approve` ignores project-local resources for this run. Configure
+and authenticate your model in Pi. The provider IDs `openai-codex`,
+`deepseek`, `zai` and `kimi-coding` were checked with an isolated profile.
+
+Use `status` and `reconcile --check --strict` to check installation and drift.
+Then run `pi mcp list --json` from the same root with saved trust. It connects
+to every enabled server. Compare expected server names with the response and
+check each `state` and the reported `errors`. A disabled server or missing
+project trust can leave a zero exit status without a connection. Use `/mcp`
+to inspect runtime errors and verify an actual tool result through the
+default `codemode` exposure in the trusted session.
+
+For `@playwright-e2e`, pin `@playwright/mcp` in the project and provide a
+working browser for the local pnpm command. For `@storybook`, install and
+register `@storybook/addon-mcp` and keep Storybook running on port 6006 at
+`http://localhost:6006/mcp`. Check a Playwright page snapshot and the result
+of a Storybook tool in Pi.
 
 ### DeepSeek Harness commands and contract
 
@@ -393,7 +452,7 @@ sdk-minimal/peer exemptions are not promised by the pinned RC2 adapter.
 The optional top-level `link_mode` field in `ai-dotfiles.json` controls how the **Claude target** materialises skills/agents/rules into `<project>/.claude/`:
 
 ```json
-{ "packages": ["@gitflow", "skill:commit"], "link_mode": "copy" }
+{ "packages": ["@gitflow"], "link_mode": "copy" }
 ```
 
 | Value | Meaning |
@@ -682,7 +741,7 @@ The same `-g` flag works for any specifier: `@domain`, `skill:name`, `agent:name
 ```bash
 ai-dotfiles init                           # creates ai-dotfiles.json
 # Edit ai-dotfiles.json to add "targets": ["claude", "codex", "dsh"]
-ai-dotfiles add @gitflow skill:commit      # adds to manifest
+ai-dotfiles add @gitflow                   # includes the commit skill
 ai-dotfiles install
 # Claude:  <project>/.claude/skills/commit/        (symlink)
 #          <project>/.claude/settings.json          (merged from settings.fragment.json)
@@ -751,7 +810,7 @@ ai-dotfiles list --available           # cross-check against catalog contents
 
 ## Notes
 
-- The `targets` field in `ai-dotfiles.json` **and** `global.json` accepts `"claude"`, `"codex"`, `"dsh"`. Absent → `["claude"]`. Global selected outputs use `~/.claude/`, `$CODEX_HOME` and `$DSH_HOME` respectively.
+- The `targets` field in `ai-dotfiles.json` **and** `global.json` accepts `"claude"`, `"codex"`, `"dsh"`. `"pi"` is valid only in `ai-dotfiles.json`. Absent → `["claude"]`. Global selected outputs use `~/.claude/`, `$CODEX_HOME` and `$DSH_HOME` respectively.
 - The `link_mode` field in `ai-dotfiles.json` controls how the Claude target writes into `.claude/`. Valid values: `"symlink"` (default — live symlinks into the catalog), `"copy"` (real copied files, for native-Windows hosts whose catalog lives in WSL). Absent → `"symlink"`; an unknown value is rejected. A copy is a snapshot — re-run `ai-dotfiles install` after a catalog change. Project-scoped only; `-g` commands always symlink. See [`link_mode`](#link_mode--symlink-vs-copy-for-the-claude-target).
 - The same project `link_mode` is preserved for DSH whole skills, migration and fresh launch; generated owned resources have separate inventories. DSH does not use Codex's description trim or path-rule skill demotion.
 - Never edit `~/.claude/` directly for anything managed by ai-dotfiles — use `add` / `remove` so the manifest stays authoritative.
