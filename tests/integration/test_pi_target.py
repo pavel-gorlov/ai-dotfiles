@@ -351,3 +351,25 @@ def test_pi_reads_names_and_block_descriptions_as_yaml_1_2(
     invoke("add", "skill:fixture")
     invoke("reconcile", "--check", "--strict")
     assert (project / SKILLS / "fixture").is_symlink()
+
+
+@pytest.mark.skipif(
+    os.name != "posix", reason="POSIX permits line breaks in file names"
+)
+@pytest.mark.parametrize("line_break", ["\n", "\r", "\u2028"])
+def test_pi_refuses_skill_paths_that_cannot_be_one_gitignore_rule(
+    pi_project: tuple[Path, Path], line_break: str
+) -> None:
+    project, catalog = pi_project
+    make_skill(
+        catalog / "suite" / "skills" / f"fixture{line_break}hidden", name="fixture"
+    )
+    manifest = write_project(project, ["pi"], [])
+    original = manifest.read_bytes()
+    ignore = project / ".gitignore"
+    ignore.write_text("/notes.txt\n", encoding="utf-8")
+
+    assert "single Git ignore pattern" in invoke("add", "@suite", expected=1).output
+    assert manifest.read_bytes() == original
+    assert ignore.read_bytes() == b"/notes.txt\n"
+    assert not (project / SKILLS).exists()

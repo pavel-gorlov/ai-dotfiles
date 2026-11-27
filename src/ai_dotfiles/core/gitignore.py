@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ai_dotfiles.core.errors import ConfigError
 from ai_dotfiles.core.symlinks import is_managed_symlink
 
 MANAGED_START = "# >>> ai-dotfiles managed — do not edit manually <<<"
@@ -90,9 +91,10 @@ def collect_dsh_managed_paths(project_root: Path) -> list[str]:
 
 def anchored_path_pattern(path: Path) -> str:
     """Build a Gitignore pattern for one literal project-relative path."""
-    escaped = "".join(
-        "\\" + char if char in "\\*?[] !#" else char for char in path.as_posix()
-    )
+    literal = path.as_posix()
+    if literal.splitlines() != [literal]:
+        raise ConfigError(f"Path cannot be a single Git ignore pattern: {literal!r}")
+    escaped = "".join("\\" + char if char in "\\*?[] !#" else char for char in literal)
     return "/" + escaped
 
 
