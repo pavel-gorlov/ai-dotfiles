@@ -880,7 +880,8 @@ def _stage(path: Path, content: bytes | str, mode: int, parent: int | None) -> N
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         fd = os.open(_at(path, parent), flags, mode, dir_fd=parent)
         with os.fdopen(fd, "wb") as stream:
-            os.fchmod(fd, stat.S_IMODE(mode))
+            if sys.platform != "win32":
+                os.fchmod(fd, stat.S_IMODE(mode))
             stream.write(content)
 
 
@@ -990,6 +991,8 @@ def _undo_publication(
 
 
 def _dir_flags() -> int:
+    if sys.platform == "win32":
+        raise ConfigError("POSIX directory descriptors are unavailable on Windows")
     return os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 
 
@@ -1194,7 +1197,7 @@ def _apply_changes(
 @contextmanager
 def _project_write_lock(root: Path) -> Iterator[int | None]:
     """Serialize POSIX commits and pin the project root for native operations."""
-    if os.name == "nt":
+    if sys.platform == "win32":
         with _pin_windows_directory(root):
             yield None
         return
