@@ -293,19 +293,19 @@ def _install_project(
         _install_codex_target(
             parsed, packages, root, catalog, prune=prune, admission=codex_admission
         )
-    _maybe_sync_gitignore(
-        project_root=root,
-        claude_dir=claude_dir,
-        manifest_path=manifest_path,
-        no_gitignore=no_gitignore,
-    )
-
     if pi_plan is not None:
         _report_pi_result(
             apply_pi_project(
                 pi_plan, manifest_change=packages if defer_manifest else None
             )
         )
+
+    _maybe_sync_gitignore(
+        project_root=root,
+        claude_dir=claude_dir,
+        manifest_path=manifest_path,
+        no_gitignore=no_gitignore,
+    )
 
     if not packages:
         ui.info("Nothing to install.")

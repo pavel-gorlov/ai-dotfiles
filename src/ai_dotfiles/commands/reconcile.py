@@ -14,7 +14,7 @@ import click
 
 from ai_dotfiles import ui
 from ai_dotfiles.commands._dsh_report import print_dsh_diagnostics
-from ai_dotfiles.commands.install import _report_pi_result
+from ai_dotfiles.commands.install import _maybe_sync_gitignore, _report_pi_result
 from ai_dotfiles.core import codex_reconcile, manifest, paths
 from ai_dotfiles.core.catalog_admission import preflight_codex_pairs
 from ai_dotfiles.core.codex_layout import global_layout, project_layout
@@ -117,6 +117,12 @@ def _run_reconcile(*, check: bool, strict: bool = False) -> None:
                 ui.info("Pi artefacts up to date.")
         else:
             _report_pi_result(apply_pi_project(pi_plan))
+            _maybe_sync_gitignore(
+                project_root=root,
+                claude_dir=paths.project_claude_dir(root),
+                manifest_path=manifest_path,
+                no_gitignore=False,
+            )
     if issues:
         raise SystemExit(1)
 

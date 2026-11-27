@@ -359,6 +359,22 @@ def collect_pi_mcp(
     return PiMcpPlan(servers, _signature(fingerprints))
 
 
+def is_generated_mcp_file(content: bytes, ownership: PiMcpOwnership) -> bool:
+    """Only a file created by the installer with solely owned data is generated."""
+    if not ownership.created:
+        return False
+    data = _read_config(content, PI_MCP_PATH)
+    servers = _read_servers(data, PI_MCP_PATH)
+    return (
+        data.keys() == {"mcpServers"}
+        and servers.keys() == ownership.entries.keys()
+        and all(
+            _signature(server) == ownership.entries[name].sha256
+            for name, server in servers.items()
+        )
+    )
+
+
 def plan_mcp_update(
     current: bytes | None, desired: PiMcpPlan | None, recorded: PiMcpOwnership | None
 ) -> tuple[bytes | None, PiMcpOwnership | None, list[str]]:

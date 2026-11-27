@@ -222,6 +222,9 @@ catalog sources, then reinstall or reconcile. Use `ai-dotfiles remove @gitflow`
 to retire that package's owned outputs. To disable Pi for a project, remove
 `"pi"` from `targets` and run `ai-dotfiles reconcile`. Unrelated user-owned
 resources are preserved.
+The managed `.gitignore` block covers owned Pi links, generated hooks, the
+ownership file and fully generated MCP configuration. User-authored skills
+and shared MCP files remain visible to Git.
 
 Agents and rules are reported as `[SKIPPED] Pi`. Claude settings, permission
 policies and arbitrary hooks are outside the adapter's scope. The bridge
