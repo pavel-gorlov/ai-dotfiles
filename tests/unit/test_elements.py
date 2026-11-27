@@ -587,6 +587,11 @@ def test_resolve_target_dsh_missing_domain_yields_no_pairs(
 def test_resolve_target_mixed_skills_use_distinct_native_trees(tmp_path: Path) -> None:
     root = tmp_path / "project"
     catalog = tmp_path / "catalog"
+    source = catalog / "skills" / "code-review"
+    source.mkdir(parents=True)
+    (source / "SKILL.md").write_text(
+        "---\nname: code-review\ndescription: Review code.\n---\n"
+    )
     skill = parse_element("skill:code-review")
     targets = {
         target: resolve_target_paths(
@@ -597,11 +602,11 @@ def test_resolve_target_mixed_skills_use_distinct_native_trees(tmp_path: Path) -
         )
         for target in Target
     }
-    source = catalog / "skills" / "code-review"
     assert targets == {
         Target.CLAUDE: [(source, root / ".claude" / "skills" / "code-review")],
         Target.CODEX: [(source, root / ".agents" / "skills" / "code-review")],
         Target.DSH: [(source, root / ".dsh" / "skills" / "code-review")],
+        Target.PI: [(source, root / ".pi" / "skills" / "code-review")],
     }
 
 

@@ -41,6 +41,7 @@ from ai_dotfiles.core.elements import Element, ElementType
 from ai_dotfiles.core.errors import AiDotfilesError, ConfigError
 from ai_dotfiles.core.local_discovery import LocalElement, iter_local_elements
 from ai_dotfiles.core.mcp_merge import collect_mcp_fragments
+from ai_dotfiles.core.pi_install import plan_pi_project
 
 # ── Status indicators ────────────────────────────────────────────────────
 
@@ -636,6 +637,24 @@ def _run_status(is_global: bool) -> None:
         catalog,
         link_mode,
     )
+
+    pi_plan = plan_pi_project(
+        None if is_global else manifest_path.parent, packages, catalog, targets
+    )
+    if pi_plan is not None:
+        ui.info("")
+        ui.info("  Pi target")
+        for label in pi_plan.report.drift:
+            ui.info(f"    {_BROKEN} {label}")
+        for skipped in pi_plan.report.skipped:
+            ui.warn(f"    [SKIPPED] Pi {skipped}")
+        if not pi_plan.report.drift:
+            if pi_plan.report.resources:
+                for path in pi_plan.report.resources:
+                    ui.info(f"    {_OK} {path} OK (symlink)")
+            else:
+                ui.info(f"    {_OK} no native Pi resources selected")
+        total_issues += len(pi_plan.report.drift)
 
     if not is_global:
         local_root = paths.find_project_root()

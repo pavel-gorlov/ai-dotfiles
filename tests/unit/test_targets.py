@@ -20,6 +20,7 @@ def test_target_values() -> None:
     assert Target.CLAUDE.value == "claude"
     assert Target.CODEX.value == "codex"
     assert Target.DSH.value == "dsh"
+    assert Target.PI.value == "pi"
 
 
 def test_render_policy_covers_every_target_and_element_type() -> None:
@@ -72,12 +73,35 @@ def test_dsh_policy(
     assert policy.subdir == expected_subdir
 
 
+@pytest.mark.parametrize(
+    ("element_type", "expected_mode", "expected_subdir"),
+    [
+        (ElementType.SKILL, RenderMode.SYMLINK, "skills"),
+        (ElementType.AGENT, RenderMode.SKIP, None),
+        (ElementType.RULE, RenderMode.SKIP, None),
+        (ElementType.DOMAIN, RenderMode.DISPATCH, None),
+    ],
+)
+def test_pi_policy(
+    element_type: ElementType,
+    expected_mode: RenderMode,
+    expected_subdir: str | None,
+) -> None:
+    policy = render_policy_for(Target.PI, element_type)
+    assert policy.mode is expected_mode
+    assert policy.subdir == expected_subdir
+
+
 @pytest.mark.parametrize("filename", ["ai-dotfiles.json", "global.json"])
 @pytest.mark.parametrize(
     ("data", "expected"),
     [
         ({}, ["claude"]),
         ({"targets": ["dsh"]}, ["dsh"]),
+        (
+            {"targets": ["codex", "future-target", "pi"]},
+            ["codex", "future-target", "pi"],
+        ),
         ({"targets": ["claude", "codex", "dsh"]}, ["claude", "codex", "dsh"]),
         ({"targets": []}, []),
         ({"targets": ["future-target", "dsh"]}, ["future-target", "dsh"]),

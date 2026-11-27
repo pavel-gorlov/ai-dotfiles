@@ -22,7 +22,11 @@ from ai_dotfiles.commands._codex_config_writer import (
     write_codex_mcp,
     write_codex_rules,
 )
-from ai_dotfiles.commands.install import _report_codex_skips, _report_dsh_result
+from ai_dotfiles.commands.install import (
+    _report_codex_skips,
+    _report_dsh_result,
+    _report_pi_result,
+)
 from ai_dotfiles.core import (
     claude_copy,
     codex_global,
@@ -71,6 +75,7 @@ from ai_dotfiles.core.paths import (
     project_claude_dir,
     project_manifest_path,
 )
+from ai_dotfiles.core.pi_install import apply_pi_project, plan_pi_project
 from ai_dotfiles.core.settings_merge import (
     assemble_settings,
     collect_domain_fragments,
@@ -287,7 +292,19 @@ def add(
         if all(raw in existing_packages for raw in raw_items):
             ui.info(f"All packages already installed in {manifest_name}")
             return
-        all_packages = list(dict.fromkeys([*existing_packages, *raw_items]))
+        new_items = list(
+            dict.fromkeys(raw for raw in raw_items if raw not in existing_packages)
+        )
+        updated_packages = [*existing_packages, *new_items]
+        all_packages = list(dict.fromkeys(updated_packages))
+        pi_plan = plan_pi_project(
+            project_root,
+            updated_packages,
+            catalog,
+            targets,
+            original_packages=existing_packages,
+        )
+        defer_manifest = pi_plan is not None and not pi_plan.has_legacy_target
         codex_admission = (
             preflight_codex_pairs(
                 parse_elements(all_packages), codex_layout, catalog, strict=strict
@@ -303,7 +320,11 @@ def add(
             mode="copy" if link_mode == "copy" else "link",
             strict=strict,
         )
-        added = manifest.add_packages(manifest_path, raw_items)
+        added = (
+            new_items
+            if defer_manifest
+            else manifest.add_packages(manifest_path, raw_items)
+        )
         added_set = set(added)
         ui.info(f"Added to {manifest_name}:")
         if "claude" in targets:
@@ -369,6 +390,14 @@ def add(
             manifest_path=manifest_path,
             no_gitignore=no_gitignore,
         )
+
+        if pi_plan is not None:
+            _report_pi_result(
+                apply_pi_project(
+                    pi_plan,
+                    manifest_change=updated_packages if defer_manifest else None,
+                )
+            )
 
     except AiDotfilesError as exc:
         ui.error(str(exc))

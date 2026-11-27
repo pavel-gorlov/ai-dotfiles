@@ -326,6 +326,7 @@ def resolve_target_paths(
     project root (Codex spreads skills and agents across two distinct
     sub-trees). DSH accepts a project root or an explicit
     :class:`~ai_dotfiles.core.dsh_layout.DshLayout` for project/user scope.
+    Pi accepts the project root and returns whole native skill bundles.
 
     For :data:`ElementType.DOMAIN`, the domain is expanded into its member
     elements. For a standalone skill/agent a single pair is returned. A
@@ -356,6 +357,10 @@ def resolve_target_paths(
         return _claude_target_pairs(element, config_root, catalog)
     if effective is _Target.CODEX:
         return _codex_target_pairs(element, config_root, catalog)
+    if effective is _Target.PI:
+        from ai_dotfiles.core.pi_install import iter_pi_skill_pairs
+
+        return list(iter_pi_skill_pairs(element, config_root, catalog))
     raise ElementError(f"Unsupported target: {effective!r}")
 
 

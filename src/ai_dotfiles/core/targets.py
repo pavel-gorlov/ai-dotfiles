@@ -33,12 +33,13 @@ class Target(Enum):
     ``CLAUDE`` is the original and default target (a manifest with no
     ``targets`` field resolves to ``["claude"]``). ``CODEX`` is the
     OpenAI Codex CLI target. ``DSH`` is DeepSeek Harness, supported in
-    both project and user scope.
+    both project and user scope. ``PI`` is the project-scoped Pi target.
     """
 
     CLAUDE = "claude"
     CODEX = "codex"
     DSH = "dsh"
+    PI = "pi"
 
 
 class RenderMode(Enum):
@@ -116,6 +117,12 @@ RENDER_POLICY: dict[Target, dict[ElementType, ElementRenderPolicy]] = {
         # Original paths must be checked before reusing Codex classification.
         # Path-scoped rules have no faithful DSH activation surface.
         ElementType.RULE: ElementRenderPolicy(RenderMode.DISPATCH, None),
+    },
+    Target.PI: {
+        ElementType.DOMAIN: ElementRenderPolicy(RenderMode.DISPATCH, None),
+        ElementType.SKILL: ElementRenderPolicy(RenderMode.SYMLINK, "skills"),
+        ElementType.AGENT: ElementRenderPolicy(RenderMode.SKIP, None),
+        ElementType.RULE: ElementRenderPolicy(RenderMode.SKIP, None),
     },
 }
 
