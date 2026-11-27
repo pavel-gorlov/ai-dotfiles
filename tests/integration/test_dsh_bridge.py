@@ -31,6 +31,7 @@ from ai_dotfiles.core.errors import ConfigError
 
 pytestmark = pytest.mark.integration
 PINNED_DSH = "0.2.0-rc.2"
+PINNED_CORDIS_INCLUDE = "1.0.9"
 
 
 def _env(root: Path) -> dict[str, str]:
@@ -57,6 +58,22 @@ def bridge_native_runtime(tmp_path_factory: pytest.TempPathFactory) -> Path:
             Path("/private/tmp")
         ), "Native acceptance may reuse only a disposable /private/tmp installation"
     else:
+        runtime.mkdir()
+        include = "@deepseek-ai/cordis-plugin-include"
+        # RC2 uses the include plugin's 1.0.9 loader composition contract.
+        (runtime / "package.json").write_text(
+            json.dumps(
+                {
+                    "private": True,
+                    "dependencies": {
+                        "@deepseek-ai/dsh": PINNED_DSH,
+                        include: PINNED_CORDIS_INCLUDE,
+                    },
+                    "overrides": {include: PINNED_CORDIS_INCLUDE},
+                }
+            ),
+            encoding="utf-8",
+        )
         setup = subprocess.run(
             [
                 "npm",
@@ -65,8 +82,6 @@ def bridge_native_runtime(tmp_path_factory: pytest.TempPathFactory) -> Path:
                 str(runtime),
                 "--no-audit",
                 "--no-fund",
-                "--save-exact",
-                f"@deepseek-ai/dsh@{PINNED_DSH}",
             ],
             env=_env(root),
             capture_output=True,
@@ -79,6 +94,8 @@ def bridge_native_runtime(tmp_path_factory: pytest.TempPathFactory) -> Path:
     metadata = json.loads(package.read_text())
     assert metadata["name"] == "@deepseek-ai/dsh"
     assert metadata["version"] == PINNED_DSH
+    include_package = package.parent.parent / "cordis-plugin-include" / "package.json"
+    assert json.loads(include_package.read_text())["version"] == PINNED_CORDIS_INCLUDE
     for name in (
         "dsh-system-prompt",
         "dsh-tools",
